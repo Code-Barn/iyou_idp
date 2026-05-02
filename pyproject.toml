@@ -1,0 +1,40 @@
+[project]
+name = "iyou-idp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "dcbyers13", email = "dcbyers13@iyou.me" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "django>=5.2.13",
+    "django-oauth-toolkit>=3.2.0",
+    "django-oidc-provider>=0.9.0",
+    "django-redis>=5.2.0",
+    "redis>=4.5.0",
+]
+
+[project.scripts]
+iyou-idp = "iyou_idp:main"
+
+[tool.maturin]
+# This tells Maturin to put the compiled _crypto.so inside the iyou_idp package
+module-name = "iyou_idp._crypto"
+python-packages = ["iyou_idp"]
+# If your iyou_idp/ folder is in the root, remove 'src' or move the folder into src/
+python-source = "src"
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "Cargo.toml" }, { file = "Cargo.lock" }]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.13.1",
+    "pytest-django>=4.12.0",
+    "ruff>=0.15.12",
+]

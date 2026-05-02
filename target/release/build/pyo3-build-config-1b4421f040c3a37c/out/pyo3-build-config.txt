@@ -1,0 +1,11 @@
+implementation=CPython
+version=3.9
+shared=true
+abi3=true
+lib_name=python3.10
+lib_dir=/home/user/.local/share/uv/python/cpython-3.10.19-linux-x86_64-gnu/lib
+executable=/home/user/.cache/uv/builds-v0/.tmpxkZq2h/bin/python
+pointer_width=64
+build_flags=
+python_framework_prefix=
+suppress_build_script_link_lines=false
