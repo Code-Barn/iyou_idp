@@ -8,6 +8,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.core.cache import cache
 from django.contrib.auth import login, authenticate
 from django.middleware.csrf import get_token
+from django.shortcuts import render, redirect
+from django.urls import reverse
 from .models import User
 import uuid
 import json
@@ -128,3 +130,30 @@ class VerifySignatureView(View):
             return JsonResponse({
                 'error': f'Internal server error: {str(e)}'
             }, status=500)
+
+
+class LoginPageView(View):
+    """
+    Render the DID login page for OIDC authentication flow.
+    """
+    
+    def get(self, request):
+        """
+        Render the login page with Tailwind CSS.
+        
+        Args:
+            request: HTTP request object
+            
+        Returns:
+            HTTP response with login page template
+        """
+        # Get the 'next' parameter from the URL (OIDC redirect URI)
+        next_url = request.GET.get('next', '/')
+        
+        context = {
+            'next_url': next_url,
+            'page_title': 'Sovereign Login',
+            'description': 'Authenticate with your Decentralized Identifier',
+        }
+        
+        return render(request, 'auth_bridge/login.html', context)

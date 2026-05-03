@@ -1,0 +1,170 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block content %}
+<div class="login">
+    <h1>{{ title }}</h1>
+    
+    <div id="did-auth-container">
+        <div class="module">
+            <h2>{% trans "DID Authentication" %}</h2>
+            
+            <div id="challenge-step">
+                <p>{% trans "Click the button below to start DID authentication" %}</p>
+                <button id="request-challenge" class="button">
+                    {% trans "Request Challenge" %}
+                </button>
+                <div id="loading" style="display: none;">
+                    <img src="{% static 'admin/img/loading.gif' %}" alt="Loading">
+                    {% trans "Processing..." %}
+                </div>
+            </div>
+            
+            <div id="verification-step" style="display: none;">
+                <p>{% trans "Sign the challenge with your DID" %}</p>
+                <div id="challenge-display" style="word-break: break-all; margin: 10px 0; font-family: monospace;"></div>
+                
+                <textarea id="verifiable-presentation" 
+                         placeholder='{"verifiableCredential": [...], "proof": {...}, "holder": "did:key:..."}'
+                         style="width: 100%; height: 150px; font-family: monospace;" required></textarea>
+                
+                <button id="submit-vp" class="button" style="margin-top: 10px;">
+                    {% trans "Submit Verifiable Presentation" %}
+                </button>
+            </div>
+            
+            <div id="error-message" style="display: none; color: red; margin: 10px 0;"></div>
+        </div>
+    </div>
+</div>
+
+<style>
+    #did-auth-container {
+        max-width: 500px;
+        margin: 0 auto;
+    }
+    .button {
+        background-color: #447e9b;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+    }
+    .button:hover {
+        background-color: #3a6d85;
+    }
+    textarea {
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const requestChallengeBtn = document.getElementById('request-challenge');
+        const submitVPBtn = document.getElementById('submit-vp');
+        const challengeStep = document.getElementById('challenge-step');
+        const verificationStep = document.getElementById('verification-step');
+        const loading = document.getElementById('loading');
+        const errorMessage = document.getElementById('error-message');
+        const challengeDisplay = document.getElementById('challenge-display');
+        const vpTextarea = document.getElementById('verifiable-presentation');
+        
+        let currentChallenge = null;
+        
+        // Request challenge
+        requestChallengeBtn.addEventListener('click', function() {
+            requestChallengeBtn.style.display = 'none';
+            loading.style.display = 'block';
+            errorMessage.style.display = 'none';
+            
+            fetch('/admin/did-login/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.challenge) {
+                    currentChallenge = data.challenge;
+                    challengeDisplay.textContent = `Challenge: ${data.challenge}`;
+                    challengeStep.style.display = 'none';
+                    verificationStep.style.display = 'block';
+                } else {
+                    errorMessage.textContent = data.error || 'Unknown error';
+                    errorMessage.style.display = 'block';
+                    requestChallengeBtn.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                errorMessage.textContent = 'Network error: ' + error.message;
+                errorMessage.style.display = 'block';
+                requestChallengeBtn.style.display = 'block';
+                console.error('Error:', error);
+            });
+        });
+        
+        // Submit verifiable presentation
+        submitVPBtn.addEventListener('click', function() {
+            const vpJson = vpTextarea.value;
+            
+            if (!vpJson) {
+                errorMessage.textContent = 'Please provide a verifiable presentation';
+                errorMessage.style.display = 'block';
+                return;
+            }
+            
+            try {
+                const vpData = JSON.parse(vpJson);
+                
+                submitVPBtn.style.display = 'none';
+                loading.style.display = 'block';
+                errorMessage.style.display = 'none';
+                
+                fetch('/admin/did-verify/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({
+                        verifiable_presentation: vpData,
+                        challenge: currentChallenge
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    loading.style.display = 'none';
+                    
+                    if (data.success && data.redirect_url) {
+                        window.location.href = data.redirect_url;
+                    } else {
+                        errorMessage.textContent = data.error || 'Authentication failed';
+                        errorMessage.style.display = 'block';
+                        submitVPBtn.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    errorMessage.textContent = 'Network error: ' + error.message;
+                    errorMessage.style.display = 'block';
+                    submitVPBtn.style.display = 'block';
+                    console.error('Error:', error);
+                });
+            } catch (e) {
+                errorMessage.textContent = 'Invalid JSON: ' + e.message;
+                errorMessage.style.display = 'block';
+            }
+        });
+    });
+</script>
+{% endblock %}

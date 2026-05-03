@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
 
 
 # Application definition
@@ -127,6 +127,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Custom User Model
 AUTH_USER_MODEL = 'auth_bridge.User'
 
+# Custom Authentication Backend
+AUTHENTICATION_BACKENDS = [
+    'auth_bridge.backend.DIDAuthBackend',
+    'django.contrib.auth.backends.ModelBackend',  # Fallback
+]
+
 # Redis Configuration for challenge-response state
 CACHES = {
     'default': {
@@ -137,6 +143,9 @@ CACHES = {
         }
     }
 }
+
+# Login URL for authentication
+LOGIN_URL = '/auth/login/'
 
 # OIDC Provider Settings
 OIDC_PROVIDER = {

@@ -1,0 +1,326 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .login-card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .step-indicator {
+            transition: all 0.3s ease;
+        }
+        
+        .step-indicator.active {
+            background-color: #667eea;
+            color: white;
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+    <div class="login-card rounded-2xl shadow-2xl p-8 max-w-md w-full">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">{{ page_title }}</h1>
+            <p class="text-gray-600">{{ description }}</p>
+        </div>
+        
+        <!-- Step Indicators -->
+        <div class="flex justify-center mb-8">
+            <div class="flex space-x-4">
+                <div class="step-indicator active w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step1">
+                    1
+                </div>
+                <div class="step-indicator w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step2">
+                    2
+                </div>
+                <div class="step-indicator w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step3">
+                    3
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 1: Request Challenge -->
+        <div id="step1-content" class="step-content">
+            <div class="text-center mb-6">
+                <h2 class="text-xl font-semibold text-gray-700 mb-2">Request Authentication Challenge</h2>
+                <p class="text-gray-600 text-sm">
+                    Click the button below to generate a cryptographic challenge for your DID.
+                </p>
+            </div>
+            
+            <button id="requestChallengeBtn" 
+                   class="btn-primary w-full text-white py-3 px-6 rounded-lg font-medium text-lg mb-4">
+                Request Challenge
+            </button>
+            
+            <div id="loading" class="hidden text-center">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
+                <p class="text-gray-600 mt-2">Generating challenge...</p>
+            </div>
+            
+            <div id="errorMessage" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"></div>
+        </div>
+        
+        <!-- Step 2: Sign Challenge -->
+        <div id="step2-content" class="step-content hidden">
+            <div class="text-center mb-6">
+                <h2 class="text-xl font-semibold text-gray-700 mb-2">Sign Challenge with Your DID</h2>
+                <p class="text-gray-600 text-sm">
+                    Use your DID wallet or paste a mock signature below.
+                </p>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-medium mb-2">Challenge</label>
+                <div id="challengeDisplay" class="bg-gray-100 p-3 rounded-lg text-sm font-mono break-all"></div>
+            </div>
+            
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-medium mb-2">Verifiable Presentation (or Mock Signature)</label>
+                <textarea id="vpTextarea" 
+                         class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                         rows="6"
+                         placeholder='{
+  "verifiableCredential": [{"id": "vc1"}],
+  "proof": {"type": "Ed25519Signature2018"},
+  "holder": "did:key:z6MkqRYqQiSgvZQdnBytw86Qbs2ZWUkGv22od935YF4s8M7V"
+}'></textarea>
+                <p class="text-xs text-gray-500 mt-1">
+                    For testing, you can use any JSON structure or click "Simulate Signing".
+                </p>
+            </div>
+            
+            <button id="simulateSigningBtn" 
+                   class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-lg font-medium mb-3 w-full">
+                Simulate Signing
+            </button>
+            
+            <button id="backToChallengeBtn" 
+                   class="text-gray-600 hover:text-gray-800 text-sm underline mb-4">
+                ← Back to Challenge
+            </button>
+            
+            <div id="signingLoading" class="hidden text-center">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
+                <p class="text-gray-600 mt-2">Verifying signature...</p>
+            </div>
+        </div>
+        
+        <!-- Step 3: Success -->
+        <div id="step3-content" class="step-content hidden text-center">
+            <div class="mb-6">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+                <h2 class="text-xl font-semibold text-gray-700 mb-2">Authentication Successful!</h2>
+                <p class="text-gray-600">You will be redirected shortly...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Hidden form for OIDC redirect -->
+    <form id="redirectForm" method="GET" class="hidden">
+        <input type="hidden" name="next" id="redirectNext">
+    </form>
+    
+    <script>
+        // DOM Elements
+        const requestChallengeBtn = document.getElementById('requestChallengeBtn');
+        const simulateSigningBtn = document.getElementById('simulateSigningBtn');
+        const backToChallengeBtn = document.getElementById('backToChallengeBtn');
+        const loading = document.getElementById('loading');
+        const signingLoading = document.getElementById('signingLoading');
+        const errorMessage = document.getElementById('errorMessage');
+        const challengeDisplay = document.getElementById('challengeDisplay');
+        const vpTextarea = document.getElementById('vpTextarea');
+        
+        // Step content elements
+        const step1Content = document.getElementById('step1-content');
+        const step2Content = document.getElementById('step2-content');
+        const step3Content = document.getElementById('step3-content');
+        
+        // Step indicators
+        const step1Indicator = document.getElementById('step1');
+        const step2Indicator = document.getElementById('step2');
+        const step3Indicator = document.getElementById('step3');
+        
+        // State
+        let currentChallenge = null;
+        let currentNextUrl = '{{ next_url }}';
+        
+        // Initialize
+        function init() {
+            // Set up event listeners
+            requestChallengeBtn.addEventListener('click', requestChallenge);
+            simulateSigningBtn.addEventListener('click', simulateSigning);
+            backToChallengeBtn.addEventListener('click', backToChallenge);
+            
+            // Set CSRF token for fetch requests
+            function getCookie(name) {
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            }
+            
+            window.csrfToken = getCookie('csrftoken');
+        }
+        
+        // Step 1: Request Challenge
+        function requestChallenge() {
+            errorMessage.classList.add('hidden');
+            requestChallengeBtn.style.display = 'none';
+            loading.classList.remove('hidden');
+            
+            fetch('/auth/challenge/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': window.csrfToken
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.classList.add('hidden');
+                
+                if (data.challenge) {
+                    currentChallenge = data.challenge;
+                    challengeDisplay.textContent = currentChallenge;
+                    
+                    // Update UI
+                    step1Indicator.classList.remove('active');
+                    step2Indicator.classList.add('active');
+                    step1Content.classList.add('hidden');
+                    step2Content.classList.remove('hidden');
+                } else {
+                    showError(data.error || 'Failed to get challenge');
+                    requestChallengeBtn.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                loading.classList.add('hidden');
+                showError('Network error: ' + error.message);
+                requestChallengeBtn.style.display = 'block';
+                console.error('Error:', error);
+            });
+        }
+        
+        // Step 2: Simulate Signing
+        function simulateSigning() {
+            const vpJson = vpTextarea.value;
+            
+            if (!vpJson) {
+                showError('Please provide a verifiable presentation or mock signature');
+                return;
+            }
+            
+            try {
+                // Try to parse as JSON, if it fails, use as-is (for mock signatures)
+                let vpData;
+                try {
+                    vpData = JSON.parse(vpJson);
+                } catch (e) {
+                    vpData = vpJson; // Use raw text as mock signature
+                }
+                
+                simulateSigningBtn.style.display = 'none';
+                signingLoading.classList.remove('hidden');
+                errorMessage.classList.add('hidden');
+                
+                fetch('/auth/verify/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': window.csrfToken
+                    },
+                    body: JSON.stringify({
+                        verifiable_presentation: vpData,
+                        challenge: currentChallenge
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    signingLoading.classList.add('hidden');
+                    
+                    if (data.success && data.user) {
+                        // Update UI for success
+                        step2Indicator.classList.remove('active');
+                        step3Indicator.classList.add('active');
+                        step2Content.classList.add('hidden');
+                        step3Content.classList.remove('hidden');
+                        
+                        // Redirect after short delay
+                        setTimeout(() => {
+                            if (currentNextUrl && currentNextUrl !== '/') {
+                                window.location.href = currentNextUrl;
+                            } else {
+                                window.location.href = '/admin/';
+                            }
+                        }, 1500);
+                    } else {
+                        showError(data.error || 'Verification failed');
+                        simulateSigningBtn.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    signingLoading.classList.add('hidden');
+                    showError('Network error: ' + error.message);
+                    simulateSigningBtn.style.display = 'block';
+                    console.error('Error:', error);
+                });
+            } catch (e) {
+                showError('Error: ' + e.message);
+            }
+        }
+        
+        // Navigation
+        function backToChallenge() {
+            step2Indicator.classList.remove('active');
+            step1Indicator.classList.add('active');
+            step2Content.classList.add('hidden');
+            step1Content.classList.remove('hidden');
+            requestChallengeBtn.style.display = 'block';
+        }
+        
+        // Helper Functions
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+        
+        // Initialize the app
+        init();
+    </script>
+</body>
+</html>
