@@ -10,6 +10,7 @@ from django.contrib.auth import login, authenticate
 from django.middleware.csrf import get_token
 from django.shortcuts import render, redirect
 from django.urls import reverse
+from django.utils.safestring import mark_safe
 from .models import User
 import uuid
 import json
@@ -151,7 +152,7 @@ class LoginPageView(View):
         next_url = request.GET.get('next', '/')
         
         context = {
-            'next_url': next_url,
+            'next_url': mark_safe(next_url),
             'page_title': 'Sovereign Login',
             'description': 'Authenticate with your Decentralized Identifier',
         }
