@@ -1,4 +1,4 @@
 [submodule "crates/rust-did"]
 	path = crates/rust-did
-	url = git@github.com:Code-Barn/did_rust
+	url = ssh://iyou@qnap:/share/homes/iyou/repos/did_rust.git
 	branch = main

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Rust / Cargo
+/target/
+**/target/
+
+# Rust-Python bridge (maturin build artifacts)
+*.abi3.so
+*.so
+
+# Django
+db.sqlite3
+local_settings.py
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

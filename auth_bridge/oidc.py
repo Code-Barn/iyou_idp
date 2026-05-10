@@ -31,6 +31,7 @@ def custom_userinfo_claims(user, scope, claims, id_token=None, token=None, **kwa
     # Add additional DID-specific claims
     claims_dict['did'] = user.username
     claims_dict['preferred_username'] = user.username
+    claims_dict['did_method'] = user.username.split(':')[1] if user.username.count(':') >= 2 else 'key'
     
     return claims_dict
 
@@ -61,6 +62,7 @@ def custom_id_token_claims(user, scope, claims, id_token=None, token=None, **kwa
     
     # Add additional DID-specific claims
     claims_dict['did'] = user.username
+    claims_dict['did_method'] = user.username.split(':')[1] if user.username.count(':') >= 2 else 'key'
     
     return claims_dict
 

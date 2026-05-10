@@ -81,7 +81,7 @@ class VerifySignatureView(View):
             
             # Verify verifiable presentation using Rust bridge
             from iyou_idp._crypto import verify_vp
-            result_json = verify_vp(json.dumps(vp_json), challenge)
+            result_json = verify_vp(json.dumps(vp_json))
             result = json.loads(result_json)
             
             if not result.get('valid', False):
@@ -90,8 +90,8 @@ class VerifySignatureView(View):
                     'error': error_msg
                 }, status=401)
             
-            # Extract DID from verification result
-            did = result.get('did', '')
+            # Extract DID from the VP itself
+            did = vp_json.get('holder', '')
             if not did:
                 return JsonResponse({
                     'error': 'No DID found in verifiable presentation'

@@ -61,15 +61,15 @@ def custom_admin_verify(request):
         
         # Verify using Rust bridge
         from iyou_idp._crypto import verify_vp
-        result_json = verify_vp(json.dumps(vp_json), challenge)
+        result_json = verify_vp(json.dumps(vp_json))
         result = json.loads(result_json)
         
         if not result.get('valid', False):
             error_msg = result.get('error', 'Verification failed')
             return JsonResponse({'error': error_msg}, status=401)
         
-        # Get DID from result
-        did = result.get('did', '')
+        # Extract DID from the VP itself
+        did = vp_json.get('holder', '')
         if not did:
             return JsonResponse({
                 'error': 'No DID found in verifiable presentation'
