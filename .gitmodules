@@ -1,3 +1,4 @@
 [submodule "crates/rust-did"]
 	path = crates/rust-did
 	url = git@github.com:Code-Barn/did_rust
+	branch = main
