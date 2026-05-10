@@ -206,9 +206,37 @@ fn verify_vp(vp_json: String, challenge: String) -> PyResult<String>
 The bridge **currently uses mock verification**. Real ed25519 cryptographic verification
 exists in the `crates/rust-did` submodule (C FFI) but is not yet wired into the PyO3 bridge.
 
-### 4. Authentication Backend
+### 4. Creating a Superuser
 
-A custom backend allows DID-based login without passwords for the Django admin:
+Use the custom management command (the standard `createsuperuser` does not work):
+
+```bash
+# Password will be prompted interactively:
+python manage.py createsuperuser_did --did dadmin
+
+# Or pass via env var (non-interactive):
+DJANGO_SUPERUSER_PASSWORD="strong-pass" python manage.py createsuperuser_did --did dadmin --no-input
+
+# Or pass directly:
+python manage.py createsuperuser_did --did dadmin --password "strong-pass"
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--did` | `did:admin:superuser` | DID string stored as username |
+| `--password` | `None` | Password for admin fallback login |
+| `--no-input` | off | Skip interactive prompts |
+
+The password falls back to the `DJANGO_SUPERUSER_PASSWORD` environment variable if `--password` is not provided.
+
+### 5. Authentication Backend
+
+Two backends are configured (in order):
+
+1. **`DIDAuthBackend`** — Allows login by DID alone; ignores password. Used by `/auth/admin/did-login/`.
+2. **`ModelBackend`** — Standard password check. Used by `/admin/` for users with a password set.
 
 ```python
 class DIDAuthBackend(ModelBackend):
@@ -224,6 +252,8 @@ class DIDAuthBackend(ModelBackend):
             return None
         return None
 ```
+
+> **Alpha phase:** During development, admins can log in at `/admin/` using their DID string (stored in `username`) as the username and the password set via `createsuperuser_did`. This is a fallback while DID tooling is still in development. The high-security path at `/auth/admin/did-login/` remains available for VP-based authentication.
 
 ### 5. OIDC Provider
 
