@@ -7,15 +7,7 @@ from django.conf import settings
 def custom_userinfo_claims(user, scope, claims, id_token=None, token=None, **kwargs):
     """
     Custom userinfo claims that use the DID as the subject claim.
-    """
-    # Import here to avoid circular imports
-    from oidc_provider.lib import claims as oidc_claims
-    
-    # Start with default claims
-    claims_dict = oidc_claims.default_userinfo_claims(user, scope, claims, id_token, token, **kwargs)
-    """
-    Custom userinfo claims that use the DID as the subject claim.
-    
+
     Args:
         user: The authenticated user (our custom User model)
         scope: OIDC scope requested
@@ -23,12 +15,15 @@ def custom_userinfo_claims(user, scope, claims, id_token=None, token=None, **kwa
         id_token: ID token if available
         token: Access token if available
         **kwargs: Additional arguments
-        
+
     Returns:
         dict: Custom claims with DID as subject
     """
+    # Import here to avoid circular imports
+    from oidc_provider.lib import claims as oidc_claims
+
     # Start with default claims
-    claims_dict = claims.default_userinfo_claims(user, scope, claims, id_token, token, **kwargs)
+    claims_dict = oidc_claims.default_userinfo_claims(user, scope, claims, id_token, token, **kwargs)
     
     # Override the sub claim with the user's DID (username field)
     claims_dict['sub'] = user.username  # DID is stored in username

@@ -40,3 +40,9 @@ class User(AbstractBaseUser):
 
     def has_module_perms(self, app_label):
         return self.is_superuser
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['username']),
+            models.Index(fields=['is_active']),
+        ]
