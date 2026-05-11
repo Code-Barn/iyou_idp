@@ -111,19 +111,15 @@ def verify_signature(request):
         verify_vp = None
         _import_errors = []
         try:
-            from iyou_idp._crypto import verify_vp
+            from iyou_idp import _crypto
+            verify_vp = _crypto.verify_vp
         except ImportError as e:
-            _import_errors.append(f"iyou_idp._crypto: {e}")
+            _import_errors.append(f"from iyou_idp import _crypto: {e}")
             try:
                 import _crypto  # type: ignore[import-not-found]
                 verify_vp = _crypto.verify_vp
             except ImportError as e:
-                _import_errors.append(f"_crypto: {e}")
-                try:
-                    from ..src.iyou_idp import _crypto  # type: ignore[import-not-found]
-                    verify_vp = _crypto.verify_vp
-                except ImportError as e:
-                    _import_errors.append(f"..src.iyou_idp._crypto: {e}")
+                _import_errors.append(f"import _crypto: {e}")
 
         if verify_vp is None:
             print("=" * 60, flush=True)
@@ -131,9 +127,22 @@ def verify_signature(request):
             print("sys.path:", sys.path, flush=True)
             for err in _import_errors:
                 print("  ", err, flush=True)
+            # Check if the compiled .so even exists on disk
+            import os
+            _probe_paths = [
+                os.path.join(os.path.dirname(__file__), '..', 'src', 'iyou_idp', '_crypto.abi3.so'),
+            ]
+            for pp in _probe_paths:
+                absp = os.path.abspath(pp)
+                print(f"  probe {absp}: {'EXISTS' if os.path.isfile(absp) else 'NOT FOUND'}", flush=True)
             print("=" * 60, flush=True)
             return JsonResponse({
-                'error': "Rust Crypto Bridge not found. Please run 'maturin develop'."
+                'error': (
+                    "Rust Crypto Bridge not found. "
+                    "Run 'maturin develop' to build it, "
+                    "or copy _crypto.abi3.so from .venv/lib/python3.*/site-packages/iyou_idp/ "
+                    "into src/iyou_idp/."
+                )
             }, status=500)
 
         result_json = verify_vp(json.dumps(vp_json))
