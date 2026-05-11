@@ -29,7 +29,7 @@ DEBUG = True
 # Single BASE_URL to switch the entire IdP's identity between Tailscale and localhost
 IYOU_BASE_URL = os.environ.get('IYOU_BASE_URL', 'http://localhost:8000')
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
 # Application definition
@@ -66,7 +66,9 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:8000',
+    'http://localhost:8001',
     'http://127.0.0.1:8000',
+    'http://127.0.0.1:8001',
 ]
 
 ROOT_URLCONF = 'config.urls'
