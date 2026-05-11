@@ -86,7 +86,7 @@
         <div id="step2-content" class="step-content hidden">
             <div class="text-center mb-6">
                 <h2 class="text-xl font-semibold text-gray-700 mb-2">Sign Challenge with Your DID</h2>
-                <p class="text-gray-600 text-sm">
+                <p class="text-gray-600 text-sm" id="step2-subtitle">
                     Use your DID wallet or paste a mock signature below.
                 </p>
             </div>
@@ -95,26 +95,35 @@
                 <label class="block text-gray-700 text-sm font-medium mb-2">Challenge</label>
                 <div id="challengeDisplay" class="bg-gray-100 p-3 rounded-lg text-sm font-mono break-all"></div>
             </div>
+
+            <!-- iYou Home native-connect button (shown when WebSocket succeeds) -->
+            <button id="iyouHomeBtn"
+                    class="hidden bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white py-4 px-6 rounded-xl font-bold text-lg mb-4 w-full shadow-lg border border-purple-400">
+                🔐 Sign with iYou Home
+            </button>
             
-            <div class="mb-6">
-                <label class="block text-gray-700 text-sm font-medium mb-2">Verifiable Presentation (or Mock Signature)</label>
-                <textarea id="vpTextarea" 
-                         class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                         rows="6"
-                         placeholder='{
+            <!-- Manual paste section (hidden when WebSocket succeeds) -->
+            <div id="manualSection">
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Verifiable Presentation (or Mock Signature)</label>
+                    <textarea id="vpTextarea" 
+                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                             rows="6"
+                             placeholder='{
   "verifiableCredential": [{"id": "vc1"}],
   "proof": {"type": "Ed25519Signature2018"},
   "holder": "did:key:z6MkqRYqQiSgvZQdnBytw86Qbs2ZWUkGv22od935YF4s8M7V"
 }'></textarea>
-                <p class="text-xs text-gray-500 mt-1">
-                    For testing, you can use any JSON structure or click "Simulate Signing".
-                </p>
+                    <p class="text-xs text-gray-500 mt-1">
+                        For testing, you can use any JSON structure or click "Simulate Signing".
+                    </p>
+                </div>
+                
+                <button id="simulateSigningBtn" 
+                       class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-lg font-medium mb-3 w-full">
+                    Simulate Signing
+                </button>
             </div>
-            
-            <button id="simulateSigningBtn" 
-                   class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-lg font-medium mb-3 w-full">
-                Simulate Signing
-            </button>
             
             <button id="backToChallengeBtn" 
                    class="text-gray-600 hover:text-gray-800 text-sm underline mb-4">
@@ -170,6 +179,7 @@
         // State
         let currentChallenge = null;
         let currentNextUrl = '{{ next_url }}';
+        let iyouSocket = null;
         
         // Initialize
         function init() {
@@ -195,6 +205,121 @@
             }
             
             window.csrfToken = getCookie('csrftoken');
+            
+            // Attempt native-connect handshake with iYou Home
+            tryConnectIYouHome();
+        }
+
+        // WebSocket: connect to iYou Home desktop companion
+        function tryConnectIYouHome() {
+            const socket = new WebSocket('ws://127.0.0.1:9001');
+            const timeout = setTimeout(() => {
+                socket.close();
+            }, 1500);
+
+            socket.addEventListener('open', () => {
+                clearTimeout(timeout);
+                iyouSocket = socket;
+                onIYouHomeConnected();
+            });
+
+            socket.addEventListener('error', () => {
+                clearTimeout(timeout);
+            });
+
+            socket.addEventListener('close', () => {
+                iyouSocket = null;
+            });
+        }
+
+        function onIYouHomeConnected() {
+            document.getElementById('manualSection').classList.add('hidden');
+            document.getElementById('step2-subtitle').textContent =
+                'Sign the challenge using your iYou Home desktop app.';
+            const btn = document.getElementById('iyouHomeBtn');
+            btn.classList.remove('hidden');
+            btn.addEventListener('click', signWithIYouHome);
+        }
+
+        // Step 2: Sign via iYou Home native socket
+        function signWithIYouHome() {
+            if (!iyouSocket || iyouSocket.readyState !== WebSocket.OPEN) {
+                showError('Connection to iYou Home lost. Please refresh and try again.');
+                return;
+            }
+
+            const btn = document.getElementById('iyouHomeBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Waiting for signature...';
+            signingLoading.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
+
+            iyouSocket.send(JSON.stringify({
+                type: 'sign',
+                challenge: currentChallenge
+            }));
+
+            iyouSocket.addEventListener('message', function onMessage(event) {
+                iyouSocket.removeEventListener('message', onMessage);
+                let vpData;
+                try {
+                    vpData = JSON.parse(event.data);
+                } catch {
+                    showError('Invalid response from iYou Home.');
+                    btn.disabled = false;
+                    btn.textContent = '🔐 Sign with iYou Home';
+                    signingLoading.classList.add('hidden');
+                    return;
+                }
+
+                submitVP(vpData);
+            });
+        }
+
+        // Submit VP to /auth/verify/
+        function submitVP(vpData) {
+            fetch('/auth/verify/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': window.csrfToken
+                },
+                body: JSON.stringify({
+                    verifiable_presentation: vpData,
+                    challenge: currentChallenge
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                signingLoading.classList.add('hidden');
+
+                if (data.success && data.user) {
+                    step2Indicator.classList.remove('active');
+                    step3Indicator.classList.add('active');
+                    step2Content.classList.add('hidden');
+                    step3Content.classList.remove('hidden');
+
+                    setTimeout(() => {
+                        if (currentNextUrl && currentNextUrl !== '/') {
+                            window.location.href = currentNextUrl;
+                        } else {
+                            window.location.href = '/admin/';
+                        }
+                    }, 1500);
+                } else {
+                    showError(data.error || 'Verification failed');
+                    const btn = document.getElementById('iyouHomeBtn');
+                    btn.disabled = false;
+                    btn.textContent = '🔐 Sign with iYou Home';
+                }
+            })
+            .catch(error => {
+                signingLoading.classList.add('hidden');
+                showError('Network error: ' + error.message);
+                const btn = document.getElementById('iyouHomeBtn');
+                btn.disabled = false;
+                btn.textContent = '🔐 Sign with iYou Home';
+            });
         }
         
         // Step 1: Request Challenge
