@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,12 +21,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5'
+SECRET_KEY = os.environ.get('IYOU_SECRET_KEY', 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver', '100.64.0.4']
+# Single BASE_URL to switch the entire IdP's identity between Tailscale and localhost
+IYOU_BASE_URL = os.environ.get('IYOU_BASE_URL', 'http://localhost:8000')
+
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -37,12 +41,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'oauth2_provider',
     'oidc_provider',
     'auth_bridge',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -50,6 +56,17 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+# Dev only: allow all CORS origins to prevent pre-flight blocks
+CORS_ALLOW_ALL_ORIGINS = True
+
+# Critical for the browser to allow OIDC redirect/handshake on insecure (HTTP) origins
+SECURE_CROSS_ORIGIN_OPENER_POLICY = None
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -148,10 +165,8 @@ CACHES = {
 LOGIN_URL = '/auth/login/'
 
 # OIDC Provider Settings
-OIDC_PROVIDER = {
-    'ISSUER': 'http://localhost:8000',
-    'USERINFO_MODEL': 'auth_bridge.User',
-    'OIDC_USERINFO': 'auth_bridge.oidc.custom_userinfo_claims',
-    'OIDC_ID_TOKEN': 'auth_bridge.oidc.custom_id_token_claims',
-    'OIDC_SCOPES_CLAIMS': 'auth_bridge.oidc.custom_scopes_claims',
-}
+# All endpoints derive from IYOU_BASE_URL so switching between Tailscale/localhost is one line.
+SITE_URL = IYOU_BASE_URL
+OIDC_USERINFO = 'auth_bridge.oidc.custom_userinfo_claims'
+OIDC_IDTOKEN_PROCESSING_HOOK = 'auth_bridge.oidc.custom_idtoken_processing_hook'
+OIDC_IDTOKEN_SUB_GENERATOR = 'auth_bridge.oidc.custom_sub_generator'

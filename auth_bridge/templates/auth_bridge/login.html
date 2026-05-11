@@ -176,9 +176,13 @@
         const step2Indicator = document.getElementById('step2');
         const step3Indicator = document.getElementById('step3');
         
+        // URLs — derived dynamically so JS always talks to the current host
+        const VERIFY_URL = "{% url 'auth_bridge:verify_signature' %}";
+        const CHALLENGE_URL = "{% url 'auth_bridge:challenge' %}";
+
         // State
         let currentChallenge = null;
-        let currentNextUrl = '{{ next_url }}';
+        let currentNextUrl = '{{ next_url|escapejs }}';
         let iyouSocket = null;
         
         // Initialize
@@ -210,26 +214,76 @@
             tryConnectIYouHome();
         }
 
-        // WebSocket: connect to iYou Home desktop companion
+        // WebSocket: fast-fail handshake with iYou Home desktop companion
         function tryConnectIYouHome() {
-            const socket = new WebSocket('ws://127.0.0.1:9001');
-            const timeout = setTimeout(() => {
-                socket.close();
-            }, 1500);
+            const iyouBtn = document.getElementById('iyouHomeBtn');
+            iyouBtn.textContent = '🔗 Linking...';
+            iyouBtn.disabled = true;
+            iyouBtn.classList.remove('hidden');
+            document.getElementById('manualSection').classList.add('hidden');
 
-            socket.addEventListener('open', () => {
-                clearTimeout(timeout);
-                iyouSocket = socket;
-                onIYouHomeConnected();
-            });
+            setTimeout(() => {
+                let socket;
+                try {
+                    socket = new WebSocket('ws://127.0.0.1:9001');
+                } catch (err) {
+                    iyouBtn.classList.add('hidden');
+                    showManualFallback(
+                        err.name === 'SecurityError'
+                            ? 'Local link blocked by browser security (Private Network Access). Please paste manually.'
+                            : 'Could not connect to iYou Home. Please paste your signature manually.'
+                    );
+                    return;
+                }
 
-            socket.addEventListener('error', () => {
-                clearTimeout(timeout);
-            });
+                const failTimeout = setTimeout(() => {
+                    if (socket.readyState !== WebSocket.OPEN) {
+                        socket.close();
+                        iyouBtn.classList.add('hidden');
+                        showManualFallback(
+                            'Could not connect to iYou Home. Please paste your signature manually.'
+                        );
+                    }
+                }, 3000);
 
-            socket.addEventListener('close', () => {
-                iyouSocket = null;
-            });
+                socket.addEventListener('open', () => {
+                    clearTimeout(failTimeout);
+                    iyouSocket = socket;
+                    onIYouHomeConnected();
+                });
+
+                socket.addEventListener('error', () => {
+                    clearTimeout(failTimeout);
+                    iyouBtn.classList.add('hidden');
+                    showManualFallback();
+                });
+
+                socket.addEventListener('close', () => {
+                    if (iyouSocket === socket) {
+                        if (window._signTimeout) clearTimeout(window._signTimeout);
+                        showManualFallback(
+                            'Connection to iYou Home was lost. Please paste your signature manually.'
+                        );
+                    }
+                    iyouSocket = null;
+                });
+            }, 0);
+        }
+
+        function showManualFallback(message) {
+            const manualSection = document.getElementById('manualSection');
+            manualSection.classList.remove('hidden');
+            const iyouBtn = document.getElementById('iyouHomeBtn');
+            iyouBtn.classList.add('hidden');
+            iyouBtn.disabled = false;
+            iyouBtn.textContent = '🔐 Sign with iYou Home';
+            const subtitle = document.getElementById('step2-subtitle');
+            if (message) {
+                subtitle.textContent = message;
+            } else {
+                subtitle.textContent = 'Use your DID wallet or paste a mock signature below.';
+            }
+            document.getElementById('signingLoading').classList.add('hidden');
         }
 
         function onIYouHomeConnected() {
@@ -237,6 +291,8 @@
             document.getElementById('step2-subtitle').textContent =
                 'Sign the challenge using your iYou Home desktop app.';
             const btn = document.getElementById('iyouHomeBtn');
+            btn.textContent = '🔐 Sign with iYou Home';
+            btn.disabled = false;
             btn.classList.remove('hidden');
             btn.addEventListener('click', signWithIYouHome);
         }
@@ -254,12 +310,21 @@
             signingLoading.classList.remove('hidden');
             errorMessage.classList.add('hidden');
 
+            window._signTimeout = setTimeout(() => {
+                iyouSocket.close();
+                showManualFallback(
+                    'iYou Home did not respond in time. Please paste your signature manually.'
+                );
+            }, 60000);
+
             iyouSocket.send(JSON.stringify({
                 type: 'sign',
                 challenge: currentChallenge
             }));
 
             iyouSocket.addEventListener('message', function onMessage(event) {
+                clearTimeout(window._signTimeout);
+                window._signTimeout = null;
                 iyouSocket.removeEventListener('message', onMessage);
                 let vpData;
                 try {
@@ -276,9 +341,9 @@
             });
         }
 
-        // Submit VP to /auth/verify/
+        // Submit VP to the verify endpoint
         function submitVP(vpData) {
-            fetch('/auth/verify/', {
+            fetch(VERIFY_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -286,28 +351,25 @@
                 },
                 body: JSON.stringify({
                     verifiable_presentation: vpData,
-                    challenge: currentChallenge
+                    challenge: currentChallenge,
+                    next_url: currentNextUrl
                 })
             })
             .then(response => response.json())
             .then(data => {
                 signingLoading.classList.add('hidden');
 
-                if (data.success && data.user) {
+                if (data.success && data.redirect_url) {
                     step2Indicator.classList.remove('active');
                     step3Indicator.classList.add('active');
                     step2Content.classList.add('hidden');
                     step3Content.classList.remove('hidden');
 
                     setTimeout(() => {
-                        if (currentNextUrl && currentNextUrl !== '/') {
-                            window.location.href = currentNextUrl;
-                        } else {
-                            window.location.href = '/admin/';
-                        }
+                        window.location.href = data.redirect_url;
                     }, 1500);
                 } else {
-                    showError(data.error || 'Verification failed');
+                    console.error('Login failed:', data.error);
                     const btn = document.getElementById('iyouHomeBtn');
                     btn.disabled = false;
                     btn.textContent = '🔐 Sign with iYou Home';
@@ -328,7 +390,7 @@
             requestChallengeBtn.style.display = 'none';
             loading.classList.remove('hidden');
             
-            fetch('/auth/challenge/', {
+            fetch(CHALLENGE_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -383,7 +445,7 @@
                 signingLoading.classList.remove('hidden');
                 errorMessage.classList.add('hidden');
                 
-                fetch('/auth/verify/', {
+                fetch(VERIFY_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -391,30 +453,25 @@
                     },
                     body: JSON.stringify({
                         verifiable_presentation: vpData,
-                        challenge: currentChallenge
+                        challenge: currentChallenge,
+                        next_url: currentNextUrl
                     })
                 })
                 .then(response => response.json())
                 .then(data => {
                     signingLoading.classList.add('hidden');
                     
-                    if (data.success && data.user) {
-                        // Update UI for success
+                    if (data.success && data.redirect_url) {
                         step2Indicator.classList.remove('active');
                         step3Indicator.classList.add('active');
                         step2Content.classList.add('hidden');
                         step3Content.classList.remove('hidden');
                         
-                        // Redirect after short delay
                         setTimeout(() => {
-                            if (currentNextUrl && currentNextUrl !== '/') {
-                                window.location.href = currentNextUrl;
-                            } else {
-                                window.location.href = '/admin/';
-                            }
+                            window.location.href = data.redirect_url;
                         }, 1500);
                     } else {
-                        showError(data.error || 'Verification failed');
+                        console.error('Login failed:', data.error);
                         simulateSigningBtn.style.display = 'block';
                     }
                 })

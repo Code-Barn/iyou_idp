@@ -4,8 +4,8 @@ Integration tests for the DID challenge-response authentication flow.
 import json
 import base58
 from django.test import TestCase, Client
-from django.core.cache import cache
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from django.urls import reverse
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from cryptography.hazmat.primitives import serialization
 
 
@@ -15,11 +15,6 @@ def _make_did(pub_bytes: bytes) -> str:
 
 
 def _sign(obj: dict, private_key, exclude: set = None) -> dict:
-    """Return a copy of *obj* with an Ed25519 proof attached.
-
-    The proof is computed over the JSON serialisation of *obj* (without
-    the keys listed in *exclude*, defaulting to ``{"proof"}``).
-    """
     exclude = exclude or {"proof"}
     payload = {k: v for k, v in obj.items() if k not in exclude}
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -64,15 +59,7 @@ class ChallengeResponseCycleTest(TestCase):
         )
         self.did = _make_did(pub_bytes)
 
-    def test_full_cycle_creates_session(self):
-        # 1. Request a challenge
-        resp = self.client.post("/auth/challenge/", content_type="application/json")
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertIn("challenge", data)
-        challenge = data["challenge"]
-
-        # 2. Build a signed VC and wrap it in a signed VP
+    def _signed_vp(self, challenge: str) -> dict:
         vc = _sign_vc(
             {
                 "@context": ["https://www.w3.org/2018/credentials/v1"],
@@ -83,8 +70,7 @@ class ChallengeResponseCycleTest(TestCase):
             },
             self.private_key,
         )
-
-        vp = _sign(
+        return _sign(
             {
                 "@context": ["https://www.w3.org/2018/credentials/v1"],
                 "type": ["VerifiablePresentation"],
@@ -94,9 +80,20 @@ class ChallengeResponseCycleTest(TestCase):
             self.private_key,
         )
 
+    def test_full_cycle_creates_session(self):
+        # 1. Request a challenge
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("challenge", data)
+        challenge = data["challenge"]
+
+        # 2. Build a signed VP
+        vp = self._signed_vp(challenge)
+
         # 3. Submit VP for verification
         resp = self.client.post(
-            "/auth/verify/",
+            reverse("auth_bridge:verify_signature"),
             data=json.dumps({
                 "verifiable_presentation": vp,
                 "challenge": challenge,
@@ -112,25 +109,109 @@ class ChallengeResponseCycleTest(TestCase):
         self.assertTrue(body["user"]["is_authenticated"])
         self.assertIsNotNone(body["user"]["session_id"])
 
+    def test_next_url_roundtrip(self):
+        """Verify that next_url sent in the POST body is echoed back as redirect_url."""
+        # 1. Challenge
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        challenge = resp.json()["challenge"]
+
+        # 2. Build VP
+        vp = self._signed_vp(challenge)
+
+        # 3. Submit with next_url
+        expected_next = "/openid/authorize/?client_id=test&response_type=code"
+        resp = self.client.post(
+            reverse("auth_bridge:verify_signature"),
+            data=json.dumps({
+                "verifiable_presentation": vp,
+                "challenge": challenge,
+                "next_url": expected_next,
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["redirect_url"], expected_next)
+
     def test_missing_fields_returns_400(self):
         resp = self.client.post(
-            "/auth/verify/",
+            reverse("auth_bridge:verify_signature"),
             data=json.dumps({}),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 400)
 
     def test_expired_challenge_returns_404(self):
+        vp = self._signed_vp("nonexistent-uuid")
+        resp = self.client.post(
+            reverse("auth_bridge:verify_signature"),
+            data=json.dumps({
+                "verifiable_presentation": vp,
+                "challenge": "nonexistent-uuid",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
+class OIDCAuthorizeFlowTest(TestCase):
+    """End-to-end: DID login → OIDC authorize → code exchange."""
+
+    def setUp(self):
+        self.client = Client()
+        self.private_key = ed25519.Ed25519PrivateKey.generate()
+        pub_bytes = self.private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+
+        from oidc_provider.models import RSAKey as OIDCRSAKey
+        from oidc_provider.models import Client as OIDCClient
+
+        # Create RSA key for token signing
+        rsa_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = rsa_priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        OIDCRSAKey.objects.create(key=pem.decode())
+
+        # Create an OIDC client
+        from oidc_provider.models import ResponseType
+        self.client_obj = OIDCClient.objects.create(
+            name="Test Client",
+            client_type="confidential",
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+            jwt_alg="RS256",
+            _redirect_uris="http://testclient/callback/\n",
+            _scope="openid profile",
+            require_consent=False,
+            reuse_consent=True,
+        )
+        self.client_obj.response_types.add(ResponseType.objects.get(value="code"))
+
+        # Create a user via DID auth (simulate the verify flow)
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        self.challenge = resp.json()["challenge"]
+
         vc = _sign_vc(
             {
                 "@context": ["https://www.w3.org/2018/credentials/v1"],
                 "type": ["VerifiableCredential"],
-                "issuer": self.did,
+                "issuer": f"did:key:z{base58.b58encode(bytes([0xed, 0x01]) + pub_bytes).decode('ascii')}",
                 "issuanceDate": "2025-01-01T00:00:00Z",
-                "credentialSubject": {"id": self.did},
+                "credentialSubject": {
+                    "id": f"did:key:z{base58.b58encode(bytes([0xed, 0x01]) + pub_bytes).decode('ascii')}",
+                    "name": "Test",
+                },
             },
             self.private_key,
         )
+        self.did = vc["credentialSubject"]["id"]
         vp = _sign(
             {
                 "@context": ["https://www.w3.org/2018/credentials/v1"],
@@ -140,12 +221,35 @@ class ChallengeResponseCycleTest(TestCase):
             },
             self.private_key,
         )
+
         resp = self.client.post(
-            "/auth/verify/",
+            reverse("auth_bridge:verify_signature"),
             data=json.dumps({
                 "verifiable_presentation": vp,
-                "challenge": "nonexistent-uuid",
+                "challenge": self.challenge,
+                "next_url": "/openid/authorize/",
             }),
             content_type="application/json",
         )
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_authorize_returns_code_for_authenticated_user(self):
+        """OIDC authorize should redirect with code when user is logged in."""
+        resp = self.client.get(
+            reverse("oidc_provider:authorize"),
+            {
+                "client_id": self.client_obj.client_id,
+                "response_type": "code",
+                "redirect_uri": "http://testclient/callback/",
+                "scope": "openid profile",
+                "state": "test-state-123",
+                "nonce": "test-nonce-456",
+            },
+        )
+
+        # Should redirect to the client's callback URI with a code
+        self.assertEqual(resp.status_code, 302)
+        location = resp["Location"]
+        self.assertTrue(location.startswith("http://testclient/callback/"))
+        self.assertIn("code=", location)
+        self.assertIn("state=test-state-123", location)
