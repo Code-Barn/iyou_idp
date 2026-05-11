@@ -219,13 +219,12 @@
             tryConnectIYouHome();
         }
 
-        // Parallel Race handshake with iYou Home
+        // Pre-flight probe + WebSocket handshake with iYou Home
         function tryConnectIYouHome() {
             const iyouBtn = document.getElementById('iyouHomeBtn');
             const manualSection = document.getElementById('manualSection');
             const cancelBtn = document.getElementById('cancelIyouBtn');
 
-            // Show "Linking..." immediately — don't wait for socket
             iyouBtn.textContent = '🔗 Linking...';
             iyouBtn.disabled = true;
             iyouBtn.classList.remove('hidden');
@@ -235,74 +234,92 @@
             let cancelled = false;
             let socket;
 
-            // After 0.5s show "Cancel & Use Manual Paste"
-            const cancelTimer = setTimeout(() => {
-                cancelBtn.classList.remove('hidden');
-            }, 500);
-
             cancelBtn.onclick = () => {
                 cancelled = true;
-                if (socket) socket.close();
-                clearTimeout(forceFallback);
+                if (socket) { socket.close(); socket = null; }
                 cancelBtn.classList.add('hidden');
                 iyouBtn.classList.add('hidden');
                 showManualFallback();
             };
 
-            try {
-                socket = new WebSocket('ws://localhost:9001');
-            } catch (err) {
-                clearTimeout(cancelTimer);
-                iyouBtn.classList.add('hidden');
-                cancelBtn.classList.add('hidden');
-                showManualFallback(
-                    err.name === 'SecurityError'
-                        ? 'Local link blocked by browser security. Please paste manually.'
-                        : 'Could not connect to iYou Home. Please paste your signature manually.'
-                );
-                return;
-            }
+            const cancelTimer = setTimeout(() => {
+                if (!cancelled) cancelBtn.classList.remove('hidden');
+            }, 500);
 
-            // Force-fallback at 3s — explicit abort
-            const forceFallback = setTimeout(() => {
-                if (socket.readyState !== WebSocket.OPEN) {
-                    socket.close();
+            // Pre-flight probe: does anything listen on port 9001?
+            // Only proceed to new WebSocket() if the server is reachable.
+            fetch('http://localhost:9001', {
+                method: 'OPTIONS',
+                signal: AbortSignal.timeout(500),
+            })
+            .then(() => {
+                if (cancelled) return;
+                clearTimeout(cancelTimer);
+                startWebSocket();
+            })
+            .catch(() => {
+                clearTimeout(cancelTimer);
+                if (cancelled) return;
+                cancelBtn.classList.add('hidden');
+                iyouBtn.classList.add('hidden');
+                showManualFallback(
+                    'Could not connect to iYou Home. Please paste your signature manually.'
+                );
+            });
+
+            function startWebSocket() {
+                try {
+                    socket = new WebSocket('ws://localhost:9001');
+                } catch (err) {
                     cancelBtn.classList.add('hidden');
                     iyouBtn.classList.add('hidden');
                     showManualFallback(
-                        'Could not connect to iYou Home. Please paste your signature manually.'
+                        err.name === 'SecurityError'
+                            ? 'Local link blocked by browser security. Please paste manually.'
+                            : 'Could not connect to iYou Home. Please paste your signature manually.'
                     );
+                    return;
                 }
-            }, 3000);
 
-            socket.addEventListener('open', () => {
-                if (cancelled) { socket.close(); return; }
-                clearTimeout(cancelTimer);
-                clearTimeout(forceFallback);
-                cancelBtn.classList.add('hidden');
-                iyouSocket = socket;
-                onIYouHomeConnected();
-            });
+                const forceFallback = setTimeout(() => {
+                    if (cancelled) return;
+                    if (socket.readyState !== WebSocket.OPEN) {
+                        socket.close();
+                        cancelBtn.classList.add('hidden');
+                        iyouBtn.classList.add('hidden');
+                        showManualFallback(
+                            'Could not connect to iYou Home. Please paste your signature manually.'
+                        );
+                    }
+                }, 3000);
 
-            socket.addEventListener('error', () => {
-                if (cancelled) return;
-                clearTimeout(cancelTimer);
-                clearTimeout(forceFallback);
-                cancelBtn.classList.add('hidden');
-                iyouBtn.classList.add('hidden');
-                showManualFallback();
-            });
+                socket.addEventListener('open', () => {
+                    if (cancelled) { socket.close(); return; }
+                    clearTimeout(forceFallback);
+                    cancelBtn.classList.add('hidden');
+                    iyouSocket = socket;
+                    onIYouHomeConnected();
+                });
 
-            socket.addEventListener('close', () => {
-                if (cancelled) return;
-                if (iyouSocket === socket) {
-                    if (window._signTimeout) clearTimeout(window._signTimeout);
-                    showManualFallback(
-                        'Connection to iYou Home was lost. Please paste your signature manually.'
-                    );
-                }
-                iyouSocket = null;
-            });
+                socket.addEventListener('error', () => {
+                    if (cancelled) return;
+                    clearTimeout(forceFallback);
+                    cancelBtn.classList.add('hidden');
+                    iyouBtn.classList.add('hidden');
+                    showManualFallback();
+                });
+
+                socket.addEventListener('close', () => {
+                    if (cancelled) return;
+                    if (iyouSocket === socket) {
+                        if (window._signTimeout) clearTimeout(window._signTimeout);
+                        showManualFallback(
+                            'Connection to iYou Home was lost. Please paste your signature manually.'
+                        );
+                    }
+                    iyouSocket = null;
+                });
+            }
         }
 
         function showManualFallback(message) {
