@@ -253,3 +253,59 @@ class OIDCAuthorizeFlowTest(TestCase):
         self.assertTrue(location.startswith("http://testclient/callback/"))
         self.assertIn("code=", location)
         self.assertIn("state=test-state-123", location)
+
+    def test_verify_redirects_directly_to_client(self):
+        """Verify_signature returns client callback URI when next_url has OIDC params."""
+        # Fresh challenge — setUp already consumed self.challenge
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        challenge = resp.json()["challenge"]
+
+        # Build a VP signed with the setUp key
+        vc = _sign_vc(
+            {
+                "@context": ["https://www.w3.org/2018/credentials/v1"],
+                "type": ["VerifiableCredential"],
+                "issuer": self.did,
+                "issuanceDate": "2025-01-01T00:00:00Z",
+                "credentialSubject": {"id": self.did, "name": "Test"},
+            },
+            self.private_key,
+        )
+        vp = _sign(
+            {
+                "@context": ["https://www.w3.org/2018/credentials/v1"],
+                "type": ["VerifiablePresentation"],
+                "holder": self.did,
+                "verifiableCredential": [vc],
+            },
+            self.private_key,
+        )
+
+        resp = self.client.post(
+            reverse("auth_bridge:verify_signature"),
+            data=json.dumps({
+                "verifiable_presentation": vp,
+                "challenge": challenge,
+                "next_url": (
+                    f"/openid/authorize/"
+                    f"?client_id={self.client_obj.client_id}"
+                    f"&response_type=code"
+                    f"&redirect_uri=http://testclient/callback/"
+                    f"&scope=openid+profile"
+                    f"&state=test-state-789"
+                ),
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertTrue(body["success"])
+        # Should point directly to client callback, NOT /openid/authorize/
+        redirect_url = body["redirect_url"]
+        self.assertTrue(
+            redirect_url.startswith("http://testclient/callback/"),
+            f"Expected client callback URL, got: {redirect_url}",
+        )
+        self.assertIn("code=", redirect_url)
+        self.assertIn("state=test-state-789", redirect_url)

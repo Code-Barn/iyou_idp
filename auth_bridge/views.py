@@ -9,10 +9,79 @@ from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from django.contrib.auth import login
 from django.shortcuts import render
+from django.utils import timezone
+from datetime import timedelta
+from urllib.parse import urlparse, parse_qs
 
 from .models import User
 import uuid
 import json
+from oidc_provider.models import Client, UserConsent
+from oidc_provider.lib.utils.token import create_code
+
+
+def _build_oidc_redirect(next_url, user):
+    """
+    If *next_url* holds an OIDC ``/openid/authorize/`` request, create an
+    authorization code and return a redirect URI that goes straight to the
+    client's ``redirect_uri`` with ``?code=…&state=…`` — skipping the consent
+    page entirely.
+
+    Returns *None* when *next_url* is not an OIDC authorize request, so the
+    caller can fall back to the plain *next_url* value.
+    """
+    parsed = urlparse(next_url)
+    params = parse_qs(parsed.query)
+
+    client_id = params.get('client_id', [None])[0]
+    redirect_uri = params.get('redirect_uri', [None])[0]
+    response_type = params.get('response_type', [None])[0]
+
+    if not (client_id and redirect_uri and response_type):
+        return None
+    if 'code' not in response_type:
+        return None
+
+    try:
+        client = Client.objects.get(client_id=client_id)
+    except Client.DoesNotExist:
+        return None
+
+    if redirect_uri not in client.redirect_uris:
+        return None
+
+    scope_list = ' '.join(params.get('scope', ['openid'])).split()
+    nonce = params.get('nonce', [''])[0]
+    code_challenge = params.get('code_challenge', [None])[0]
+    code_challenge_method = params.get('code_challenge_method', [None])[0]
+    state = params.get('state', [''])[0]
+
+    code_obj = create_code(
+        user=user,
+        client=client,
+        scope=scope_list,
+        nonce=nonce,
+        is_authentication='openid' in scope_list,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+    )
+    code_obj.save()
+
+    # Persist consent so subsequent OIDC requests auto-approve
+    date_given = timezone.now()
+    expires_at = date_given + timedelta(days=90)
+    uc, created = UserConsent.objects.get_or_create(
+        user=user,
+        client=client,
+        defaults={'expires_at': expires_at, 'date_given': date_given},
+    )
+    uc.scope = scope_list
+    if not created:
+        uc.expires_at = expires_at
+        uc.date_given = date_given
+    uc.save()
+
+    return f"{redirect_uri}?code={code_obj.code}&state={state}"
 
 
 @require_POST
@@ -64,9 +133,14 @@ def verify_signature(request):
         user.backend = 'django.contrib.auth.backends.ModelBackend'
         login(request, user)
 
+        # Bypass the OIDC consent page: generate an auth code right here
+        redirect_url = _build_oidc_redirect(next_url, user)
+        if redirect_url is None:
+            redirect_url = next_url
+
         response_data = {
             'success': True,
-            'redirect_url': next_url,
+            'redirect_url': redirect_url,
             'user': {
                 'did': user.username,
                 'is_new_user': created,
