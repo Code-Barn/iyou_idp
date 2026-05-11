@@ -16,6 +16,7 @@ from urllib.parse import urlparse, parse_qs
 from .models import User
 import uuid
 import json
+import sys
 from oidc_provider.models import Client, UserConsent
 from oidc_provider.lib.utils.token import create_code
 
@@ -106,7 +107,35 @@ def verify_signature(request):
                 'error': 'Challenge expired'
             }, status=400)
 
-        from iyou_idp._crypto import verify_vp
+        # --- Rust crypto bridge import with fallback paths ---
+        verify_vp = None
+        _import_errors = []
+        try:
+            from iyou_idp._crypto import verify_vp
+        except ImportError as e:
+            _import_errors.append(f"iyou_idp._crypto: {e}")
+            try:
+                import _crypto  # type: ignore[import-not-found]
+                verify_vp = _crypto.verify_vp
+            except ImportError as e:
+                _import_errors.append(f"_crypto: {e}")
+                try:
+                    from ..src.iyou_idp import _crypto  # type: ignore[import-not-found]
+                    verify_vp = _crypto.verify_vp
+                except ImportError as e:
+                    _import_errors.append(f"..src.iyou_idp._crypto: {e}")
+
+        if verify_vp is None:
+            print("=" * 60, flush=True)
+            print("RUST CRYPTO BRIDGE IMPORT FAILED", flush=True)
+            print("sys.path:", sys.path, flush=True)
+            for err in _import_errors:
+                print("  ", err, flush=True)
+            print("=" * 60, flush=True)
+            return JsonResponse({
+                'error': "Rust Crypto Bridge not found. Please run 'maturin develop'."
+            }, status=500)
+
         result_json = verify_vp(json.dumps(vp_json))
         result = json.loads(result_json)
 
