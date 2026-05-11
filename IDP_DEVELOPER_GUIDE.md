@@ -281,6 +281,36 @@ def custom_id_token_claims(user, scope, claims, id_token=None, token=None, **kwa
     return claims_dict
 ```
 
+## Authentication Flow (VerifySignatureView)
+
+### Challenge-Response Cycle
+
+The `VerifySignatureView` (`auth_bridge/views.py:51`) implements a standard challenge-response handshake:
+
+1. **Client POSTs to `/auth/challenge/`** — A UUID is generated, stored in Redis with a 60-second TTL, and returned.
+2. **Client builds a Verifiable Presentation (VP)** — Signs the challenge (or a VP payload) with their Ed25519 private key.
+3. **Client POSTs to `/auth/verify/`** with `{"verifiable_presentation": {...}, "challenge": "uuid"}`:
+   - Redis is checked for the challenge (returns 404 if missing/expired).
+   - The VP JSON is forwarded to the Rust PyO3 bridge (`verify_vp`) for cryptographic verification.
+   - If valid, the challenge is deleted from Redis and a Django user is created/fetched by DID (stored in `username`).
+   - A Django session is started and `{"success": true, "user": {"did": ..., "session_id": ...}}` is returned.
+
+### Satellite-App Redirect Safety
+
+The login page at `/auth/login/` accepts a `?next=<redirect_url>` parameter that carries the OIDC callback URL (including query params like `?code=...&client_id=...`).
+
+**Problem:** Django's template engine HTML-escapes `{{ next_url }}`, turning `&` into `&amp;`, which would break the OIDC redirect URL in the JavaScript `window.location.href` assignment.
+
+**Fix:** `mark_safe(next_url)` is applied in `LoginPageView` (`auth_bridge/views.py:154`) so that the raw URL — including `&` separators — is rendered unescaped into the JavaScript string context.
+
+### iYou Home Desktop Companion
+
+When the login page loads, JavaScript at `auth_bridge/templates/auth_bridge/login.html:214` attempts a WebSocket connection to `ws://127.0.0.1:9001`:
+
+- **Connection succeeds:** The manual VP paste UI is hidden and a high-visibility "Sign with iYou Home" button appears.
+- **Button clicked:** The challenge UUID is sent over the WebSocket. The desktop app responds with a signed VP, which is automatically submitted to `/auth/verify/`.
+- **Connection fails (timeout after 1.5s):** The manual paste UI remains available as a fallback.
+
 ## API Endpoints
 
 ### Authentication Endpoints
@@ -330,12 +360,23 @@ python manage.py test
 # Test specific app
 python manage.py test auth_bridge
 
+# Run the full challenge-response cycle test
+python manage.py test auth_bridge.tests.ChallengeResponseCycleTest
+
 # Rust tests (submodule)
 (cd crates/rust-did && cargo test)
 
 # Manual API testing
 curl -X POST http://localhost:8000/auth/challenge/
 ```
+
+The `ChallengeResponseCycleTest` in `auth_bridge/tests.py` exercises the complete flow:
+1. Requests a challenge from Redis via `/auth/challenge/`
+2. Builds a real Ed25519-signed Verifiable Presentation
+3. Submits it to `/auth/verify/`
+4. Asserts a Django session is created with the DID as the username
+
+The test also covers error cases: missing fields (400) and expired/missing challenges (404).
 
 ### Debugging
 
