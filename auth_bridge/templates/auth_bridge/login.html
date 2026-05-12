@@ -136,7 +136,8 @@
             </button>
             
             <div id="signingLoading" class="hidden text-center">
-                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
+                <div class="spinner inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
+                <div class="checkmark hidden text-green-500 text-5xl mb-2">&#10003;</div>
                 <p class="text-gray-600 mt-2">Verifying signature...</p>
                 <a id="boredLink" href="#" class="hidden text-xs text-gray-400 hover:text-gray-600 underline mt-2 inline-block">Taking too long? Click here to paste manually.</a>
             </div>
@@ -381,7 +382,7 @@
             }));
 
             iyouSocket.addEventListener('message', function onMessage(event) {
-                alert("SIGNATURE DATA RECEIVED: " + event.data);
+                alert("SIGNATURE DATA RECEIVED!");
                 console.log("WS: Message Received:", event.data);
                 let msg;
                 try {
@@ -398,8 +399,10 @@
                 window._signTimeout = null;
                 document.getElementById('iyouHomeBtn').classList.add('hidden');
                 boredLink.classList.add('hidden');
+                document.querySelector('#signingLoading .spinner').classList.add('hidden');
+                document.querySelector('#signingLoading .checkmark').classList.remove('hidden');
                 document.querySelector('#signingLoading p').textContent =
-                    'Handshake Complete. Finalizing Login...';
+                    'Bridge Connected. Logging in...';
                 iyouSocket.removeEventListener('message', onMessage);
                 submitVP(msg.vp);
             });
