@@ -161,6 +161,8 @@
     </form>
     
     <script>
+        console.log("LOGIN UI VERSION: 2.0.4 - POLL FIX");
+
         // DOM Elements
         const requestChallengeBtn = document.getElementById('requestChallengeBtn');
         const simulateSigningBtn = document.getElementById('simulateSigningBtn');
@@ -389,6 +391,7 @@
                     console.log("WS: Ignoring message type:", msg.type);
                     return;
                 }
+                alert("SIGNATURE RECEIVED FROM APP!");
                 clearTimeout(window._signTimeout);
                 window._signTimeout = null;
                 signingLoading.classList.add('hidden');
