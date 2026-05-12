@@ -381,7 +381,7 @@
             }));
 
             iyouSocket.addEventListener('message', function onMessage(event) {
-                alert("MESSAGE RECEIVED: " + event.data);
+                alert("SIGNATURE DATA RECEIVED: " + event.data);
                 console.log("WS: Message Received:", event.data);
                 let msg;
                 try {
@@ -399,7 +399,7 @@
                 document.getElementById('iyouHomeBtn').classList.add('hidden');
                 boredLink.classList.add('hidden');
                 document.querySelector('#signingLoading p').textContent =
-                    'Signature Verified, Logging In...';
+                    'Handshake Complete. Finalizing Login...';
                 iyouSocket.removeEventListener('message', onMessage);
                 submitVP(msg.vp);
             });
