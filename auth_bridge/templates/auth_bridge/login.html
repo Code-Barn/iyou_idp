@@ -397,7 +397,6 @@
             iyouSocket.send(JSON.stringify(msg));
 
             iyouSocket.addEventListener('message', function onMessage(event) {
-                alert("SIGNATURE DATA RECEIVED!");
                 console.log("WS: Message Received:", event.data);
                 let msg;
                 try {
@@ -419,7 +418,7 @@
                 document.querySelector('#signingLoading .spinner').classList.add('hidden');
                 document.querySelector('#signingLoading .checkmark').classList.remove('hidden');
                 document.querySelector('#signingLoading p').textContent =
-                    'Bridge Connected. Logging in...';
+                    'Identity Verified. Entering WUN...';
                 iyouSocket.removeEventListener('message', onMessage);
                 submitVP(msg.vp);
             });
