@@ -381,6 +381,7 @@
             }));
 
             iyouSocket.addEventListener('message', function onMessage(event) {
+                alert("MESSAGE RECEIVED: " + event.data);
                 console.log("WS: Message Received:", event.data);
                 let msg;
                 try {
@@ -393,12 +394,12 @@
                     console.log("WS: Ignoring message type:", msg.type);
                     return;
                 }
-                alert("SIGNATURE RECEIVED FROM APP!");
                 clearTimeout(window._signTimeout);
                 window._signTimeout = null;
-                signingLoading.classList.add('hidden');
                 document.getElementById('iyouHomeBtn').classList.add('hidden');
                 boredLink.classList.add('hidden');
+                document.querySelector('#signingLoading p').textContent =
+                    'Signature Verified, Logging In...';
                 iyouSocket.removeEventListener('message', onMessage);
                 submitVP(msg.vp);
             });
@@ -429,6 +430,7 @@
             })
             .then(response => response.json())
             .then(data => {
+                console.log("VERIFY RESPONSE FULL:", JSON.stringify(data));
                 signingLoading.classList.add('hidden');
 
                 if (data.success && data.redirect_url) {

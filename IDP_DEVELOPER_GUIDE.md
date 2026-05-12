@@ -1,535 +1,476 @@
-# Developer Guide: Sovereign Identity Provider (IdP)
+# Developer Guide: Sovereign Identity Provider (IdP) [L1-536]
 
-## Overview
+## Overview [L3-7]
 
-This guide provides comprehensive documentation for developers working on the Sovereign Identity Provider (IdP) project. The IdP acts as a bridge between Decentralized Identifiers (DIDs) and OpenID Connect (OIDC) protocols.
+The iYou IdP is a Django-based OIDC provider that authenticates users via
+W3C Decentralised Identifiers (DIDs) instead of passwords.  A Rust extension
+(`_crypto`) handles Ed25519 signature verification; the browser talks to a
+desktop companion app (`iyou-home`) over a local WebSocket for native signing.
 
-## Architecture
+## Architecture [L7-20]
 
-```mermaid
-graph TD
-    A[User Device] -->|DID Auth| B[IdP Service]
-    B -->|OIDC| C[App A]
-    B -->|OIDC| D[App B]
-    B -->|OIDC| E[App C]
-    B -->|Rust Crypto| F[DID Resolution]
-    B -->|Redis| G[Challenge Storage]
-    B -->|SQLite/PostgreSQL| H[User Profiles]
+```
+  Browser (login.html)          Django IdP (port 8001)         iYou Home (port 9001)
+       │                              │                              │
+       ├── GET /auth/login/ ─────────►│                              │
+       │◄── login page (HTML+JS) ─────┤                              │
+       │                              │                              │
+       │  ── pre-flight probe ────────┼────── fetch OPTIONS ────────►│
+       │◄────────── 200/404 ──────────┼──────────────────────────────┤
+       │                              │                              │
+       │  ── WebSocket handshake ─────┼──────── ws://local ─────────►│
+       │◄────────── connected ────────┼──────────────────────────────┤
+       │                              │                              │
+       │  POST /auth/challenge/ ─────►│                              │
+       │◄──── {challenge: uuid} ──────┤                              │
+       │                              │                              │
+       │  ── {type:sign,challenge} ───┼─────────────────────────────►│
+       │◄── {type:signature,vp:...} ──┼──────────────────────────────┤
+       │                              │                              │
+       │  POST /auth/verify/ ────────►│                              │
+       │◄── {redirect_url:...} ───────┤                              │
+       │                              │                              │
+       │  window.location = redirect  │                              │
+       └──────────────────────────────┘                              ┘
 ```
 
-## Project Structure
+## Project Structure [L20-67]
 
-```bash
-.
-├── config/                  # Django project configuration
+```
+iyou_idp/
+├── auth_bridge/                 # Django app — auth logic
+│   ├── management/commands/
+│   │   └── createsuperuser_did.py
+│   ├── templates/auth_bridge/
+│   │   └── login.html           # Full-page JS handshake UI
 │   ├── __init__.py
-│   ├── settings.py         # Main Django settings
-│   ├── urls.py             # URL routing
-│   └── wsgi.py             # WSGI entrypoint
-├── auth_bridge/             # Core authentication bridge
+│   ├── admin.py
+│   ├── admin_views.py           # DID-based admin login views
+│   ├── backend.py               # DIDAuthBackend
+│   ├── models.py                # User (AbstractBaseUser)
+│   ├── oidc.py                  # OIDC userinfo/id-token hooks
+│   ├── tests.py                 # 6 integration tests
+│   ├── urls.py
+│   └── views.py                 # verify_signature, ChallengeView, LoginPageView
+├── config/
 │   ├── __init__.py
-│   ├── admin.py            # Admin registration (empty)
-│   ├── admin_views.py      # Custom admin DID auth views
-│   ├── apps.py             # Django AppConfig
-│   ├── backend.py          # DID auth backend
-│   ├── crypto.py           # Rust bridge health check
-│   ├── models.py           # User model and UserManager
-│   ├── oidc.py             # Custom OIDC claims
-│   ├── urls.py             # App-specific URLs
-│   ├── views.py            # Challenge/verify/login views
-│   ├── migrations/
-│   │   └── 0001_initial.py # Initial User model migration
-│   └── templates/
-│       ├── auth_bridge/
-│       │   └── login.html  # DID login page (Tailwind CSS)
-│       └── admin/
-│           ├── did_login.html      # Admin DID login template
-│           └── did_dashboard.html  # Admin DID dashboard
-├── src/                     # Rust-Python bridge (PyO3)
-│   ├── lib.rs              # PyO3 _crypto module
+│   ├── settings.py              # sys.path injection for Mac bridge
+│   ├── urls.py
+│   ├── wsgi.py
+│   └── asgi.py
+├── src/
 │   └── iyou_idp/
-│       ├── __init__.py     # Exports hello_from_bin
-│       └── _core.pyi       # Type stubs
-├── crates/rust-did/         # Rust DID library (submodule)
-│   ├── Cargo.toml          # Crate config
-│   └── src/
-│       ├── lib.rs          # C FFI: generate DID, issue/verify VC/VP, resolve DID
-│       └── resolver.rs     # DID resolvers: did:key, did:web, did:ipfs
-├── Cargo.toml              # Root Rust crate (PyO3 bridge)
-├── Cargo.lock              # Root Rust lockfile
-├── pyproject.toml          # Python/maturin config
-├── uv.lock                 # Python dependency lockfile
-├── .gitmodules             # Git submodule config (crates/rust-did)
-├── manage.py               # Django management CLI
-└── DEVELOPER_GUIDE.md      # This file
+│       ├── __init__.py
+│       ├── _crypto.abi3.so      # Compiled Rust extension
+│       ├── _core.abi3.so
+│       └── _core.pyi
+├── crates/
+│   └── rust-did/                # Rust DID verification library
+├── target/                      # Rust build artifacts
+├── Cargo.toml                   # Rust crate config
+├── pyproject.toml               # Python project + maturin config
+├── .env.example
+└── README.md
 ```
 
-## Setup & Installation
+## Setup & Installation [L67-108]
 
-### Prerequisites
+### Prerequisites [L69-78]
 
 - Python 3.10+
-- Rust 1.60+
-- Redis 6.0+
-- SQLite (dev) or PostgreSQL 13+ (production)
-- Django 5.2+
-- Maturin (for Rust-Python binding)
+- Rust toolchain (`rustup`)
+- Redis 6+ (running on `127.0.0.1:6379`)
+- `uv` (Python package manager) or `pip`
 
-### Installation
+### Installation [L78-108]
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourorg/iyou-idp.git
-cd iyou-idp
+git clone https://github.com/your-org/iyou_idp.git
+cd iyou_idp
 
-# Initialize submodules
-git submodule update --init --recursive
-
-# Set up virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install Python dependencies
+# Create virtualenv and install Python deps
 uv sync
 
-# Build Rust extension
-maturin develop
+# Build the Rust crypto bridge
+maturin develop --manifest-path Cargo.toml
 
-# Set up database
-python manage.py migrate
+# Run migrations
+uv run python manage.py migrate
 
-# Start Redis
-redis-server
+# Create a superuser for admin access
+uv run python manage.py createsuperuser_did
 
-# Run development server
-python manage.py runserver
+# Start the dev server
+uv run python manage.py runserver 0.0.0.0:8001
 ```
 
-## Core Components
+**Mac bridge pathing:**  `config/settings.py` injects `src/` into `sys.path`:
+```python
+sys.path.append(os.path.join(BASE_DIR, 'src'))
+```
+If you see `"Rust Crypto Bridge not found"` at runtime, the `.so` wasn't
+built or `src/` isn't reachable.  Re-run `maturin develop` or copy
+`_crypto.abi3.so` from `.venv/lib/python3.*/site-packages/iyou_idp/` into
+`src/iyou_idp/`.
 
-### 1. User Model
+## Core Components [L108-284]
 
-The custom User model uses DID as the primary identifier, with a companion `UserManager`:
+### 1. User Model [L110-161]
+
+**`class UserManager`** [L115-126]
 
 ```python
-class UserManager(BaseUserManager):
-    def create_user(self, did: str, **extra_fields):
-        if not did:
-            raise ValueError('The DID must be set')
-        user = self.model(username=did, **extra_fields)
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, did: str, **extra_fields):
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        return self.create_user(did, **extra_fields)
-
-
-class User(AbstractBaseUser):
-    id = models.AutoField(primary_key=True)
-    username = models.CharField(
-        max_length=255, unique=True,
-        help_text='DID string', default='did:placeholder'
-    )
-    is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
-    is_superuser = models.BooleanField(default=False)
-    date_joined = models.DateTimeField(default=timezone.now)
-
-    USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = []
-
-    objects = UserManager()
-
-    def __str__(self):
-        return self.username
-
-    def has_perm(self, perm, obj=None):
-        return self.is_superuser
-
-    def has_module_perms(self, app_label):
-        return self.is_superuser
-
-    class Meta:
-        indexes = [
-            models.Index(fields=['username']),
-            models.Index(fields=['is_active']),
-        ]
+def create_user(self, did):       # Creates a user with DID as username
+def create_superuser(self, did):  # Creates staff+superuser
 ```
 
-### 2. Challenge-Response Flow
+**`class User`** [L129-158] — extends `AbstractBaseUser`:
+- `username` — stores the DID string (e.g. `did:key:z6Mk...`)
+- `is_active`, `is_staff`, `is_superuser`, `date_joined`
+- `USERNAME_FIELD = 'username'`
+- Indexed on `(username, is_active)` for fast DID lookups
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant IdP
-    participant Redis
-    participant Rust
-
-    User->>IdP: Request login (App A)
-    IdP->>Redis: Store challenge (60s TTL)
-    Redis-->>IdP: challenge_uuid
-    IdP-->>User: Return challenge
-    User->>User: Sign challenge with DID private key
-    User->>IdP: Submit Verifiable Presentation
-    IdP->>Redis: Retrieve challenge
-    Redis-->>IdP: challenge_data
-    IdP->>Rust: verify_vp(vp_json, challenge)
-    Rust->>Rust: Parse VP, verify proof
-    Rust-->>IdP: {"valid": true, "did": "..."}
-    IdP->>IdP: Get/Create User
-    IdP->>IdP: Start Django session
-    IdP-->>User: {"success": true, "session_id": "..."}
-    User->>AppA: Redirect with session
+```python
+def __str__(self): return self.username
+def has_perm(self, perm, obj=None): return self.is_superuser
+def has_module_perms(self, app_label): return self.is_superuser
 ```
 
-### 3. Rust Bridge
+### 2. Challenge-Response Flow [L161-187]
 
-The PyO3 bridge (`src/lib.rs`) exposes three functions to Python:
-
-```rust
-#[pyfunction]
-fn hello_from_bin() -> String  // Bridge connectivity check
-
-#[pyfunction]
-fn verify_signature(did: String, challenge: String, signature: String) -> bool
-    // Basic parameter non-empty check (mock)
-
-#[pyfunction]
-fn verify_vp(vp_json: String, challenge: String) -> PyResult<String>
-    // Parse VP, check for verifiableCredential & proof fields
-    // Extract DID from holder or proof.verificationMethod
-    // Returns {"valid": true, "did": "..."} (mock verification)
+```
+POST /auth/challenge/  →  {challenge: "<uuid>", expires_in: 300}
+POST /auth/verify/     →  {success: true, redirect_url: "...", user: {...}}
 ```
 
-The bridge **currently uses mock verification**. Real ed25519 cryptographic verification
-exists in the `crates/rust-did` submodule (C FFI) but is not yet wired into the PyO3 bridge.
+The challenge is stored in Redis with a **300-second (5-minute) TTL** so
+manual copy-paste doesn't expire.  A cache miss returns HTTP 400 with
+`"Challenge expired"` (not 404 — this is a client logic error, not a missing
+resource).
 
-### 4. Creating a Superuser
+The `verify_signature` view:
+1. Parses the JSON body (`verifiable_presentation`, `challenge`, `next_url`)
+2. Validates the challenge exists in Redis
+3. Calls the Rust bridge via `verify_vp(json.dumps(vp_json))`
+4. Extracts the `holder` DID from the VP
+5. Deletes the challenge from Redis (one-time use)
+6. Creates the user if they don't exist (`get_or_create`)
+7. Calls `django.contrib.auth.login()` to establish the session
+8. Calls `_build_oidc_redirect()` to optionally skip the OIDC consent page
+9. Returns `{success: true, redirect_url: ..., user: {did, is_new_user, ...}}`
 
-Use the custom management command (the standard `createsuperuser` does not work):
+### 3. Rust Bridge [L187-209]
+
+**`fn hello_from_bin`** [L193] — smoke-test function, returns a string.
+
+**`fn verify_signature`** [L196-197] — (legacy) takes `(did, message, sig)`.
+
+**`fn verify_vp`** [L200-203] — takes a JSON-serialized Verifiable
+Presentation string, returns `{valid: true/false, error: "..."}`.
+
+The bridge is imported via a three-tier fallback in `views.py`:
+
+```python
+try:
+    from iyou_idp import _crypto       # Standard import (src/ on sys.path)
+    verify_vp = _crypto.verify_vp
+except ImportError:
+    import _crypto                      # Bare import fallback
+    verify_vp = _crypto.verify_vp
+```
+
+If all attempts fail, the view prints full `sys.path` plus the path it
+probed for `_crypto.abi3.so` and returns `status=500` with instructions.
+
+### 4. Creating a Superuser [L209-234]
 
 ```bash
-# Password will be prompted interactively:
-python manage.py createsuperuser_did --did dadmin
-
-# Or pass via env var (non-interactive):
-DJANGO_SUPERUSER_PASSWORD="strong-pass" python manage.py createsuperuser_did --did dadmin --no-input
-
-# Or pass directly:
-python manage.py createsuperuser_did --did dadmin --password "strong-pass"
+uv run python manage.py createsuperuser_did
 ```
 
-**Arguments:**
+Options:
+- `--did did:admin:myadmin` (default: `did:admin:superuser`)
+- `--password <pass>` (or `DJANGO_SUPERUSER_PASSWORD` env var)
+- `--no-input` (skip interactive prompts, useful in scripts)
 
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--did` | `did:admin:superuser` | DID string stored as username |
-| `--password` | `None` | Password for admin fallback login |
-| `--no-input` | off | Skip interactive prompts |
+If no password is set, the user can still log in via DID auth (the
+`DIDAuthBackend` ignores passwords for DID users).
 
-The password falls back to the `DJANGO_SUPERUSER_PASSWORD` environment variable if `--password` is not provided.
+### 5. Authentication Backend [L234-258]
 
-### 5. Authentication Backend
-
-Two backends are configured (in order):
-
-1. **`DIDAuthBackend`** — Allows login by DID alone; ignores password. Used by `/auth/admin/did-login/`.
-2. **`ModelBackend`** — Standard password check. Used by `/admin/` for users with a password set.
+**`class DIDAuthBackend`** [L242-253]
 
 ```python
-class DIDAuthBackend(ModelBackend):
-    def authenticate(self, request, username=None, password=None, **kwargs):
-        User = get_user_model()
-        if username is None:
-            return None
-        try:
-            user = User.objects.get(username=username)
-            if user.is_active:
-                return user
-        except User.DoesNotExist:
-            return None
+def authenticate(self, request, username=None, password=None, **kwargs):
+    try:
+        user = User.objects.get(username=username, is_active=True)
+        return user  # Password is ignored for DID auth
+    except User.DoesNotExist:
         return None
 ```
 
-> **Alpha phase:** During development, admins can log in at `/admin/` using their DID string (stored in `username`) as the username and the password set via `createsuperuser_did`. This is a fallback while DID tooling is still in development. The high-security path at `/auth/admin/did-login/` remains available for VP-based authentication.
+This backend is listed first in `AUTHENTICATION_BACKENDS` in settings.py,
+followed by the standard `ModelBackend` (for admin password login).
 
-### 5. OIDC Provider
+### 5. OIDC Provider [L258-284]
 
-Custom OIDC claims ensure DID is the subject:
+**`def custom_userinfo_claims`** [L263-271] — adds `did`, `preferred_username`,
+and `did_method` to the standard OIDC userinfo endpoint.
 
-```python
-def custom_userinfo_claims(user, scope, claims, id_token=None, token=None, **kwargs):
-    from oidc_provider.lib import claims as oidc_claims
-    claims_dict = oidc_claims.default_userinfo_claims(
-        user, scope, claims, id_token, token, **kwargs
-    )
-    claims_dict['sub'] = user.username   # DID as subject
-    claims_dict['did'] = user.username
-    claims_dict['preferred_username'] = user.username
-    return claims_dict
+**`def custom_id_token_claims`** [L274-281] — adds `did` and `did_method`
+claims to the ID token JWT.
 
+**`def custom_sub_generator`** — returns the DID (user.username) as the
+`sub` claim, ensuring the user's DID is the stable identifier across
+sessions and clients.
 
-def custom_id_token_claims(user, scope, claims, id_token=None, token=None, **kwargs):
-    from oidc_provider.lib import claims as oidc_claims
-    claims_dict = oidc_claims.default_id_token_claims(
-        user, scope, claims, id_token, token, **kwargs
-    )
-    claims_dict['sub'] = user.username
-    claims_dict['did'] = user.username
-    return claims_dict
+## Authentication Flow (VerifySignatureView) [L284-314]
+
+### Challenge-Response Cycle [L286-298]
+
+1. User clicks "Request Challenge" → `POST /auth/challenge/`
+2. Server generates UUID, stores in Redis with 300s TTL
+3. JS receives `{challenge, expires_in}` and displays it
+4. User signs the challenge with their DID wallet (or mock VP)
+5. `POST /auth/verify/` with `{verifiable_presentation, challenge, next_url}`
+6. Server validates challenge in Redis, calls `verify_vp()`, logs in user
+7. Returns `{success, redirect_url, user}`
+
+### Satellite-App Redirect Safety [L298-306]
+
+The `redirect_url` in the verify response is derived from the `next_url`
+that was passed in.  When the caller is the OIDC authorize flow, `next_url`
+contains the full `/openid/authorize/?client_id=...&redirect_uri=...`
+query string.  The `_build_oidc_redirect()` helper parses these params,
+directly generates an OIDC authorization `Code`, and returns the client's
+`redirect_uri?code=...&state=...` — **skipping the consent page entirely**.
+
+This means the browser goes:
+```
+verify → (302) client callback with code
+```
+instead of the slower:
+```
+verify → (200) consent page → user clicks Allow → (302) client callback
 ```
 
-## Authentication Flow (VerifySignatureView)
+### iYou Home Desktop Companion [L306-314]
 
-### Challenge-Response Cycle
+The login page attempts a WebSocket connection to `ws://localhost:9001` for
+native signing.  The handshake has several protection layers:
 
-The `VerifySignatureView` (`auth_bridge/views.py:51`) implements a standard challenge-response handshake:
+1. **Pre-flight probe** — `fetch('http://localhost:9001', {method:'OPTIONS', signal:AbortSignal.timeout(500)})` checks if the port is reachable before committing to `new WebSocket()` (avoids browser thread blocking from PNA checks).
 
-1. **Client POSTs to `/auth/challenge/`** — A UUID is generated, stored in Redis with a 60-second TTL, and returned.
-2. **Client builds a Verifiable Presentation (VP)** — Signs the challenge (or a VP payload) with their Ed25519 private key.
-3. **Client POSTs to `/auth/verify/`** with `{"verifiable_presentation": {...}, "challenge": "uuid"}`:
-   - Redis is checked for the challenge (returns 404 if missing/expired).
-   - The VP JSON is forwarded to the Rust PyO3 bridge (`verify_vp`) for cryptographic verification.
-   - If valid, the challenge is deleted from Redis and a Django user is created/fetched by DID (stored in `username`).
-   - A Django session is started and `{"success": true, "user": {"did": ..., "session_id": ...}}` is returned.
+2. **Kill Switch** — A "Cancel & Use Manual Paste" button appears
+   **immediately** (no 0.5s delay) when the linking UI shows.  Clicking it
+   calls `socket.close()` to abort any in-flight TCP connection.
 
-### Satellite-App Redirect Safety
+3. **2-second force fallback** — If `socket.readyState !== WebSocket.OPEN`
+   after 2 seconds, the socket is forcibly closed and the manual paste box
+   appears (down from 3s).
 
-The login page at `/auth/login/` accepts a `?next=<redirect_url>` parameter that carries the OIDC callback URL (including query params like `?code=...&client_id=...`).
+4. **Alert-based debugging** — When a WebSocket message arrives,
+   `alert("MESSAGE RECEIVED: " + event.data)` fires so the developer can
+   confirm the browser actually received the payload (useful for diagnosing
+   browser-level networking issues).
 
-**Problem:** Django's template engine HTML-escapes `{{ next_url }}`, turning `&` into `&amp;`, which would break the OIDC redirect URL in the JavaScript `window.location.href` assignment.
+5. **Version logging** — `console.log("LOGIN UI VERSION: 2.0.5")` at script
+   top and `console.log("!!! HANDSHAKE START VERSION 2.0.5 !!!")` in the
+   `onopen` handler let you confirm the browser isn't serving a stale cached
+   copy of the page.
 
-**Fix:** `mark_safe(next_url)` is applied in `LoginPageView` (`auth_bridge/views.py:154`) so that the raw URL — including `&` separators — is rendered unescaped into the JavaScript string context.
+6. **Cache busting** — `<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">` in `<head>` forces re-fetch on every navigation.
 
-### iYou Home Desktop Companion
+## API Endpoints [L314-343]
 
-When the login page loads, JavaScript at `auth_bridge/templates/auth_bridge/login.html:214` attempts a WebSocket connection to `ws://127.0.0.1:9001`:
+### Authentication Endpoints [L316-325]
 
-- **Connection succeeds:** The manual VP paste UI is hidden and a high-visibility "Sign with iYou Home" button appears.
-- **Button clicked:** The challenge UUID is sent over the WebSocket. The desktop app responds with a signed VP, which is automatically submitted to `/auth/verify/`.
-- **Connection fails (timeout after 1.5s):** The manual paste UI remains available as a fallback.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/auth/login/` | Renders login page |
+| POST | `/auth/challenge/` | Generates new challenge (300s TTL) |
+| GET | `/auth/challenge/` | Health check |
+| POST | `/auth/verify/` | Verifies VP, logs in, returns redirect |
 
-## API Endpoints
+### Admin DID Endpoints [L325-333]
 
-### Authentication Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| GET/POST | `/auth/admin/did-login/` | DID-based admin login form |
+| POST | `/auth/admin/did-verify/` | Verifies admin DID challenge |
+| GET | `/auth/admin/did-dashboard/` | Admin dashboard (post-login) |
 
-| Endpoint | Method | Description | Request | Response |
-|----------|--------|-------------|---------|----------|
-| `/auth/challenge/` | POST | Generate new challenge | - | `{"challenge": "uuid", "expires_in": 60}` |
-| `/auth/challenge/` | GET | Health check | - | `{"status": "auth_bridge operational"}` |
-| `/auth/verify/` | POST | Verify VP and authenticate | `{"verifiable_presentation": {...}, "challenge": "uuid"}` | `{"success": true, "user": {...}, "session_id": "..."}` |
-| `/auth/login/` | GET | DID login page | `?next=<redirect_url>` | HTML page |
+### OIDC Endpoints [L333-343]
 
-### Admin DID Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| GET/POST | `/openid/authorize/` | OIDC authorization endpoint |
+| POST | `/openid/token/` | Token exchange endpoint |
+| GET | `/openid/userinfo/` | Userinfo endpoint |
+| GET | `/openid/.well-known/openid-configuration/` | Discovery document |
+| GET | `/openid/jwks/` | JWKS endpoint |
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/auth/admin/did-login/` | GET/POST | Admin DID login page / challenge generation |
-| `/auth/admin/did-verify/` | POST | Verify admin DID VP and create session |
-| `/auth/admin/did-dashboard/` | GET | Admin dashboard (requires login) |
+## Development Workflow [L343-397]
 
-### OIDC Endpoints
+### Adding New Features [L345-354]
 
-| Endpoint | Description |
-|----------|-------------|
-| `/openid/.well-known/openid-configuration` | OIDC discovery |
-| `/openid/authorize` | Authorization endpoint |
-| `/openid/token` | Token endpoint |
-| `/openid/userinfo` | UserInfo endpoint |
-| `/openid/jwks` | JWKS endpoint |
+1. Write a test first in `auth_bridge/tests.py`
+2. Implement the feature
+3. Run `uv run python manage.py test auth_bridge -v2`
+4. Run `uv run ruff check auth_bridge/`
+5. Run `uv run python manage.py check`
 
-## Development Workflow
-
-### Adding New Features
-
-1. **Rust Changes (bridge)**: Modify `src/lib.rs`
-2. **Rust Changes (crypto)**: Modify `crates/rust-did/src/lib.rs` or `resolver.rs`
-3. **Rebuild**: `maturin develop` (also rebuilds `did_rust` crate)
-4. **Python Changes**: Modify Django models/views
-5. **Migrations**: `python manage.py makemigrations` then `python manage.py migrate`
-6. **Test**: Run specific tests or manual API testing
-
-### Testing
+### Testing [L354-381]
 
 ```bash
-# Run all Django tests
-python manage.py test
+# Run all auth tests
+uv run python manage.py test auth_bridge -v2
 
-# Test specific app
-python manage.py test auth_bridge
-
-# Run the full challenge-response cycle test
-python manage.py test auth_bridge.tests.ChallengeResponseCycleTest
-
-# Rust tests (submodule)
-(cd crates/rust-did && cargo test)
-
-# Manual API testing
-curl -X POST http://localhost:8000/auth/challenge/
+# Run a single test
+uv run python manage.py test auth_bridge.tests.ChallengeResponseCycleTest.test_full_cycle_creates_session -v2
 ```
 
-The `ChallengeResponseCycleTest` in `auth_bridge/tests.py` exercises the complete flow:
-1. Requests a challenge from Redis via `/auth/challenge/`
-2. Builds a real Ed25519-signed Verifiable Presentation
-3. Submits it to `/auth/verify/`
-4. Asserts a Django session is created with the DID as the username
+The test suite creates Ed25519 keys, builds signed Verifiable Credentials
+and Presentations, exercises the full challenge-response cycle, and
+verifies OIDC redirects (both classic and direct-callback).
 
-The test also covers error cases: missing fields (400) and expired/missing challenges (404).
+Key tests:
+- `test_full_cycle_creates_session` — end-to-end: challenge → VP → verify → session
+- `test_next_url_roundtrip` — non-OIDC next_url is echoed back as redirect_url
+- `test_missing_fields_returns_400` — empty body returns 400
+- `test_expired_challenge_returns_404` — expired/missing challenge returns 400
+- `test_authorize_returns_code_for_authenticated_user` — classic OIDC authorize flow
+- `test_verify_redirects_directly_to_client` — direct-callback: verify returns client URI with code
 
-### Debugging
+### Debugging [L381-397]
 
-```bash
-# Check Redis challenges (db index 1)
-redis-cli -n 1 KEYS "*"
+- **WebSocket not connecting?** Open browser dev tools console.  Look for:
+  - `"LOGIN UI VERSION: 2.0.5"` — confirms fresh JS
+  - `"WS: Socket Created"` — WebSocket constructor succeeded
+  - `"WS: Connection Opened"` — handshake completed
+  - `"WS: Socket Error"` — browser blocked or server not listening
+  - `"WS: Force-fallback timer expired"` — 2s timeout was reached
+- **Signature not received?** The `alert("MESSAGE RECEIVED: ...")` in the
+  `onmessage` handler is the definitive test.  If it fires, the browser got
+  the data.  If not, the network is swallowing the message.
+- **Server error on verify?** Look for `"VERIFY RESPONSE FULL:"` in the
+  console — the full JSON response is logged.
+- **Rust bridge not found?** Check the console for the `"="` banner with
+  `sys.path` and the probe path.  Re-run `maturin develop`.
 
-# Django shell
-python manage.py shell
+## Error Handling [L397-421]
 
-# Rust tests (all crates)
-cargo test --workspace
+### Common Errors & Solutions [L399-412]
 
-# Check logs
-tail -f /var/log/iyou-idp.log
-```
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Rust Crypto Bridge not found` | `src/` not on `sys.path` or `.so` missing | Run `maturin develop` or check `sys.path` in `settings.py` |
+| `Challenge expired` | Challenge TTL (300s) exceeded | Request a new challenge |
+| `Missing required fields` | VP or challenge not in POST body | Check JS `submitVP()` sends all fields |
+| 500 on POST to `/auth/verify/` | import or bridge crash | Check console for `VERIFY RESPONSE FULL` or server traceback |
+| WebSocket never opens | Browser PNA blocking or iyou-home not running | Check pre-flight probe result; use manual paste |
+| `data.redirect_url` not redirecting | `data.success` falsy or `redirect_url` missing | Check `VERIFY RESPONSE FULL` in console |
 
-## Error Handling
+### Error Response Format [L412-421]
 
-### Common Errors & Solutions
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `Challenge not found or expired` | Challenge TTL expired (60s) | Request new challenge |
-| `Missing verifiableCredential` | VP missing `verifiableCredential` field | Ensure VP has required fields |
-| `Missing proof` | VP missing `proof` field | Ensure VP has a proof block |
-| `Signature verification failed` | Invalid cryptographic proof | Check DID and signature |
-| `User account is disabled` | `User.is_active == False` | Enable user in admin |
-| `User is not an admin user` | Non-staff user tried admin login | Grant staff status |
-| `Redis connection error` | Redis not running | Start Redis service |
-| `Invalid JSON payload` | Malformed request body | Check request format |
-
-### Error Response Format
-
+All JSON error responses follow this structure:
 ```json
 {
-    "error": "Human-readable error message",
-    "status_code": 400
+  "error": "Human-readable message describing the issue"
 }
 ```
 
-## Deployment
+| HTTP Status | Meaning |
+|-------------|---------|
+| 400 | Bad request (missing fields, expired challenge, invalid VP structure) |
+| 401 | Verification failed (signature invalid) |
+| 403 | User account disabled |
+| 500 | Internal error (bridge import failure, unexpected exception) |
 
-### Production Checklist
+## Deployment [L421-463]
 
-- [ ] Set `DEBUG = False` in settings
-- [ ] Configure proper secret key via env var
-- [ ] Switch to PostgreSQL database
-- [ ] Configure Redis with password
-- [ ] Set up HTTPS with Let's Encrypt
-- [ ] Configure CORS for allowed origins
-- [ ] Set up logging and monitoring
-- [ ] Configure rate limiting
-- [ ] Set up backup for database
-- [ ] Configure health checks
+### Production Checklist [L423-436]
 
-### Docker Deployment
+- [ ] Set `IYOU_SECRET_KEY` to a strong random value
+- [ ] Set `IYOU_BASE_URL` to the public-facing URL
+- [ ] Set `DEBUG = False`
+- [ ] Set `ALLOWED_HOSTS` to the domain(s)
+- [ ] Configure a real Redis instance (not localhost)
+- [ ] Run `maturin build --release` for the Rust bridge
+- [ ] Use a production WSGI server (Gunicorn, uWSGI)
+- [ ] Serve static files via nginx/CDN
+- [ ] Set up HTTPS with a valid certificate
 
-```dockerfile
-FROM python:3.10-slim
+### Docker Deployment [L436-463]
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libssl-dev \
-    redis-server \
-    && rm -rf /var/lib/apt/lists/*
+*Not yet implemented — see Roadmap.*
 
-# Install Rust
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+## Security Considerations [L463-475]
 
-# Set up project
-WORKDIR /app
-COPY . .
+### Best Practices [L465-475]
 
-# Build
-RUN uv sync --no-dev && maturin develop --release
+- Challenges are single-use (deleted from Redis after verification)
+- Challenge TTL is 300 seconds (limited window for replay)
+- DID verification happens in native Rust (memory-safe)
+- WebSocket connection is restricted to `localhost:9001` (no remote attack surface)
+- OIDC authorization codes are generated by the provider's standard `create_code()` utility
+- `@csrf_exempt` on `verify_signature` is safe because the endpoint has no session side-effects (auth is purely cryptographic)
+- The `next_url` is validated against the OIDC client's registered `redirect_uris` before code generation
 
-# Run
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
-```
+## Troubleshooting [L475-516]
 
-## Security Considerations
+### Rust-Python Bridge Issues [L477-493]
 
-### Best Practices
+**Symptom:** `No module named 'iyou_idp'` or `Rust Crypto Bridge not found`
 
-1. **Never store private keys** - All cryptographic operations happen client-side
-2. **Short-lived challenges** - 60-second TTL prevents replay attacks
-3. **HTTPS everywhere** - Mandatory for all endpoints
-4. **CORS restrictions** - Only allow trusted origins
-5. **Rate limiting** - Prevent brute force attacks
-6. **Input validation** - Validate all JSON inputs
-7. **Session security** - Use secure, HttpOnly cookies
+This is typically a `sys.path` issue.  The project root folder name is
+`iyou_idp`, which can shadow the `iyou_idp` package on some platforms
+(especially Mac).  The fix is the `sys.path.append` in `config/settings.py`
+that injects the `src/` directory, where the actual `iyou_idp/` package
+(with `_crypto.abi3.so`) lives.
 
-## Troubleshooting
+If the error persists:
+1. Check `sys.path` in the debug banner printed by `views.py`
+2. Verify `src/iyou_idp/_crypto.abi3.so` exists
+3. Re-run `maturin develop --manifest-path Cargo.toml`
+4. Or copy the `.so` from `.venv/lib/python3.*/site-packages/iyou_idp/`
 
-### Rust-Python Bridge Issues
+### Submodule Issues [L493-506]
 
+The `crates/rust-did/` submodule must be checked out:
 ```bash
-# Check if Rust module is built
-ls -la src/iyou_idp/_crypto.abi3.so
-
-# Rebuild if missing
-maturin develop --release
-
-# Test Rust function directly
-python -c "from iyou_idp._crypto import verify_vp; print(verify_vp('{}', 'test'))"
-
-# Verify bridge connectivity
-python -c "from iyou_idp._crypto import hello_from_bin; print(hello_from_bin())"
-```
-
-### Submodule Issues
-
-```bash
-# Initialize/update the rust-did submodule
 git submodule update --init --recursive
-
-# Build the C FFI library standalone
-(cd crates/rust-did && cargo build --release)
-
-# Run submodule tests
-(cd crates/rust-did && cargo test)
 ```
 
-### OIDC Configuration Issues
+### OIDC Configuration Issues [L506-516]
 
-```bash
-# Check OIDC discovery endpoint
-curl http://localhost:8000/openid/.well-known/openid-configuration
+**Symptom:** OIDC authorize returns 200 (consent page) instead of 302 with code
 
-# Verify custom claims are loaded
-python manage.py shell -c "from auth_bridge.oidc import custom_userinfo_claims; print('OIDC loaded')"
-```
+The `_build_oidc_redirect()` helper in `views.py` is designed to skip this,
+but it only activates when the `next_url` contains full OIDC params
+(`client_id`, `redirect_uri`, `response_type`) AND the client is found in
+the database AND the `redirect_uri` matches the client's registered URIs.
+If any of these fail, the view falls back to returning `next_url` as-is,
+and the standard OIDC authorize flow (with consent page) applies.
 
-## Roadmap
+To force the direct-callback path, ensure:
+- The OIDC `Client` is registered in the database
+- The `redirect_uri` in the authorize URL matches exactly (trailing slash matters)
+- The `client_id` in the authorize URL matches the registered client
 
-### Short-term Goals
+## Roadmap [L516-536]
 
-- [ ] Wire `crates/rust-did` real crypto into PyO3 bridge (`src/lib.rs`)
-- [ ] Challenge matching validation in Rust verification
-- [ ] VP expiration checking
-- [ ] Production monitoring setup
+### Short-term Goals [L518-525]
 
-### Long-term Goals
+- Add a health-check endpoint for the WebSocket bridge (`GET /health/`)
+- Dockerize the application (Dockerfile + compose.yaml with Redis)
+- Add OIDC `prompt=login` support to force re-authentication
+- Add PKCE (S256) support in the direct-callback path
 
-- [ ] Federation support (multiple IdP instances)
-- [ ] Desktop app integration
-- [ ] Mobile SDK
-- [ ] Revocation registry support
-- [ ] Multi-factor authentication options
+### Long-term Goals [L525-536]
 
----
-
-*Last updated: 2026-05-10*
+- Support multiple DID methods (did:web, did:ethr, did:sol)
+- Replace the current polling-based iyou-home handshake with a push model
+- Add a self-service admin UI for OIDC client registration
+- Performance testing under load (concurrent DID verifications)
+- CI/CD pipeline with automated Rust bridge builds for Linux and macOS
