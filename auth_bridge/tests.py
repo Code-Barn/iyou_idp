@@ -109,6 +109,28 @@ class ChallengeResponseCycleTest(TestCase):
         self.assertTrue(body["user"]["is_authenticated"])
         self.assertIsNotNone(body["user"]["session_id"])
 
+    def test_stringified_vp_parses_correctly(self):
+        """VP sent as a JSON string (not a dict) must be parsed by the view."""
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        challenge = resp.json()["challenge"]
+        vp = self._signed_vp(challenge)
+
+        # Send the VP as a JSON-encoded string to simulate browser
+        # double-serialisation (e.g. from a WebSocket message).
+        resp = self.client.post(
+            reverse("auth_bridge:verify_signature"),
+            data=json.dumps({
+                "verifiable_presentation": json.dumps(vp),
+                "challenge": challenge,
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["user"]["did"], self.did)
+
     def test_next_url_roundtrip(self):
         """Verify that next_url sent in the POST body is echoed back as redirect_url."""
         # 1. Challenge

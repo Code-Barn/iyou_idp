@@ -104,6 +104,22 @@ uv run python manage.py createsuperuser_did
 uv run python manage.py runserver 0.0.0.0:8001
 ```
 
+**Intel Mac dual-stack binding:**  On Intel Macs the IPv6 loopback
+(`[::1]:9001`) can cause a 60-second stall before falling back to IPv4.
+Configure iYou Home to bind to `[::]:9001` (dual-stack) so the browser's
+IPv6-localhost preference resolves immediately:
+
+```rust
+// iyou-home server bind
+TcpListener::bind("0.0.0.0:9001")   // IPv4 only — may stall on Intel Mac
+// vs.
+TcpListener::bind("[::]:9001")        // dual-stack — no stall
+```
+
+The pre-flight probe (`fetch OPTIONS` with 500ms timeout) in `login.html`
+detects this condition and falls back to manual paste before the browser
+thread blocks.
+
 **Mac bridge pathing:**  `config/settings.py` injects `src/` into `sys.path`:
 ```python
 sys.path.append(os.path.join(BASE_DIR, 'src'))
@@ -257,7 +273,24 @@ verify → (200) consent page → user clicks Allow → (302) client callback
 ### iYou Home Desktop Companion [L306-314]
 
 The login page attempts a WebSocket connection to `ws://localhost:9001` for
-native signing.  The handshake has several protection layers:
+native signing.  The wire protocol is a simple JSON request/response exchange:
+
+**Request** (browser → iYou Home):
+```json
+{"type": "sign", "challenge": "<uuid>"}
+```
+
+**Response** (iYou Home → browser):
+```json
+{"type": "signature", "vp": {"@context": ["..."], "type": ["VerifiablePresentation"], "holder": "did:key:...", "proof": {...}}}
+```
+
+The `vp` value is the signed Verifiable Presentation, which the browser
+relays to `POST /auth/verify/`.  If iYou Home sends the VP as an escaped
+JSON string (rather than a nested object), the Django view handles it via an
+`isinstance(vp_json, str)` guard that calls `json.loads()` a second time.
+
+The handshake has several protection layers:
 
 1. **Pre-flight probe** — `fetch('http://localhost:9001', {method:'OPTIONS', signal:AbortSignal.timeout(500)})` checks if the port is reachable before committing to `new WebSocket()` (avoids browser thread blocking from PNA checks).
 
