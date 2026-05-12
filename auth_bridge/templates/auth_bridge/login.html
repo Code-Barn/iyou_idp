@@ -367,6 +367,16 @@
             const boredLink = document.getElementById('boredLink');
             boredLink.classList.remove('hidden');
 
+            const subtitle = document.getElementById('step2-subtitle');
+
+            let signatureReceived = false;
+            const nudgeTimer = setTimeout(() => {
+                if (!signatureReceived) {
+                    subtitle.textContent =
+                        'Handshake sent. Please check your iYou Home app.';
+                }
+            }, 1500);
+
             window._signTimeout = setTimeout(() => {
                 if (iyouSocket) iyouSocket.close();
                 boredLink.classList.add('hidden');
@@ -395,6 +405,8 @@
                     console.log("WS: Ignoring message type:", msg.type);
                     return;
                 }
+                signatureReceived = true;
+                clearTimeout(nudgeTimer);
                 clearTimeout(window._signTimeout);
                 window._signTimeout = null;
                 document.getElementById('iyouHomeBtn').classList.add('hidden');
@@ -409,6 +421,7 @@
 
             boredLink.onclick = (e) => {
                 e.preventDefault();
+                clearTimeout(nudgeTimer);
                 clearTimeout(window._signTimeout);
                 window._signTimeout = null;
                 boredLink.classList.add('hidden');
