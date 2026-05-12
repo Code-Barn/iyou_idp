@@ -67,6 +67,7 @@ def _build_oidc_redirect(next_url, user):
         code_challenge_method=code_challenge_method,
     )
     code_obj.save()
+    print(f"OIDC CODE ISSUED: code={code_obj.code} user_did={user.username} client={client.client_id}", flush=True)
 
     # Persist consent so subsequent OIDC requests auto-approve
     date_given = timezone.now()
