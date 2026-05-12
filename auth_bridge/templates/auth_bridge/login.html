@@ -391,6 +391,8 @@
                 }
                 clearTimeout(window._signTimeout);
                 window._signTimeout = null;
+                signingLoading.classList.add('hidden');
+                document.getElementById('iyouHomeBtn').classList.add('hidden');
                 boredLink.classList.add('hidden');
                 iyouSocket.removeEventListener('message', onMessage);
                 submitVP(msg.vp);
