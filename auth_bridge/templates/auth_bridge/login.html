@@ -378,21 +378,22 @@
 
             iyouSocket.addEventListener('message', function onMessage(event) {
                 console.log("WS: Message Received:", event.data);
+                let msg;
+                try {
+                    msg = JSON.parse(event.data);
+                } catch {
+                    console.warn("WS: Non-JSON message ignored:", event.data);
+                    return;
+                }
+                if (msg.type !== 'signature') {
+                    console.log("WS: Ignoring message type:", msg.type);
+                    return;
+                }
                 clearTimeout(window._signTimeout);
                 window._signTimeout = null;
                 boredLink.classList.add('hidden');
                 iyouSocket.removeEventListener('message', onMessage);
-                let vpData;
-                try {
-                    vpData = JSON.parse(event.data);
-                } catch {
-                    showError('Invalid response from iYou Home.');
-                    btn.disabled = false;
-                    btn.textContent = '🔐 Sign with iYou Home';
-                    signingLoading.classList.add('hidden');
-                    return;
-                }
-                submitVP(vpData);
+                submitVP(msg.vp);
             });
 
             boredLink.onclick = (e) => {
