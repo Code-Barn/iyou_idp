@@ -49,7 +49,7 @@ iyou_idp/
 │   ├── backend.py               # DIDAuthBackend
 │   ├── models.py                # User (AbstractBaseUser)
 │   ├── oidc.py                  # OIDC userinfo/id-token hooks
-│   ├── tests.py                 # 6 integration tests
+│   ├── tests.py                 # 8 integration tests
 │   ├── urls.py
 │   └── views.py                 # verify_signature, ChallengeView, LoginPageView
 ├── config/
@@ -96,6 +96,9 @@ maturin develop --manifest-path Cargo.toml
 
 # Run migrations
 uv run python manage.py migrate
+
+# Generate an RSA signing key for OIDC tokens (mandatory — token issuance fails without it)
+uv run python manage.py creatersakey
 
 # Create a superuser for admin access
 uv run python manage.py createsuperuser_did
@@ -374,6 +377,7 @@ Key tests:
 - `test_expired_challenge_returns_404` — expired/missing challenge returns 400
 - `test_authorize_returns_code_for_authenticated_user` — classic OIDC authorize flow
 - `test_verify_redirects_directly_to_client` — direct-callback: verify returns client URI with code
+- `test_jwks_endpoint_returns_valid_key` — `/openid/jwks/` exposes at least one RSA key
 
 ### Debugging [L381-397]
 
@@ -397,6 +401,7 @@ Key tests:
 
 | Error | Cause | Fix |
 |-------|-------|-----|
+| `no keys in database` | `creatersakey` was never run | Run `uv run python manage.py creatersakey` |
 | `Rust Crypto Bridge not found` | `src/` not on `sys.path` or `.so` missing | Run `maturin develop` or check `sys.path` in `settings.py` |
 | `Challenge expired` | Challenge TTL (300s) exceeded | Request a new challenge |
 | `Missing required fields` | VP or challenge not in POST body | Check JS `submitVP()` sends all fields |

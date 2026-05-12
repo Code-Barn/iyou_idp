@@ -331,3 +331,16 @@ class OIDCAuthorizeFlowTest(TestCase):
         )
         self.assertIn("code=", redirect_url)
         self.assertIn("state=test-state-789", redirect_url)
+
+    def test_jwks_endpoint_returns_valid_key(self):
+        """The /openid/jwks/ endpoint must expose at least one RSA key."""
+        resp = self.client.get(reverse("oidc_provider:jwks"))
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertIn("keys", body)
+        self.assertGreater(len(body["keys"]), 0)
+        key = body["keys"][0]
+        self.assertEqual(key["kty"], "RSA")
+        self.assertIn("n", key)
+        self.assertIn("e", key)
+        self.assertIn("kid", key)
