@@ -385,11 +385,12 @@
                 );
             }, 60000);
 
-            console.log("WS: Sending sign request, readyState:", iyouSocket.readyState);
-            iyouSocket.send(JSON.stringify({
+            const msg = {
                 type: 'sign',
                 challenge: currentChallenge
-            }));
+            };
+            console.log("OUTBOUND WS DATA:", JSON.stringify(msg));
+            iyouSocket.send(JSON.stringify(msg));
 
             iyouSocket.addEventListener('message', function onMessage(event) {
                 alert("SIGNATURE DATA RECEIVED!");
