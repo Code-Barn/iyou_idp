@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>{{ page_title }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -98,7 +99,7 @@
 
             <!-- iYou Home native-connect button (shown while handshake is in progress and after success) -->
             <button id="iyouHomeBtn"
-                    class="hidden bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white py-4 px-6 rounded-xl font-bold text-lg mb-1 w-full shadow-lg border border-purple-400">
+                    class="hidden bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white py-4 px-6 rounded-xl font-bold text-lg mb-1 w-full shadow-lg border-4 border-red-500">
                 🔗 Linking...
             </button>
             <button id="cancelIyouBtn"
@@ -161,7 +162,7 @@
     </form>
     
     <script>
-        console.log("LOGIN UI VERSION: 2.0.4 - POLL FIX");
+        console.log("LOGIN UI VERSION: 2.0.5 - HANDSHAKE START");
 
         // DOM Elements
         const requestChallengeBtn = document.getElementById('requestChallengeBtn');
@@ -293,6 +294,7 @@
                 }, 2000);
 
                 socket.addEventListener('open', () => {
+                    console.log("!!! HANDSHAKE START VERSION 2.0.5 !!!");
                     console.log("WS: Connection Opened");
                     if (cancelled) { socket.close(); return; }
                     clearTimeout(forceFallback);
