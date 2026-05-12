@@ -145,6 +145,10 @@ def verify_signature(request):
                 )
             }, status=500)
 
+        if isinstance(vp_json, str):
+            vp_json = json.loads(vp_json)
+        print(f"DEBUG: VP Keys received: {vp_json.keys()}", flush=True)
+
         result_json = verify_vp(json.dumps(vp_json))
         result = json.loads(result_json)
 
