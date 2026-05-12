@@ -153,6 +153,10 @@
                 </div>
                 <h2 class="text-xl font-semibold text-gray-700 mb-2">Authentication Successful!</h2>
                 <p class="text-gray-600">You will be redirected shortly...</p>
+                <a id="manualSuccessLink" href="#"
+                   class="hidden mt-4 inline-block bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg text-lg">
+                    Login Successful! Click here to enter WUN
+                </a>
             </div>
         </div>
     </div>
@@ -451,14 +455,21 @@
                 signingLoading.classList.add('hidden');
 
                 if (data.success && data.redirect_url) {
+                    console.log("LOGIN SUCCESS: Redirecting to", data.redirect_url);
                     step2Indicator.classList.remove('active');
                     step3Indicator.classList.add('active');
                     step2Content.classList.add('hidden');
                     step3Content.classList.remove('hidden');
 
+                    // Fail-safe: if the redirect doesn't fire within 500ms,
+                    // show a clickable button.
+                    const manualLink = document.getElementById('manualSuccessLink');
+                    manualLink.href = data.redirect_url;
                     setTimeout(() => {
-                        window.location.href = data.redirect_url;
-                    }, 1500);
+                        manualLink.classList.remove('hidden');
+                    }, 500);
+
+                    window.location.href = data.redirect_url;
                 } else {
                     console.error('Login failed:', data.error);
                     const btn = document.getElementById('iyouHomeBtn');
@@ -553,14 +564,19 @@
                     signingLoading.classList.add('hidden');
                     
                     if (data.success && data.redirect_url) {
+                        console.log("LOGIN SUCCESS: Redirecting to", data.redirect_url);
                         step2Indicator.classList.remove('active');
                         step3Indicator.classList.add('active');
                         step2Content.classList.add('hidden');
                         step3Content.classList.remove('hidden');
-                        
+
+                        const manualLink = document.getElementById('manualSuccessLink');
+                        manualLink.href = data.redirect_url;
                         setTimeout(() => {
-                            window.location.href = data.redirect_url;
-                        }, 1500);
+                            manualLink.classList.remove('hidden');
+                        }, 500);
+
+                        window.location.href = data.redirect_url;
                     } else {
                         console.error('Login failed:', data.error);
                         simulateSigningBtn.style.display = 'block';
