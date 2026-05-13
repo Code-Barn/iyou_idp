@@ -48,3 +48,20 @@ persists a `UserConsent` record so subsequent logins are equally fast.
   `/openid/authorize/`) when the `next_url` carries full OIDC params.
 - `test_authorize_returns_code_for_authenticated_user` confirms the classic
   OIDC authorize path still works for already-logged-in users.
+
+---
+
+## WUN Client Settings
+
+Register an OIDC client in the Django admin with these values:
+
+| Field | Value |
+|-------|-------|
+| Client ID | `747582` |
+| Redirect URIs | `http://127.0.0.1:8001/oidc/callback/` |
+| Post-logout URIs | `http://127.0.0.1:8001` |
+| Client type | `confidential` |
+| JWT Algorithm | `RS256` |
+| Response Types | `code` |
+| Require Consent | ☐ (unchecked) |
+| Reuse Consent | ☑ (checked) |
