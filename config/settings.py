@@ -30,10 +30,10 @@ SECRET_KEY = os.environ.get('IYOU_SECRET_KEY', 'django-insecure-7v@zb&(xlnr8jk^0
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-# Single BASE_URL to switch the entire IdP's identity between Tailscale and localhost
+# Single BASE_URL to switch the entire IdP's identity between Tailscale and 127.0.0.1
 IYOU_BASE_URL = os.environ.get('IYOU_BASE_URL', 'http://127.0.0.1:8000')
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['127.0.0.1']
 
 
 # Application definition
@@ -69,8 +69,6 @@ CORS_ALLOW_ALL_ORIGINS = True
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:8000',
-    'http://localhost:8001',
     'http://127.0.0.1:8000',
     'http://127.0.0.1:8001',
 ]
