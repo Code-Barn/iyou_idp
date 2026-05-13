@@ -170,6 +170,7 @@ LOGIN_URL = '/auth/login/'
 
 # Force the browser to treat all requests as the same site (fixes localhost/127.0.0.1 session drops)
 SESSION_COOKIE_DOMAIN = '127.0.0.1'
+SESSION_COOKIE_NAME = 'idp_sessionid'
 SESSION_COOKIE_SAMESITE = 'Lax'
 
 # OIDC Provider Settings
