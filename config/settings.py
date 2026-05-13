@@ -168,10 +168,14 @@ CACHES = {
 # Login URL for authentication
 LOGIN_URL = '/auth/login/'
 
-# Force the browser to treat all requests as the same site (fixes localhost/127.0.0.1 session drops)
-SESSION_COOKIE_DOMAIN = '127.0.0.1'
+# Cookie flags for local HTTP OIDC — SameSite=Lax allows the cookie on top-level redirects
+# without requiring the Secure flag (impossible on local HTTP).  Domain=None avoids
+# Brave's third-party blocking when ports differ (8000 vs 8001).
+SESSION_COOKIE_DOMAIN = None
 SESSION_COOKIE_NAME = 'idp_sessionid'
 SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
 
 # OIDC Provider Settings
 # All endpoints derive from IYOU_BASE_URL so switching between Tailscale/localhost is one line.
