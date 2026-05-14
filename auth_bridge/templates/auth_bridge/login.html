@@ -202,7 +202,7 @@
         function init() {
             // Set up event listeners
             requestChallengeBtn.addEventListener('click', requestChallenge);
-            submitVPBtn.addEventListener('click', submitVP);
+            submitVPBtn.addEventListener('click', handleManualSubmit);
             backToChallengeBtn.addEventListener('click', backToChallenge);
             
             // Set CSRF token for fetch requests
@@ -221,7 +221,7 @@
                 return cookieValue;
             }
             
-            window.csrfToken = getCookie('csrftoken');
+            window.csrfToken = getCookie('idp_csrftoken');
             
             // Attempt native-connect handshake with iYou Home
             tryConnectIYouHome();
@@ -420,7 +420,15 @@
                 document.querySelector('#signingLoading p').textContent =
                     'Identity Verified. Entering WUN...';
                 iyouSocket.removeEventListener('message', onMessage);
-                submitVP(msg.vp);
+                try {
+                    submitVerify(msg.vp).catch(() => {
+                        document.querySelector('#signingLoading p').textContent =
+                            'Error: Verification Failed (Check CSRF)';
+                    });
+                } catch (err) {
+                    document.querySelector('#signingLoading p').textContent =
+                        'Error: Verification Failed (Check CSRF)';
+                }
             });
 
             boredLink.onclick = (e) => {
@@ -435,8 +443,9 @@
         }
 
         // Submit VP to the verify endpoint
-        function submitVP(vpData) {
-            fetch(VERIFY_URL, {
+        function submitVerify(vpData) {
+            console.log("Sending VP to Verify:", vpData);
+            return fetch(VERIFY_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -469,19 +478,22 @@
                     }, 500);
 
                     window.location.href = data.redirect_url;
+                    return { success: true };
                 } else {
                     console.error('Login failed:', data.error);
                     const btn = document.getElementById('iyouHomeBtn');
                     btn.disabled = false;
                     btn.textContent = '🔐 Sign with iYou Home';
+                    return { success: false, error: data.error };
                 }
             })
             .catch(error => {
                 signingLoading.classList.add('hidden');
-                showError('Network error: ' + error.message);
+                showError('Error: Verification Failed (Check CSRF) — ' + error.message);
                 const btn = document.getElementById('iyouHomeBtn');
                 btn.disabled = false;
                 btn.textContent = '🔐 Sign with iYou Home';
+                throw error;
             });
         }
         
@@ -524,8 +536,8 @@
             });
         }
         
-        // Step 2: Submit VP for verification
-        function submitVP() {
+        // Step 2: Manual submit — read from textarea and delegate to submitVerify
+        function handleManualSubmit() {
             const vpJson = vpTextarea.value;
             
             if (!vpJson) {
@@ -533,63 +545,30 @@
                 return;
             }
             
+            // Try to parse as JSON, if it fails, use as-is (for mock signatures)
+            let vpData;
             try {
-                // Try to parse as JSON, if it fails, use as-is (for mock signatures)
-                let vpData;
-                try {
-                    vpData = JSON.parse(vpJson);
-                } catch (e) {
-                    vpData = vpJson; // Use raw text as mock signature
-                }
-                
-                submitVPBtn.style.display = 'none';
-                signingLoading.classList.remove('hidden');
-                errorMessage.classList.add('hidden');
-                
-                fetch(VERIFY_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': window.csrfToken
-                    },
-                    body: JSON.stringify({
-                        verifiable_presentation: vpData,
-                        challenge: currentChallenge,
-                        next_url: currentNextUrl
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    signingLoading.classList.add('hidden');
-                    
-                    if (data.success && data.redirect_url) {
-                        console.log("LOGIN SUCCESS: Redirecting to", data.redirect_url);
-                        step2Indicator.classList.remove('active');
-                        step3Indicator.classList.add('active');
-                        step2Content.classList.add('hidden');
-                        step3Content.classList.remove('hidden');
-
-                        const manualLink = document.getElementById('manualSuccessLink');
-                        manualLink.href = data.redirect_url;
-                        setTimeout(() => {
-                            manualLink.classList.remove('hidden');
-                        }, 500);
-
-                        window.location.href = data.redirect_url;
-                    } else {
-                        console.error('Login failed:', data.error);
-                        submitVPBtn.style.display = 'block';
-                    }
-                })
-                .catch(error => {
-                    signingLoading.classList.add('hidden');
-                    showError('Network error: ' + error.message);
-                    submitVPBtn.style.display = 'block';
-                    console.error('Error:', error);
-                });
+                vpData = JSON.parse(vpJson);
             } catch (e) {
-                showError('Error: ' + e.message);
+                vpData = vpJson;
             }
+            
+            submitVPBtn.style.display = 'none';
+            signingLoading.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
+            
+            submitVerify(vpData).then(result => {
+                if (!result || !result.success) {
+                    submitVPBtn.style.display = 'block';
+                    if (result && result.error) {
+                        showError('Verification failed: ' + result.error);
+                    }
+                }
+            }).catch(() => {
+                signingLoading.classList.add('hidden');
+                showError('Error: Verification Failed (Check CSRF)');
+                submitVPBtn.style.display = 'block';
+            });
         }
         
         // Navigation
