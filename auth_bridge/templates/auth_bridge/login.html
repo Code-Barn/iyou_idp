@@ -120,13 +120,13 @@
   "holder": "did:key:z6MkqRYqQiSgvZQdnBytw86Qbs2ZWUkGv22od935YF4s8M7V"
 }'></textarea>
                     <p class="text-xs text-gray-500 mt-1">
-                        For testing, you can use any JSON structure or click "Simulate Signing".
+                        Paste a verifiable presentation below and submit it for verification.
                     </p>
                 </div>
                 
-                <button id="simulateSigningBtn" 
+                <button id="submitVPBtn" 
                        class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-lg font-medium mb-3 w-full">
-                    Simulate Signing
+                    Submit &amp; Verify
                 </button>
             </div>
             
@@ -171,7 +171,7 @@
 
         // DOM Elements
         const requestChallengeBtn = document.getElementById('requestChallengeBtn');
-        const simulateSigningBtn = document.getElementById('simulateSigningBtn');
+        const submitVPBtn = document.getElementById('submitVPBtn');
         const backToChallengeBtn = document.getElementById('backToChallengeBtn');
         const loading = document.getElementById('loading');
         const signingLoading = document.getElementById('signingLoading');
@@ -202,7 +202,7 @@
         function init() {
             // Set up event listeners
             requestChallengeBtn.addEventListener('click', requestChallenge);
-            simulateSigningBtn.addEventListener('click', simulateSigning);
+            submitVPBtn.addEventListener('click', submitVP);
             backToChallengeBtn.addEventListener('click', backToChallenge);
             
             // Set CSRF token for fetch requests
@@ -524,8 +524,8 @@
             });
         }
         
-        // Step 2: Simulate Signing
-        function simulateSigning() {
+        // Step 2: Submit VP for verification
+        function submitVP() {
             const vpJson = vpTextarea.value;
             
             if (!vpJson) {
@@ -542,7 +542,7 @@
                     vpData = vpJson; // Use raw text as mock signature
                 }
                 
-                simulateSigningBtn.style.display = 'none';
+                submitVPBtn.style.display = 'none';
                 signingLoading.classList.remove('hidden');
                 errorMessage.classList.add('hidden');
                 
@@ -578,13 +578,13 @@
                         window.location.href = data.redirect_url;
                     } else {
                         console.error('Login failed:', data.error);
-                        simulateSigningBtn.style.display = 'block';
+                        submitVPBtn.style.display = 'block';
                     }
                 })
                 .catch(error => {
                     signingLoading.classList.add('hidden');
                     showError('Network error: ' + error.message);
-                    simulateSigningBtn.style.display = 'block';
+                    submitVPBtn.style.display = 'block';
                     console.error('Error:', error);
                 });
             } catch (e) {

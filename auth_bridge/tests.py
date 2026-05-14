@@ -115,7 +115,7 @@ class ChallengeResponseCycleTest(TestCase):
         challenge = resp.json()["challenge"]
         vp = self._signed_vp(challenge)
 
-        # Send the VP as a JSON-encoded string to simulate browser
+        # Send the VP as a JSON-encoded string to account for browser
         # double-serialisation (e.g. from a WebSocket message).
         resp = self.client.post(
             reverse("auth_bridge:verify_signature"),
@@ -216,7 +216,7 @@ class OIDCAuthorizeFlowTest(TestCase):
         )
         self.client_obj.response_types.add(ResponseType.objects.get(value="code"))
 
-        # Create a user via DID auth (simulate the verify flow)
+        # Create a user via DID auth
         resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
         self.challenge = resp.json()["challenge"]
 
