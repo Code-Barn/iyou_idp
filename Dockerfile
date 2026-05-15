@@ -4,11 +4,14 @@
 FROM python:3.12-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    rustc \
-    cargo \
+    curl \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Install latest stable Rust via rustup (apt rustc 1.85 is too old for reqwest deps)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN pip install --no-cache-dir "maturin>=1.0,<2.0"
 
