@@ -23,7 +23,7 @@ RUN mkdir -p src crates/rust-did/src && \
 # Now copy the actual Rust and Python source
 COPY src/ ./src/
 COPY crates/rust-did/src/ ./crates/rust-did/src/
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 
 # Build the _crypto extension module
 RUN maturin build --release
