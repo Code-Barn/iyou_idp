@@ -14,8 +14,18 @@ import os
 import sys
 from pathlib import Path
 
+import environ
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+env = environ.Env(
+    IYOU_SECRET_KEY=(str, 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5'),
+    IYOU_BASE_URL=(str, 'http://127.0.0.1:8000'),
+    DEBUG=(bool, True),
+    DATABASE_URL=(str, 'sqlite:///db.sqlite3'),
+    REDIS_URL=(str, 'redis://127.0.0.1:6379/1'),
+)
 
 # Ensure the 'src' directory is in the python path for Mac local dev
 sys.path.append(os.path.join(BASE_DIR, 'src'))
@@ -25,13 +35,13 @@ sys.path.append(os.path.join(BASE_DIR, 'src'))
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('IYOU_SECRET_KEY', 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5')
+SECRET_KEY = env('IYOU_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env('DEBUG')
 
 # Single BASE_URL to switch the entire IdP's identity between Tailscale and 127.0.0.1
-IYOU_BASE_URL = os.environ.get('IYOU_BASE_URL', 'http://127.0.0.1:8000')
+IYOU_BASE_URL = env('IYOU_BASE_URL')
 
 ALLOWED_HOSTS = ['127.0.0.1']
 
@@ -97,10 +107,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': env.db_url('DATABASE_URL'),
 }
 
 
@@ -158,7 +165,7 @@ AUTHENTICATION_BACKENDS = [
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'LOCATION': env('REDIS_URL'),
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
         }
