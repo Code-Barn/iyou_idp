@@ -1,10 +1,12 @@
 # =============================================================================
 # Stage 1: Builder — compile the Rust _crypto extension with Maturin
 # =============================================================================
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    gcc \
+    libc6-dev \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -35,7 +37,7 @@ RUN maturin build --release
 # =============================================================================
 # Stage 2: Runner — Django application
 # =============================================================================
-FROM python:3.12-slim AS runner
+FROM python:3.13-slim AS runner
 
 # Runtime library for PostgreSQL (psycopg2)
 RUN apt-get update && apt-get install -y --no-install-recommends \
