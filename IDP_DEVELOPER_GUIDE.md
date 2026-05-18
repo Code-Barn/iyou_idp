@@ -54,7 +54,7 @@ iyou_idp/
 │   └── views.py                 # verify_signature, ChallengeView, LoginPageView
 ├── config/
 │   ├── __init__.py
-│   ├── settings.py              # sys.path injection for Mac bridge
+│   ├── settings.py              # IDP_* env vars, django-environ, production hardening
 │   ├── urls.py
 │   ├── wsgi.py
 │   └── asgi.py
@@ -66,9 +66,11 @@ iyou_idp/
 │       └── _core.pyi
 ├── crates/
 │   └── rust-did/                # Rust DID verification library
-├── target/                      # Rust build artifacts
 ├── Cargo.toml                   # Rust crate config
-├── pyproject.toml               # Python project + maturin config
+├── pyproject.toml               # Python project + uv/gunicorn deps
+├── Dockerfile                   # Multi-stage uv-based production build
+├── docker-entrypoint.sh         # migrate + gunicorn entrypoint
+├── .dockerignore                # Build context filter
 ├── .env.example
 └── README.md
 ```
@@ -106,6 +108,21 @@ uv run python manage.py createsuperuser_did
 # Start the dev server
 uv run python manage.py runserver 0.0.0.0:8001
 ```
+
+**Quick start with Docker:**
+```bash
+docker build -t iyou-idp:latest .
+docker run -p 8000:8000 \
+  -e IDP_SECRET_KEY="insecure-dev-key-only" \
+  -e IDP_BASE_URL="http://localhost:8000" \
+  -e IDP_DEBUG=True \
+  -e IDP_ALLOWED_HOSTS="localhost,127.0.0.1" \
+  -e IDP_CSRF_TRUSTED_ORIGINS="http://localhost:8000" \
+  -e IDP_CORS_ALLOWED_ORIGINS="http://localhost:8000" \
+  -e REDIS_URL="redis://host.docker.internal:6379/1" \
+  iyou-idp:latest
+```
+The entrypoint runs `migrate` automatically and spawns Gunicorn on `:8000`.
 
 **Intel Mac dual-stack binding:**  On Intel Macs the IPv6 loopback
 (`[::1]:9001`) can cause a 60-second stall before falling back to IPv4.
@@ -429,19 +446,66 @@ All JSON error responses follow this structure:
 
 ### Production Checklist [L423-436]
 
-- [ ] Set `IYOU_SECRET_KEY` to a strong random value
-- [ ] Set `IYOU_BASE_URL` to the public-facing URL
-- [ ] Set `DEBUG = False`
-- [ ] Set `ALLOWED_HOSTS` to the domain(s)
-- [ ] Configure a real Redis instance (not localhost)
-- [ ] Run `maturin build --release` for the Rust bridge
-- [ ] Use a production WSGI server (Gunicorn, uWSGI)
-- [ ] Serve static files via nginx/CDN
-- [ ] Set up HTTPS with a valid certificate
+- [ ] Set `IDP_SECRET_KEY` to a strong random value
+- [ ] Set `IDP_BASE_URL` to the public-facing URL (e.g. `https://idp.example.com`)
+- [ ] Set `IDP_DEBUG=False`
+- [ ] Set `IDP_ALLOWED_HOSTS` to the domain(s) (comma-separated)
+- [ ] Set `IDP_CSRF_TRUSTED_ORIGINS` to match the public origin(s)
+- [ ] Set `IDP_CORS_ALLOWED_ORIGINS` to the satellite app origin(s) (or empty if all on same domain)
+- [ ] Set `DATABASE_URL` to a production PostgreSQL connection string
+- [ ] Configure a real Redis instance via `REDIS_URL`
+- [ ] Deploy with `docker build -t iyou-idp .` (Rust is compiled in the builder stage)
+- [ ] Set up the Traefik/nginx ingress proxy with HTTPS termination
+- [ ] The entrypoint uses Gunicorn on `:8000` — no additional WSGI server needed
 
 ### Docker Deployment [L436-463]
 
-*Not yet implemented — see Roadmap.*
+The project ships a production-ready multi-stage `Dockerfile`:
+
+```dockerfile
+# Stage 1 (builder):   python:3.12-slim + Rust toolchain + uv
+#   - Installs Python deps via uv sync --no-dev
+#   - Compiles crates/rust-did via cargo build --release
+#   - Runs collectstatic --noinput
+# Stage 2 (runner):    python:3.12-slim
+#   - Copies .venv, libdid_rust.so, and staticfiles from builder
+#   - Runs docker-entrypoint.sh (migrate + gunicorn)
+```
+
+**Build and run:**
+```bash
+docker build -t iyou-idp:latest .
+docker run -d --name iyou-idp \
+  -p 8000:8000 \
+  -e IDP_SECRET_KEY="<generated-secret>" \
+  -e IDP_BASE_URL="https://idp.example.com" \
+  -e IDP_DEBUG=False \
+  -e IDP_ALLOWED_HOSTS="idp.example.com" \
+  -e IDP_CSRF_TRUSTED_ORIGINS="https://idp.example.com" \
+  -e IDP_CORS_ALLOWED_ORIGINS="https://app.example.com" \
+  -e DATABASE_URL="postgres://user:pass@db:5432/iyou_idp" \
+  -e REDIS_URL="redis://redis:6379/1" \
+  iyou-idp:latest
+```
+
+**Environment variable reference:**
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `IDP_SECRET_KEY` | `str` | (dev fallback) | Django secret key — required in production |
+| `IDP_BASE_URL` | `str` | `http://127.0.0.1:8000` | Public-facing base URL for OIDC endpoints |
+| `IDP_DEBUG` | `bool` | `False` | Enable debug mode (dev only) |
+| `IDP_ALLOWED_HOSTS` | `list` | `127.0.0.1` | Comma-separated allowed host/domain list |
+| `IDP_CSRF_TRUSTED_ORIGINS` | `list` | `http://127.0.0.1:8000` | Origins allowed to POST CSRF-protected forms |
+| `IDP_CORS_ALLOWED_ORIGINS` | `list` | `[]` | Origins allowed for CORS (satellite app domains) |
+| `DATABASE_URL` | `str` | `sqlite:///db.sqlite3` | Database connection string (use PostgreSQL in production) |
+| `REDIS_URL` | `str` | `redis://127.0.0.1:6379/1` | Redis connection for challenge-response caching |
+
+When `IDP_DEBUG=False`, the following are automatically enabled:
+- `SECURE_PROXY_SSL_HEADER` — trusts `X-Forwarded-Proto: https` from Traefik/nginx
+- `SESSION_COOKIE_SECURE = True`
+- `CSRF_COOKIE_SECURE = True`
+- Cookie names are isolated to `idp_sessionid` / `idp_csrftoken` to prevent domain collisions on shared loopback.
 
 ## Security Considerations [L463-475]
 
@@ -501,7 +565,7 @@ To force the direct-callback path, ensure:
 ### Short-term Goals [L518-525]
 
 - Add a health-check endpoint for the WebSocket bridge (`GET /health/`)
-- Dockerize the application (Dockerfile + compose.yaml with Redis)
+- Add docker-compose.yaml with Redis + PostgreSQL services
 - Add OIDC `prompt=login` support to force re-authentication
 - Add PKCE (S256) support in the direct-callback path
 
