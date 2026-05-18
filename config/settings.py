@@ -20,9 +20,12 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
-    IYOU_SECRET_KEY=(str, 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5'),
-    IYOU_BASE_URL=(str, 'http://127.0.0.1:8000'),
-    DEBUG=(bool, True),
+    IDP_SECRET_KEY=(str, 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5'),
+    IDP_BASE_URL=(str, 'http://127.0.0.1:8000'),
+    IDP_DEBUG=(bool, False),
+    IDP_ALLOWED_HOSTS=(list, ['127.0.0.1']),
+    IDP_CSRF_TRUSTED_ORIGINS=(list, ['http://127.0.0.1:8000']),
+    IDP_CORS_ALLOWED_ORIGINS=(list, []),
     DATABASE_URL=(str, 'sqlite:///db.sqlite3'),
     REDIS_URL=(str, 'redis://127.0.0.1:6379/1'),
 )
@@ -35,15 +38,15 @@ sys.path.append(os.path.join(BASE_DIR, 'src'))
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env('IYOU_SECRET_KEY')
+SECRET_KEY = env('IDP_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env('DEBUG')
+DEBUG = env('IDP_DEBUG')
 
 # Single BASE_URL to switch the entire IdP's identity between Tailscale and 127.0.0.1
-IYOU_BASE_URL = env('IYOU_BASE_URL')
+IDP_BASE_URL = env('IDP_BASE_URL')
 
-ALLOWED_HOSTS = ['127.0.0.1']
+ALLOWED_HOSTS = env('IDP_ALLOWED_HOSTS')
 
 
 # Application definition
@@ -72,16 +75,15 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# Dev only: allow all CORS origins to prevent pre-flight blocks
-CORS_ALLOW_ALL_ORIGINS = True
+# Production: explicit CORS whitelist from environment.
+# For local dev, set IDP_CORS_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://127.0.0.1:8001
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = env('IDP_CORS_ALLOWED_ORIGINS')
 
 # Critical for the browser to allow OIDC redirect/handshake on insecure (HTTP) origins
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
-CSRF_TRUSTED_ORIGINS = [
-    'http://127.0.0.1:8000',
-    'http://127.0.0.1:8001',
-]
+CSRF_TRUSTED_ORIGINS = env('IDP_CSRF_TRUSTED_ORIGINS')
 
 ROOT_URLCONF = 'config.urls'
 
@@ -146,6 +148,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -175,19 +178,23 @@ CACHES = {
 # Login URL for authentication
 LOGIN_URL = '/auth/login/'
 
-# Cookie flags for local HTTP OIDC — SameSite=Lax allows the cookie on top-level redirects
-# without requiring the Secure flag (impossible on local HTTP).  Domain=None avoids
-# Brave's third-party blocking when ports differ (8000 vs 8001).
-SESSION_COOKIE_DOMAIN = None
-SESSION_COOKIE_NAME = 'idp_sessionid'
+# Cookie isolation — unique names prevent domain collisions on shared 127.0.0.1
+# SameSite=Lax allows the cookie on top-level redirects without requiring Secure.
+SESSION_COOKIE_NAME = "idp_sessionid"
 SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_NAME = 'idp_csrftoken'
-CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_NAME = "idp_csrftoken"
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+else:
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
 
 # OIDC Provider Settings
-# All endpoints derive from IYOU_BASE_URL so switching between Tailscale/localhost is one line.
-SITE_URL = IYOU_BASE_URL
+# All endpoints derive from IDP_BASE_URL so switching between Tailscale/localhost is one line.
+SITE_URL = IDP_BASE_URL
 OIDC_USERINFO = 'auth_bridge.oidc.custom_userinfo_claims'
 OIDC_IDTOKEN_PROCESSING_HOOK = 'auth_bridge.oidc.custom_idtoken_processing_hook'
 OIDC_IDTOKEN_SUB_GENERATOR = 'auth_bridge.oidc.custom_sub_generator'
