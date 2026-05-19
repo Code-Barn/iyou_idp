@@ -15,6 +15,7 @@ build/
 # Rust-Python bridge (maturin build artifacts)
 *.abi3.so
 *.so
+src/iyou_idp/_crypto*.so
 
 # Django
 db.sqlite3
