@@ -1,4 +1,4 @@
-# Copyright (C) 2026 Byers Brands, LLC
+# Copyright (C) 2026 David Byers dba Byers Brands
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -223,18 +223,18 @@ class ChallengeView(View):
     """
     Generate and return a new authentication challenge using Redis.
     """
-    
+
     def post(self, request):
         """
         Create a new challenge in Redis with 300-second TTL.
-        
+
         Returns:
             JsonResponse: Contains the challenge UUID.
         """
         challenge_uuid = str(uuid.uuid4())
         # Store in Redis with 300-second expiry
         cache.set(challenge_uuid, 'pending', timeout=300)
-        
+
         return JsonResponse({
             'challenge': challenge_uuid,
             'expires_in': 300,
@@ -243,7 +243,7 @@ class ChallengeView(View):
     def get(self, request):
         """
         Health check endpoint.
-        
+
         Returns:
             JsonResponse: Status message.
         """
@@ -254,24 +254,24 @@ class LoginPageView(View):
     """
     Render the DID login page for OIDC authentication flow.
     """
-    
+
     def get(self, request):
         """
         Render the login page with Tailwind CSS.
-        
+
         Args:
             request: HTTP request object
-            
+
         Returns:
             HTTP response with login page template
         """
         # Get the 'next' parameter from the URL (OIDC redirect URI)
         next_url = request.GET.get('next', '/')
-        
+
         context = {
             'next_url': next_url,
             'page_title': 'Sovereign Login',
             'description': 'Authenticate with your Decentralized Identifier',
         }
-        
+
         return render(request, 'auth_bridge/login.html', context)
