@@ -1,18 +1,32 @@
-# Developer Guide: Sovereign Identity Provider (IdP) [L1-536]
+# Developer Guide: Sovereign Identity Provider (IdP) [L1-578]
 
-## Overview [L3-7]
+## Overview [L3-10]
 
 The iYou IdP is a Django-based OIDC provider that authenticates users via
 W3C Decentralised Identifiers (DIDs) instead of passwords.  A Rust extension
-(`_crypto`) handles Ed25519 signature verification; the browser talks to a
-desktop companion app (`iyou-home`) over a local WebSocket for native signing.
+(`_crypto`) handles Ed25519 signature verification.
 
-## Architecture [L7-20]
+The login portal implements a **3-tiered sovereign spectrum** that welcomes
+users of all technical levels while preserving the DID architecture:
+
+| Tier | Tab | Authentication Method |
+|------|-----|----------------------|
+| **3 — Full Sovereignty** | Full Sovereignty | Desktop WebSocket (`iyou-home`) + manual VP paste |
+| **2 — Community Self-Signing** | Community Self-Signing | OOB QR-code flow with mobile DID wallet (`iyou_mobile`) |
+| **1 — Managed Convenience** | Managed Convenience | OAuth providers (Google, Apple, GitHub) + email/password (scaffold) |
+
+The portal is also the ecosystem's landing page, served at the root URL (`/`)
+with App Store / Google Play / GitHub buttons, and integrates with the standard
+OIDC authorization flow so satellite apps can redirect users for DID-based login.
+
+## Architecture [L10-50]
+
+### Level 3 — Desktop WebSocket Flow (Full Sovereignty)
 
 ```
-  Browser (login.html)          Django IdP (port 8001)         iYou Home (port 9001)
+  Browser                     Django IdP (port 8001)         iYou Home (port 9001)
        │                              │                              │
-       ├── GET /auth/login/ ─────────►│                              │
+       ├── GET / or /auth/login/ ────►│                              │
        │◄── login page (HTML+JS) ─────┤                              │
        │                              │                              │
        │  ── pre-flight probe ────────┼────── fetch OPTIONS ────────►│
@@ -22,7 +36,7 @@ desktop companion app (`iyou-home`) over a local WebSocket for native signing.
        │◄────────── connected ────────┼──────────────────────────────┤
        │                              │                              │
        │  POST /auth/challenge/ ─────►│                              │
-       │◄──── {challenge: uuid} ──────┤                              │
+       │◄── {challenge: uuid} ────────┤                              │
        │                              │                              │
        │  ── {type:sign,challenge} ───┼─────────────────────────────►│
        │◄── {type:signature,vp:...} ──┼──────────────────────────────┤
@@ -34,43 +48,75 @@ desktop companion app (`iyou-home`) over a local WebSocket for native signing.
        └──────────────────────────────┘                              ┘
 ```
 
-## Project Structure [L20-67]
+### Level 2 — OOB QR-Code Flow (Community Self-Signing)
+
+```
+  Browser (Tab 2)             Django IdP (port 8001)        iyou_mobile (phone)
+       │                              │                              │
+       │  POST /auth/challenge/ ─────►│                              │
+       │◄── {challenge: uuid} ────────┤                              │
+       │                              │                              │
+       │  Render QR code              │                              │
+       │  (iyouauth://sign?ch=…       │                              │
+       │   &url=…&next=…)             │                              │
+       │                              │  ─── scan QR code ──────────►│
+       │                              │                              │
+       │                              │  POST /auth/mobile-verify/ ─►│
+       │                              │  {vp: …, challenge: uuid}    │
+       │                              │◄── {solved: true} ───────────┤
+       │                              │                              │
+       │  GET /auth/challenge-status/ │                              │
+       │      <uuid>/ (poll 1s) ─────►│                              │
+       │◄── {solved:true,             │                              │
+       │     redirect_url:…} ─────────┤                              │
+       │                              │                              │
+       │  window.location = redirect  │                              │
+       └──────────────────────────────┘                              ┘
+```
+
+## Project Structure [L52-100]
 
 ```
 iyou_idp/
-├── auth_bridge/                 # Django app — auth logic
+├── auth_bridge/                    # Django app — auth logic
 │   ├── management/commands/
 │   │   └── createsuperuser_did.py
 │   ├── templates/auth_bridge/
-│   │   └── login.html           # Full-page JS handshake UI
+│   │   ├── login.html              # Shell: tab nav + includes + shared JS
+│   │   ├── _tab_sovereign.html     # Tab 0: WebSocket + manual VP flow
+│   │   ├── _tab_community.html     # Tab 1: OOB QR-code flow
+│   │   ├── _tab_managed.html       # Tab 2: OAuth + email/password scaffold
+│   │   └── admin/                  # Admin DID login templates
 │   ├── __init__.py
 │   ├── admin.py
-│   ├── admin_views.py           # DID-based admin login views
-│   ├── backend.py               # DIDAuthBackend
-│   ├── models.py                # User (AbstractBaseUser)
-│   ├── oidc.py                  # OIDC userinfo/id-token hooks
-│   ├── tests.py                 # 8 integration tests
+│   ├── admin_views.py              # DID-based admin login views
+│   ├── backend.py                  # DIDAuthBackend
+│   ├── models.py                   # User (AbstractBaseUser)
+│   ├── oidc.py                     # OIDC userinfo/id-token hooks
+│   ├── tests.py                    # Integration tests
 │   ├── urls.py
-│   └── views.py                 # verify_signature, ChallengeView, LoginPageView
+│   └── views.py                    # verify_signature, ChallengeView, LoginPageView,
+│                                   # mobile_verify_signature, check_challenge_status,
+│                                   # managed_login, _get_rust_verify_vp
 ├── config/
 │   ├── __init__.py
-│   ├── settings.py              # IDP_* env vars, django-environ, production hardening
-│   ├── urls.py
+│   ├── settings.py                 # IDP_* env vars, django-environ, production hardening
+│   ├── urls.py                     # Root / → LoginPageView (landing)
 │   ├── wsgi.py
 │   └── asgi.py
 ├── src/
 │   └── iyou_idp/
 │       ├── __init__.py
-│       ├── _crypto.abi3.so      # Compiled Rust extension
+│       ├── _crypto.abi3.so         # Compiled Rust extension
 │       ├── _core.abi3.so
 │       └── _core.pyi
 ├── crates/
-│   └── rust-did/                # Rust DID verification library
-├── Cargo.toml                   # Rust crate config
-├── pyproject.toml               # Python project + uv/gunicorn deps
-├── Dockerfile                   # Multi-stage uv-based production build
-├── docker-entrypoint.sh         # migrate + gunicorn entrypoint
-├── .dockerignore                # Build context filter
+│   └── rust-did/                   # Rust DID verification library
+├── Cargo.toml                      # Rust crate config
+├── pyproject.toml                  # Python project + uv/gunicorn deps
+├── Dockerfile                      # Multi-stage uv-based production build
+├── docker-entrypoint.sh            # migrate + gunicorn entrypoint
+├── .dockerignore                   # Build context filter
 ├── .env.example
 └── README.md
 ```
@@ -172,51 +218,80 @@ def has_perm(self, perm, obj=None): return self.is_superuser
 def has_module_perms(self, app_label): return self.is_superuser
 ```
 
-### 2. Challenge-Response Flow [L161-187]
+### 2. Challenge-Response Flow [L195-230]
+
+Every challenge is stored in Redis as a JSON dict with a **300-second TTL**:
+
+```json
+{"status": "pending", "did": null, "next_url": "/openid/authorize/?client_id=..."}
+```
+
+**Desktop WebSocket flow** (`POST /auth/verify/`):
 
 ```
 POST /auth/challenge/  →  {challenge: "<uuid>", expires_in: 300}
 POST /auth/verify/     →  {success: true, redirect_url: "...", user: {...}}
 ```
 
-The challenge is stored in Redis with a **300-second (5-minute) TTL** so
-manual copy-paste doesn't expire.  A cache miss returns HTTP 400 with
-`"Challenge expired"` (not 404 — this is a client logic error, not a missing
-resource).
-
 The `verify_signature` view:
 1. Parses the JSON body (`verifiable_presentation`, `challenge`, `next_url`)
 2. Validates the challenge exists in Redis
-3. Calls the Rust bridge via `verify_vp(json.dumps(vp_json))`
-4. Extracts the `holder` DID from the VP
-5. Deletes the challenge from Redis (one-time use)
-6. Creates the user if they don't exist (`get_or_create`)
-7. Calls `django.contrib.auth.login()` to establish the session
-8. Calls `_build_oidc_redirect()` to optionally skip the OIDC consent page
-9. Returns `{success: true, redirect_url: ..., user: {did, is_new_user, ...}}`
+3. Calls the shared `_get_rust_verify_vp()` helper to obtain the Rust bridge
+4. Calls `verify_vp(json.dumps(vp_json))`
+5. Extracts the `holder` DID from the VP
+6. Deletes the challenge from Redis (one-time use)
+7. Creates the user if they don't exist (`get_or_create`)
+8. Calls `django.contrib.auth.login()` to establish the session
+9. Calls `_build_oidc_redirect()` to optionally skip the OIDC consent page
+10. Returns `{success: true, redirect_url: ..., user: {did, is_new_user, ...}}`
 
-### 3. Rust Bridge [L187-209]
+**OOB mobile flow** (`POST /auth/mobile-verify/` + polling):
 
-**`fn hello_from_bin`** [L193] — smoke-test function, returns a string.
-
-**`fn verify_signature`** [L196-197] — (legacy) takes `(did, message, sig)`.
-
-**`fn verify_vp`** [L200-203] — takes a JSON-serialized Verifiable
-Presentation string, returns `{valid: true/false, error: "..."}`.
-
-The bridge is imported via a three-tier fallback in `views.py`:
-
-```python
-try:
-    from iyou_idp import _crypto       # Standard import (src/ on sys.path)
-    verify_vp = _crypto.verify_vp
-except ImportError:
-    import _crypto                      # Bare import fallback
-    verify_vp = _crypto.verify_vp
+```
+POST /auth/mobile-verify/  →  {solved: true}
+GET  /auth/challenge-status/<uuid>/  →  {solved: true, redirect_url: "..."}
+                                  or  {solved: false}
 ```
 
-If all attempts fail, the view prints full `sys.path` plus the path it
-probed for `_crypto.abi3.so` and returns `status=500` with instructions.
+1. The browser fetches a challenge (`POST /auth/challenge/`) and renders it as
+   a QR code encoding `iyouauth://sign?ch=<uuid>&url=<base>&next=<next>`.
+2. The mobile app scans the QR code, signs the VP, and POSTs it to
+   `{url}/auth/mobile-verify/`.
+3. `mobile_verify_signature` verifies the VP through the Rust bridge and
+   updates the cache entry: `{"status": "solved", "did": "did:key:…"}`.
+   It rejects replays — if `status` is already `solved`, returns 400.
+4. The browser polls `check_challenge_status` every 1 second.  Once the
+   status is `solved`, the view creates the user, calls
+   `django.contrib.auth.login()`, generates the OIDC redirect, deletes the
+   challenge, and returns `{solved: true, redirect_url: "..."}`.
+
+### 3. Rust Bridge [L232-260]
+
+**`fn hello_from_bin`** — smoke-test function, returns a string.
+
+**`fn verify_vp`** — takes a JSON-serialized Verifiable
+Presentation string, returns `{valid: true/false, error: "..."}`.
+
+The bridge is imported through a shared helper in `views.py` used by both
+the desktop WebSocket path (`verify_signature`) and the mobile OOB path
+(`mobile_verify_signature`):
+
+```python
+def _get_rust_verify_vp():
+    """Import and return the verify_vp callable from the Rust _crypto bridge."""
+    try:
+        from iyou_idp import _crypto
+        return _crypto.verify_vp, None
+    except ImportError:
+        try:
+            import _crypto
+            return _crypto.verify_vp, None
+        except ImportError as e:
+            return None, [str(e)]
+```
+
+If all attempts fail, the views print full `sys.path` plus the path they
+probed for `_crypto.abi3.so` and return `status=500` with instructions.
 
 ### 4. Creating a Superuser [L209-234]
 
@@ -260,40 +335,68 @@ claims to the ID token JWT.
 `sub` claim, ensuring the user's DID is the stable identifier across
 sessions and clients.
 
-## Authentication Flow (VerifySignatureView) [L284-314]
+## Authentication Flow [L310-380]
 
-### Challenge-Response Cycle [L286-298]
+The login page is organised as three tabs, each implementing a different
+authentication tier.  Tab switching is instant (client-side JS class toggling)
+and never triggers a page reload.  A `?tab=<name>` query parameter or URL hash
+persists the active tab across redirects.
+
+### Tab 0 — Full Sovereignty (Challenge-Response Cycle)
 
 1. User clicks "Request Challenge" → `POST /auth/challenge/`
 2. Server generates UUID, stores in Redis with 300s TTL
 3. JS receives `{challenge, expires_in}` and displays it
 4. User signs the challenge with their DID wallet (or mock VP)
 5. `POST /auth/verify/` with `{verifiable_presentation, challenge, next_url}`
-6. Server validates challenge in Redis, calls `verify_vp()`, logs in user
+6. Server validates challenge in Redis, calls `_get_rust_verify_vp()`, logs in user
 7. Returns `{success, redirect_url, user}`
 
-### Satellite-App Redirect Safety [L298-306]
+### Tab 1 — Community Self-Signing (OOB Mobile Flow)
 
-The `redirect_url` in the verify response is derived from the `next_url`
-that was passed in.  When the caller is the OIDC authorize flow, `next_url`
-contains the full `/openid/authorize/?client_id=...&redirect_uri=...`
-query string.  The `_build_oidc_redirect()` helper parses these params,
-directly generates an OIDC authorization `Code`, and returns the client's
+1. The tab fetches a challenge (`POST /auth/challenge/`) with the current
+   `next_url` in the JSON body.
+2. A QR code is rendered using the `qrcodejs` CDN library encoding the URI:
+   `iyouauth://sign?ch=<challenge_id>&url=<origin>&next=<base64(next_url)>`
+3. The mobile app scans the QR code, signs the challenge, and POSTs the VP
+   to `{url}/auth/mobile-verify/`.
+4. The browser polls `GET /auth/challenge-status/<challenge_id>/` every 1 s.
+5. When the challenge is solved, the polling endpoint creates the user,
+   calls `django.contrib.auth.login()`, generates the OIDC redirect, and
+   returns `{solved: true, redirect_url: "..."}`.
+6. The browser navigates to the redirect URL.
+
+### Tab 2 — Managed Convenience (Scaffold)
+
+- Disabled OAuth buttons for Google, Apple, and GitHub (Coming Soon badge).
+- Live email/password form → `POST /auth/managed-login/`.  Currently returns
+  a Django messages flash message confirming receipt; future iterations will
+  hash the password and generate a server-side `did:web`.
+- Disabled Passkey button (Coming Soon).
+
+### Satellite-App Redirect Safety [L342-360]
+
+All three tiers share the same redirect mechanism.  The `redirect_url` is
+derived from the `next_url` that was passed in.  When the caller is the OIDC
+authorize flow, `next_url` contains the full
+`/openid/authorize/?client_id=...&redirect_uri=...` query string.  The
+`_build_oidc_redirect()` helper parses these params, directly generates an
+OIDC authorization `Code`, and returns the client's
 `redirect_uri?code=...&state=...` — **skipping the consent page entirely**.
 
-This means the browser goes:
 ```
 verify → (302) client callback with code
 ```
-instead of the slower:
+Instead of the slower:
 ```
 verify → (200) consent page → user clicks Allow → (302) client callback
 ```
 
-### iYou Home Desktop Companion [L306-314]
+### iYou Home Desktop Companion [L360-410]
 
-The login page attempts a WebSocket connection to `ws://localhost:9001` for
-native signing.  The wire protocol is a simple JSON request/response exchange:
+The "Full Sovereignty" tab attempts a WebSocket connection to
+`ws://localhost:9001` for native signing.  The wire protocol is a simple
+JSON request/response exchange:
 
 **Request** (browser → iYou Home):
 ```json
@@ -315,35 +418,32 @@ The handshake has several protection layers:
 1. **Pre-flight probe** — `fetch('http://localhost:9001', {method:'OPTIONS', signal:AbortSignal.timeout(500)})` checks if the port is reachable before committing to `new WebSocket()` (avoids browser thread blocking from PNA checks).
 
 2. **Kill Switch** — A "Cancel & Use Manual Paste" button appears
-   **immediately** (no 0.5s delay) when the linking UI shows.  Clicking it
-   calls `socket.close()` to abort any in-flight TCP connection.
+   **immediately** when the linking UI shows.  Clicking it calls
+   `socket.close()` to abort any in-flight TCP connection.
 
 3. **2-second force fallback** — If `socket.readyState !== WebSocket.OPEN`
    after 2 seconds, the socket is forcibly closed and the manual paste box
-   appears (down from 3s).
+   appears.
 
-4. **Alert-based debugging** — When a WebSocket message arrives,
-   `alert("MESSAGE RECEIVED: " + event.data)` fires so the developer can
-   confirm the browser actually received the payload (useful for diagnosing
-   browser-level networking issues).
+4. **Version logging** — `console.log("LOGIN UI VERSION: 3.0.0")` at script
+   top confirms the browser isn't serving a stale cached copy.
 
-5. **Version logging** — `console.log("LOGIN UI VERSION: 2.0.5")` at script
-   top and `console.log("!!! HANDSHAKE START VERSION 2.0.5 !!!")` in the
-   `onopen` handler let you confirm the browser isn't serving a stale cached
-   copy of the page.
+5. **Cache busting** — `<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">` in `<head>` forces re-fetch on every navigation.
 
-6. **Cache busting** — `<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">` in `<head>` forces re-fetch on every navigation.
+## API Endpoints [L412-450]
 
-## API Endpoints [L314-343]
-
-### Authentication Endpoints [L316-325]
+### Authentication Endpoints [L414-430]
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/auth/login/` | Renders login page |
-| POST | `/auth/challenge/` | Generates new challenge (300s TTL) |
+| GET | `/` | Landing page — hero + login portal |
+| GET | `/auth/login/` | Compact login page (OIDC redirect target) |
+| POST | `/auth/challenge/` | Generates new challenge (300s TTL) — JSON dict in Redis |
 | GET | `/auth/challenge/` | Health check |
-| POST | `/auth/verify/` | Verifies VP, logs in, returns redirect |
+| POST | `/auth/verify/` | Verifies VP (desktop WebSocket path), logs in, returns redirect |
+| POST | `/auth/mobile-verify/` | Verifies VP (mobile OOB path), marks challenge `solved` |
+| GET | `/auth/challenge-status/<uuid>/` | Polling — returns `{solved, redirect_url}` when mobile has signed |
+| POST | `/auth/managed-login/` | Scaffold — accepts email+password, returns Django messages |
 
 ### Admin DID Endpoints [L325-333]
 
@@ -396,10 +496,10 @@ Key tests:
 - `test_verify_redirects_directly_to_client` — direct-callback: verify returns client URI with code
 - `test_jwks_endpoint_returns_valid_key` — `/openid/jwks/` exposes at least one RSA key
 
-### Debugging [L381-397]
+### Debugging [L435-458]
 
 - **WebSocket not connecting?** Open browser dev tools console.  Look for:
-  - `"LOGIN UI VERSION: 2.0.5"` — confirms fresh JS
+  - `"LOGIN UI VERSION: 3.0.0"` — confirms fresh JS
   - `"WS: Socket Created"` — WebSocket constructor succeeded
   - `"WS: Connection Opened"` — handshake completed
   - `"WS: Socket Error"` — browser blocked or server not listening
@@ -407,6 +507,11 @@ Key tests:
 - **Signature not received?** The `alert("MESSAGE RECEIVED: ...")` in the
   `onmessage` handler is the definitive test.  If it fires, the browser got
   the data.  If not, the network is swallowing the message.
+- **OOB flow not completing?** Check:
+  - The QR code rendered (inspect the `#qrcode` div in dev tools)
+  - The browser logs `"Scan with your mobile app"` — challenge fetch succeeded
+  - The network tab shows `GET /auth/challenge-status/<uuid>/` polling every 1s
+  - When the mobile app POSTs, the poll response changes to `{solved: true, redirect_url: "..."}`
 - **Server error on verify?** Look for `"VERIFY RESPONSE FULL:"` in the
   console — the full JSON response is logged.
 - **Rust bridge not found?** Check the console for the `"="` banner with
@@ -414,7 +519,7 @@ Key tests:
 
 ## Error Handling [L397-421]
 
-### Common Errors & Solutions [L399-412]
+### Common Errors & Solutions [L453-470]
 
 | Error | Cause | Fix |
 |-------|-------|-----|
@@ -422,8 +527,11 @@ Key tests:
 | `Rust Crypto Bridge not found` | `src/` not on `sys.path` or `.so` missing | Run `maturin develop` or check `sys.path` in `settings.py` |
 | `Challenge expired` | Challenge TTL (300s) exceeded | Request a new challenge |
 | `Missing required fields` | VP or challenge not in POST body | Check JS `submitVP()` sends all fields |
+| `Challenge already solved` | Mobile replayed a solved challenge | Generate a new QR code |
+| `Challenge not found or expired` (mobile-verify) | Polling after TTL or bad UUID | Refresh tab to get a fresh challenge |
 | 500 on POST to `/auth/verify/` | import or bridge crash | Check console for `VERIFY RESPONSE FULL` or server traceback |
 | WebSocket never opens | Browser PNA blocking or iyou-home not running | Check pre-flight probe result; use manual paste |
+| QR code not appearing | `qrcodejs` CDN not loaded or challenge fetch failed | Check network tab for CDN or `/auth/challenge/` errors |
 | `data.redirect_url` not redirecting | `data.success` falsy or `redirect_url` missing | Check `VERIFY RESPONSE FULL` in console |
 
 ### Error Response Format [L412-421]
@@ -513,10 +621,13 @@ When `IDP_DEBUG=False`, the following are automatically enabled:
 
 - Challenges are single-use (deleted from Redis after verification)
 - Challenge TTL is 300 seconds (limited window for replay)
+- Challenge replay is prevented — `mobile_verify_signature` returns 400 if
+  `status` is already `solved`
 - DID verification happens in native Rust (memory-safe)
 - WebSocket connection is restricted to `localhost:9001` (no remote attack surface)
 - OIDC authorization codes are generated by the provider's standard `create_code()` utility
-- `@csrf_exempt` on `verify_signature` is safe because the endpoint has no session side-effects (auth is purely cryptographic)
+- `@csrf_exempt` on `verify_signature` and `mobile_verify_signature` is safe
+  because both endpoints have no session side-effects (auth is purely cryptographic)
 - The `next_url` is validated against the OIDC client's registered `redirect_uris` before code generation
 
 ## Troubleshooting [L475-516]
@@ -560,19 +671,22 @@ To force the direct-callback path, ensure:
 - The `redirect_uri` in the authorize URL matches exactly (trailing slash matters)
 - The `client_id` in the authorize URL matches the registered client
 
-## Roadmap [L516-536]
+## Roadmap [L560-580]
 
-### Short-term Goals [L518-525]
+### Short-term Goals [L562-570]
 
-- Add a health-check endpoint for the WebSocket bridge (`GET /health/`)
-- Add docker-compose.yaml with Redis + PostgreSQL services
-- Add OIDC `prompt=login` support to force re-authentication
-- Add PKCE (S256) support in the direct-callback path
+- ⬜ Add OIDC `prompt=login` support to force re-authentication
+- ⬜ Add PKCE (S256) support in the direct-callback path
+- ⬜ Wire `managed_login` to hash the password and generate a server-side `did:web`
+- ⬜ Live OAuth provider integration (Google, Apple, GitHub) in Tab 2
+- ⬜ Live passkey (WebAuthn) support in Tab 2
 
-### Long-term Goals [L525-536]
+### Long-term Goals [L570-580]
 
-- Support multiple DID methods (did:web, did:ethr, did:sol)
-- Replace the current polling-based iyou-home handshake with a push model
-- Add a self-service admin UI for OIDC client registration
-- Performance testing under load (concurrent DID verifications)
-- CI/CD pipeline with automated Rust bridge builds for Linux and macOS
+- ✅ **OOB mobile auth** — QR-code flow for iyou_mobile (Level 2, Tab 1)
+- ✅ **Landing page** — Portal hosted at `/` with App Store / Play / GitHub links
+- 🔲 Support multiple DID methods (did:web, did:ethr, did:sol)
+- 🔲 Replace the current polling-based iyou-home handshake with a push model
+- 🔲 Add a self-service admin UI for OIDC client registration
+- 🔲 Performance testing under load (concurrent DID verifications)
+- 🔲 CI/CD pipeline with automated Rust bridge builds for Linux and macOS
