@@ -15,8 +15,10 @@
 
 from django.contrib import admin
 from django.urls import path, include
+from auth_bridge.views import LoginPageView
 
 urlpatterns = [
+    path('', LoginPageView.as_view(), name='landing'),
     path('admin/', admin.site.urls),
     # auth/ must come before openid/ to avoid any routing conflict
     path('auth/', include('auth_bridge.urls')),

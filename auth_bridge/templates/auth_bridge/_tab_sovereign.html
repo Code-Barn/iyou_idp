@@ -1,0 +1,126 @@
+<!-- Step Indicators -->
+<div class="flex justify-center mb-8">
+    <div class="flex space-x-4">
+        <div class="step-indicator active w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step1">
+            1
+        </div>
+        <div class="step-indicator w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step2">
+            2
+        </div>
+        <div class="step-indicator w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step3">
+            3
+        </div>
+    </div>
+</div>
+
+<!-- Step 1: Request Challenge -->
+<div id="step1-content" class="step-content">
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-semibold text-gray-700 mb-2">Request Authentication Challenge</h2>
+        <p class="text-gray-600 text-sm">
+            Click the button below to generate a cryptographic challenge for your DID.
+        </p>
+    </div>
+
+    <button id="requestChallengeBtn"
+            class="btn-primary w-full text-white py-3 px-6 rounded-lg font-medium text-lg mb-4">
+        Request Challenge
+    </button>
+
+    <div id="loading" class="hidden text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
+        <p class="text-gray-600 mt-2">Generating challenge...</p>
+    </div>
+
+    <div id="errorMessage" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"></div>
+</div>
+
+<!-- Step 2: Sign Challenge -->
+<div id="step2-content" class="step-content hidden">
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-semibold text-gray-700 mb-2">Sign Challenge with Your DID</h2>
+        <p class="text-gray-600 text-sm" id="step2-subtitle">
+            Use your DID wallet or paste a mock signature below.
+        </p>
+    </div>
+
+    <div class="mb-4">
+        <label class="block text-gray-700 text-sm font-medium mb-2">Challenge</label>
+        <div id="challengeDisplay" class="bg-gray-100 p-3 rounded-lg text-sm font-mono break-all"></div>
+    </div>
+
+    <!-- iYou Home native-connect button (shown while handshake is in progress and after success) -->
+    <button id="iyouHomeBtn"
+            class="hidden bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white py-4 px-6 rounded-xl font-bold text-lg mb-1 w-full shadow-lg border-4 border-red-500">
+        🔗 Linking...
+    </button>
+    <button id="cancelIyouBtn"
+            class="hidden text-sm text-gray-500 hover:text-gray-700 underline mb-4">
+        Cancel &amp; Use Manual Paste
+    </button>
+
+    <!-- Manual paste section (hidden when WebSocket succeeds) -->
+    <div id="manualSection">
+        <div class="mb-6">
+            <label class="block text-gray-700 text-sm font-medium mb-2">Verifiable Presentation (or Mock Signature)</label>
+            <textarea id="vpTextarea"
+                      class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows="6"
+                      placeholder='{
+  "verifiableCredential": [{"id": "vc1"}],
+  "proof": {"type": "Ed25519Signature2018"},
+  "holder": "did:key:z6MkqRYqQiSgvZQdnBytw86Qbs2ZWUkGv22od935YF4s8M7V"
+}'></textarea>
+            <p class="text-xs text-gray-500 mt-1">
+                Paste a verifiable presentation below and submit it for verification.
+            </p>
+        </div>
+
+        <button id="submitVPBtn"
+                class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-lg font-medium mb-3 w-full">
+            Submit &amp; Verify
+        </button>
+    </div>
+
+    <button id="backToChallengeBtn"
+            class="text-gray-600 hover:text-gray-800 text-sm underline mb-4">
+        ← Back to Challenge
+    </button>
+
+    <div id="signingLoading" class="hidden text-center">
+        <div class="spinner inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
+        <div class="checkmark hidden text-green-500 text-5xl mb-2">&#10003;</div>
+        <p class="text-gray-600 mt-2">Verifying signature...</p>
+        <a id="boredLink" href="#" class="hidden text-xs text-gray-400 hover:text-gray-600 underline mt-2 inline-block">Taking too long? Click here to paste manually.</a>
+    </div>
+</div>
+
+<!-- Step 3: Success -->
+<div id="step3-content" class="step-content hidden text-center">
+    <div class="mb-6">
+        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+        </div>
+        <h2 class="text-xl font-semibold text-gray-700 mb-2">Authentication Successful!</h2>
+        <p class="text-gray-600">You will be redirected shortly...</p>
+        <a id="manualSuccessLink" href="#"
+           class="hidden mt-4 inline-block bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg text-lg">
+            Login Successful! Click here to enter WUN
+        </a>
+    </div>
+</div>
+
+<!-- Mock download buttons -->
+<div class="mt-6 pt-4 border-t border-gray-200">
+    <p class="text-xs text-gray-400 text-center mb-3">Don't have iYou Home?</p>
+    <div class="flex gap-3">
+        <button class="flex-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-600 font-medium transition-colors">
+            ⬇ Download Desktop App
+        </button>
+        <button class="flex-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-600 font-medium transition-colors">
+            📱 Get Mobile Signer
+        </button>
+    </div>
+</div>

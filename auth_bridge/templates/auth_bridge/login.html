@@ -7,30 +7,31 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>{{ page_title }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
-        
+
         .login-card {
             backdrop-filter: blur(10px);
             background: rgba(255, 255, 255, 0.95);
         }
-        
+
         .btn-primary {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             transition: all 0.3s ease;
         }
-        
+
         .btn-primary:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
-        
+
         .step-indicator {
             transition: all 0.3s ease;
         }
-        
+
         .step-indicator.active {
             background-color: #667eea;
             color: white;
@@ -38,136 +39,117 @@
         }
     </style>
 </head>
+{% if is_landing_page %}
+<body class="gradient-bg min-h-screen flex flex-col items-center pt-12 p-4 sm:pt-20">
+    <!-- Hero -->
+    <div class="text-center text-white mb-10 max-w-lg">
+        <h1 class="text-4xl md:text-5xl font-bold mb-3 tracking-tight">{{ page_title }}</h1>
+        <p class="text-lg md:text-xl text-purple-100/90 max-w-md mx-auto mb-8 leading-relaxed">
+            {{ description }}
+        </p>
+        <div class="flex flex-wrap justify-center gap-3">
+            <a href="#"
+               class="inline-flex items-center gap-2 bg-white/95 text-gray-800 px-5 py-2.5 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-shadow cursor-not-allowed opacity-80">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+                </svg>
+                App Store
+                <span class="text-[10px] text-gray-400 ml-0.5">Coming Soon</span>
+            </a>
+            <a href="#"
+               class="inline-flex items-center gap-2 bg-white/95 text-gray-800 px-5 py-2.5 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-shadow cursor-not-allowed opacity-80">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Google Play
+                <span class="text-[10px] text-gray-400 ml-0.5">Coming Soon</span>
+            </a>
+            <a href="https://github.com/anomalyco/iyou_idp" target="_blank"
+               class="inline-flex items-center gap-2 bg-white/95 text-gray-800 px-5 py-2.5 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-shadow">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                </svg>
+                GitHub
+            </a>
+        </div>
+    </div>
+{% else %}
 <body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+{% endif %}
     <div class="login-card rounded-2xl shadow-2xl p-8 max-w-md w-full">
         <!-- Header -->
+        {% if not is_landing_page %}
         <div class="text-center mb-8">
             <h1 class="text-3xl font-bold text-gray-800 mb-2">{{ page_title }}</h1>
             <p class="text-gray-600">{{ description }}</p>
         </div>
-        
-        <!-- Step Indicators -->
-        <div class="flex justify-center mb-8">
-            <div class="flex space-x-4">
-                <div class="step-indicator active w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step1">
-                    1
-                </div>
-                <div class="step-indicator w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step2">
-                    2
-                </div>
-                <div class="step-indicator w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium" id="step3">
-                    3
-                </div>
-            </div>
-        </div>
-        
-        <!-- Step 1: Request Challenge -->
-        <div id="step1-content" class="step-content">
-            <div class="text-center mb-6">
-                <h2 class="text-xl font-semibold text-gray-700 mb-2">Request Authentication Challenge</h2>
-                <p class="text-gray-600 text-sm">
-                    Click the button below to generate a cryptographic challenge for your DID.
-                </p>
-            </div>
-            
-            <button id="requestChallengeBtn" 
-                   class="btn-primary w-full text-white py-3 px-6 rounded-lg font-medium text-lg mb-4">
-                Request Challenge
-            </button>
-            
-            <div id="loading" class="hidden text-center">
-                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
-                <p class="text-gray-600 mt-2">Generating challenge...</p>
-            </div>
-            
-            <div id="errorMessage" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"></div>
-        </div>
-        
-        <!-- Step 2: Sign Challenge -->
-        <div id="step2-content" class="step-content hidden">
-            <div class="text-center mb-6">
-                <h2 class="text-xl font-semibold text-gray-700 mb-2">Sign Challenge with Your DID</h2>
-                <p class="text-gray-600 text-sm" id="step2-subtitle">
-                    Use your DID wallet or paste a mock signature below.
-                </p>
-            </div>
-            
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-medium mb-2">Challenge</label>
-                <div id="challengeDisplay" class="bg-gray-100 p-3 rounded-lg text-sm font-mono break-all"></div>
-            </div>
+        {% endif %}
 
-            <!-- iYou Home native-connect button (shown while handshake is in progress and after success) -->
-            <button id="iyouHomeBtn"
-                    class="hidden bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white py-4 px-6 rounded-xl font-bold text-lg mb-1 w-full shadow-lg border-4 border-red-500">
-                🔗 Linking...
-            </button>
-            <button id="cancelIyouBtn"
-                    class="hidden text-sm text-gray-500 hover:text-gray-700 underline mb-4">
-                Cancel &amp; Use Manual Paste
-            </button>
-            
-            <!-- Manual paste section (hidden when WebSocket succeeds) -->
-            <div id="manualSection">
-                <div class="mb-6">
-                    <label class="block text-gray-700 text-sm font-medium mb-2">Verifiable Presentation (or Mock Signature)</label>
-                    <textarea id="vpTextarea" 
-                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                             rows="6"
-                             placeholder='{
-  "verifiableCredential": [{"id": "vc1"}],
-  "proof": {"type": "Ed25519Signature2018"},
-  "holder": "did:key:z6MkqRYqQiSgvZQdnBytw86Qbs2ZWUkGv22od935YF4s8M7V"
-}'></textarea>
-                    <p class="text-xs text-gray-500 mt-1">
-                        Paste a verifiable presentation below and submit it for verification.
-                    </p>
-                </div>
-                
-                <button id="submitVPBtn" 
-                       class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-lg font-medium mb-3 w-full">
-                    Submit &amp; Verify
-                </button>
+        <!-- Messages -->
+        {% if messages %}
+        <div class="mb-6 space-y-2">
+            {% for message in messages %}
+            <div class="px-4 py-3 rounded-lg text-sm font-medium border
+                {% if message.tags == 'error' %}bg-red-100 text-red-700 border-red-200
+                {% elif message.tags == 'success' %}bg-green-100 text-green-700 border-green-200
+                {% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-700 border-yellow-200
+                {% else %}bg-blue-100 text-blue-700 border-blue-200{% endif %}">
+                {{ message }}
             </div>
-            
-            <button id="backToChallengeBtn" 
-                   class="text-gray-600 hover:text-gray-800 text-sm underline mb-4">
-                ← Back to Challenge
-            </button>
-            
-            <div id="signingLoading" class="hidden text-center">
-                <div class="spinner inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
-                <div class="checkmark hidden text-green-500 text-5xl mb-2">&#10003;</div>
-                <p class="text-gray-600 mt-2">Verifying signature...</p>
-                <a id="boredLink" href="#" class="hidden text-xs text-gray-400 hover:text-gray-600 underline mt-2 inline-block">Taking too long? Click here to paste manually.</a>
-            </div>
+            {% endfor %}
         </div>
-        
-        <!-- Step 3: Success -->
-        <div id="step3-content" class="step-content hidden text-center">
-            <div class="mb-6">
-                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                </div>
-                <h2 class="text-xl font-semibold text-gray-700 mb-2">Authentication Successful!</h2>
-                <p class="text-gray-600">You will be redirected shortly...</p>
-                <a id="manualSuccessLink" href="#"
-                   class="hidden mt-4 inline-block bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg text-lg">
-                    Login Successful! Click here to enter WUN
-                </a>
-            </div>
+        {% endif %}
+
+        <!-- Tab Navigation -->
+        <div class="flex border-b border-gray-200 mb-6">
+            <button data-tab="0"
+                    class="tab-btn flex-1 py-3 px-4 text-center font-medium text-sm border-b-2 transition-colors text-indigo-600 border-indigo-600"
+                    id="tab-btn-0">
+                Full Sovereignty
+            </button>
+            <button data-tab="1"
+                    class="tab-btn flex-1 py-3 px-4 text-center font-medium text-sm border-b-2 transition-colors text-gray-500 border-transparent hover:text-gray-700"
+                    id="tab-btn-1">
+                Community Self-Signing
+            </button>
+            <button data-tab="2"
+                    class="tab-btn flex-1 py-3 px-4 text-center font-medium text-sm border-b-2 transition-colors text-gray-500 border-transparent hover:text-gray-700"
+                    id="tab-btn-2">
+                Managed Convenience
+            </button>
+        </div>
+
+        <!-- Tab Panes -->
+        <div id="tab-pane-0" class="tab-pane">
+            {% include 'auth_bridge/_tab_sovereign.html' %}
+        </div>
+        <div id="tab-pane-1" class="tab-pane hidden">
+            {% include 'auth_bridge/_tab_community.html' %}
+        </div>
+        <div id="tab-pane-2" class="tab-pane hidden">
+            {% include 'auth_bridge/_tab_managed.html' %}
         </div>
     </div>
-    
+
     <!-- Hidden form for OIDC redirect -->
     <form id="redirectForm" method="GET" class="hidden">
         <input type="hidden" name="next" id="redirectNext">
     </form>
-    
+
+    {% if is_landing_page %}
+    <!-- Footer -->
+    <div class="mt-8 mb-4 text-center text-white/50 text-xs space-x-4">
+        <span>&copy; 2026 David Byers dba Byers Brands</span>
+        <a href="#" class="hover:text-white/80 transition-colors cursor-not-allowed">Privacy</a>
+        <a href="#" class="hover:text-white/80 transition-colors cursor-not-allowed">Terms</a>
+    </div>
+    {% endif %}
+
     <script>
-        console.log("LOGIN UI VERSION: 2.0.5 - HANDSHAKE START");
+        console.log("LOGIN UI VERSION: 3.0.0 - HANDSHAKE START");
 
         // DOM Elements
         const requestChallengeBtn = document.getElementById('requestChallengeBtn');
@@ -178,33 +160,34 @@
         const errorMessage = document.getElementById('errorMessage');
         const challengeDisplay = document.getElementById('challengeDisplay');
         const vpTextarea = document.getElementById('vpTextarea');
-        
+
         // Step content elements
         const step1Content = document.getElementById('step1-content');
         const step2Content = document.getElementById('step2-content');
         const step3Content = document.getElementById('step3-content');
-        
+
         // Step indicators
         const step1Indicator = document.getElementById('step1');
         const step2Indicator = document.getElementById('step2');
         const step3Indicator = document.getElementById('step3');
-        
+
         // URLs — derived dynamically so JS always talks to the current host
         const VERIFY_URL = "{% url 'auth_bridge:verify_signature' %}";
         const CHALLENGE_URL = "{% url 'auth_bridge:challenge' %}";
+        const CHALLENGE_STATUS_URL = "/auth/challenge-status/";
 
         // State
         let currentChallenge = null;
         let currentNextUrl = '{{ next_url|escapejs }}';
         let iyouSocket = null;
-        
+
         // Initialize
         function init() {
             // Set up event listeners
             requestChallengeBtn.addEventListener('click', requestChallenge);
             submitVPBtn.addEventListener('click', handleManualSubmit);
             backToChallengeBtn.addEventListener('click', backToChallenge);
-            
+
             // Set CSRF token for fetch requests
             function getCookie(name) {
                 let cookieValue = null;
@@ -220,9 +203,9 @@
                 }
                 return cookieValue;
             }
-            
+
             window.csrfToken = getCookie('idp_csrftoken');
-            
+
             // Attempt native-connect handshake with iYou Home
             tryConnectIYouHome();
         }
@@ -496,13 +479,13 @@
                 throw error;
             });
         }
-        
+
         // Step 1: Request Challenge
         function requestChallenge() {
             errorMessage.classList.add('hidden');
             requestChallengeBtn.style.display = 'none';
             loading.classList.remove('hidden');
-            
+
             fetch(CHALLENGE_URL, {
                 method: 'POST',
                 headers: {
@@ -513,11 +496,11 @@
             .then(response => response.json())
             .then(data => {
                 loading.classList.add('hidden');
-                
+
                 if (data.challenge) {
                     currentChallenge = data.challenge;
                     challengeDisplay.textContent = currentChallenge;
-                    
+
                     // Update UI
                     step1Indicator.classList.remove('active');
                     step2Indicator.classList.add('active');
@@ -535,16 +518,16 @@
                 console.error('Error:', error);
             });
         }
-        
+
         // Step 2: Manual submit — read from textarea and delegate to submitVerify
         function handleManualSubmit() {
             const vpJson = vpTextarea.value;
-            
+
             if (!vpJson) {
                 showError('Please provide a verifiable presentation or mock signature');
                 return;
             }
-            
+
             // Try to parse as JSON, if it fails, use as-is (for mock signatures)
             let vpData;
             try {
@@ -552,11 +535,11 @@
             } catch (e) {
                 vpData = vpJson;
             }
-            
+
             submitVPBtn.style.display = 'none';
             signingLoading.classList.remove('hidden');
             errorMessage.classList.add('hidden');
-            
+
             submitVerify(vpData).then(result => {
                 if (!result || !result.success) {
                     submitVPBtn.style.display = 'block';
@@ -570,7 +553,7 @@
                 submitVPBtn.style.display = 'block';
             });
         }
-        
+
         // Navigation
         function backToChallenge() {
             step2Indicator.classList.remove('active');
@@ -579,15 +562,120 @@
             step1Content.classList.remove('hidden');
             requestChallengeBtn.style.display = 'block';
         }
-        
+
         // Helper Functions
         function showError(message) {
             errorMessage.textContent = message;
             errorMessage.classList.remove('hidden');
         }
-        
+
+        // --- Community Tab (OOB QR-code flow) ---
+        let communityPollId = null;
+        let communityChallengeId = null;
+
+        function initCommunityTab() {
+            const qrContainer = document.getElementById('qrcode');
+            if (!qrContainer) return;
+
+            // Tear down any previous run
+            if (communityPollId) { clearInterval(communityPollId); communityPollId = null; }
+            communityChallengeId = null;
+
+            qrContainer.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>';
+            const statusEl = document.getElementById('community-status');
+            statusEl.textContent = 'Generating challenge…';
+            const challengeDisplay = document.getElementById('community-challenge-display');
+            if (challengeDisplay) challengeDisplay.classList.add('hidden');
+
+            fetch(CHALLENGE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.csrfToken },
+                body: JSON.stringify({ next_url: currentNextUrl }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.challenge) throw new Error(data.error || 'No challenge returned');
+                communityChallengeId = data.challenge;
+
+                if (challengeDisplay) {
+                    challengeDisplay.textContent = 'Challenge: ' + communityChallengeId;
+                    challengeDisplay.classList.remove('hidden');
+                }
+
+                const oobUri = 'iyouauth://sign?ch=' + encodeURIComponent(communityChallengeId)
+                             + '&url=' + encodeURIComponent(window.location.origin)
+                             + '&next=' + encodeURIComponent(btoa(currentNextUrl));
+
+                qrContainer.innerHTML = '';
+                new QRCode(qrContainer, { text: oobUri, width: 200, height: 200 });
+                statusEl.textContent = 'Scan with your mobile app';
+                startCommunityPolling();
+            })
+            .catch(err => {
+                qrContainer.innerHTML = '<span class="text-red-500 text-sm">Failed to load</span>';
+                statusEl.textContent = 'Could not generate QR code. Please refresh.';
+            });
+        }
+
+        function startCommunityPolling() {
+            if (communityPollId) clearInterval(communityPollId);
+            communityPollId = setInterval(() => {
+                if (!communityChallengeId) return;
+                fetch(CHALLENGE_STATUS_URL + communityChallengeId + '/')
+                    .then(r => { if (!r.ok) throw new Error('Not found'); return r.json(); })
+                    .then(data => {
+                        if (data.solved && data.redirect_url) {
+                            clearInterval(communityPollId);
+                            communityPollId = null;
+                            document.getElementById('community-status').textContent = 'Verified! Redirecting…';
+                            window.location.href = data.redirect_url;
+                        }
+                    })
+                    .catch(() => { /* keep polling until TTL expires */ });
+            }, 1000);
+        }
+
+        // Tab switching with query-param / hash persistence
+        function initTabs() {
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            const tabPanes = document.querySelectorAll('.tab-pane');
+
+            const params = new URLSearchParams(window.location.search);
+            const hash = window.location.hash.replace('#', '');
+            const tabParam = params.get('tab') || hash;
+
+            let activeIdx = 0;
+            if (tabParam === 'managed' || tabParam === '2') activeIdx = 2;
+            else if (tabParam === 'community' || tabParam === '1') activeIdx = 1;
+
+            function activateTab(idx) {
+                tabBtns.forEach(b => {
+                    b.classList.remove('text-indigo-600', 'border-indigo-600');
+                    b.classList.add('text-gray-500', 'border-transparent');
+                });
+                tabBtns[idx].classList.remove('text-gray-500', 'border-transparent');
+                tabBtns[idx].classList.add('text-indigo-600', 'border-indigo-600');
+                tabPanes.forEach(p => p.classList.add('hidden'));
+                tabPanes[idx].classList.remove('hidden');
+
+                // Community tab lifecycle
+                if (idx === 1) {
+                    initCommunityTab();
+                } else {
+                    if (communityPollId) { clearInterval(communityPollId); communityPollId = null; }
+                }
+            }
+
+            tabBtns.forEach((btn, i) => {
+                btn.addEventListener('click', () => activateTab(i));
+            });
+
+            activateTab(activeIdx);
+        }
+
         // Initialize the app
         init();
+        initTabs();
     </script>
 </body>
 </html>

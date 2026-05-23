@@ -23,15 +23,19 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from django.contrib.auth import login
-from django.shortcuts import render
+from django.shortcuts import render, redirect
+from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
 from urllib.parse import urlparse, parse_qs
+
+from django.contrib import messages
 
 from .models import User
 import uuid
 import json
 import sys
+import os
 import logging
 from oidc_provider.models import Client, UserConsent
 from oidc_provider.lib.utils.token import create_code
@@ -104,6 +108,27 @@ def _build_oidc_redirect(next_url, user):
     return f"{redirect_uri}?code={code_obj.code}&state={state}"
 
 
+def _get_rust_verify_vp():
+    """
+    Import and return the ``verify_vp`` callable from the Rust ``_crypto``
+    bridge.  Returns ``(callable, None)`` on success or ``(None, error_list)``
+    on failure.
+    """
+    _import_errors = []
+    try:
+        from iyou_idp import _crypto
+        return _crypto.verify_vp, None
+    except ImportError as e:
+        _import_errors.append(f"from iyou_idp import _crypto: {e}")
+        try:
+            import _crypto  # type: ignore[import-not-found]
+            return _crypto.verify_vp, None
+        except ImportError as e:
+            _import_errors.append(f"import _crypto: {e}")
+
+    return None, _import_errors
+
+
 @require_POST
 @csrf_exempt
 def verify_signature(request):
@@ -126,28 +151,14 @@ def verify_signature(request):
                 'error': 'Challenge expired'
             }, status=400)
 
-        # --- Rust crypto bridge import with fallback paths ---
-        verify_vp = None
-        _import_errors = []
-        try:
-            from iyou_idp import _crypto
-            verify_vp = _crypto.verify_vp
-        except ImportError as e:
-            _import_errors.append(f"from iyou_idp import _crypto: {e}")
-            try:
-                import _crypto  # type: ignore[import-not-found]
-                verify_vp = _crypto.verify_vp
-            except ImportError as e:
-                _import_errors.append(f"import _crypto: {e}")
-
+        # --- Rust crypto bridge via shared helper ---
+        verify_vp, import_err = _get_rust_verify_vp()
         if verify_vp is None:
             print("=" * 60, flush=True)
             print("RUST CRYPTO BRIDGE IMPORT FAILED", flush=True)
             print("sys.path:", sys.path, flush=True)
-            for err in _import_errors:
+            for err in import_err:
                 print("  ", err, flush=True)
-            # Check if the compiled .so even exists on disk
-            import os
             _probe_paths = [
                 os.path.join(os.path.dirname(__file__), '..', 'src', 'iyou_idp', '_crypto.abi3.so'),
             ]
@@ -228,12 +239,22 @@ class ChallengeView(View):
         """
         Create a new challenge in Redis with 300-second TTL.
 
+        The cached value is a JSON dict::
+
+            {"status": "pending", "did": null, "next_url": "…"}
+
         Returns:
             JsonResponse: Contains the challenge UUID.
         """
         challenge_uuid = str(uuid.uuid4())
-        # Store in Redis with 300-second expiry
-        cache.set(challenge_uuid, 'pending', timeout=300)
+        data = json.loads(request.body) if request.body else {}
+        next_url = data.get('next_url', '/')
+
+        cache.set(challenge_uuid, json.dumps({
+            'status': 'pending',
+            'did': None,
+            'next_url': next_url,
+        }), timeout=300)
 
         return JsonResponse({
             'challenge': challenge_uuid,
@@ -248,6 +269,143 @@ class ChallengeView(View):
             JsonResponse: Status message.
         """
         return JsonResponse({'status': 'auth_bridge operational'})
+
+
+@require_POST
+@csrf_exempt
+def mobile_verify_signature(request):
+    """
+    Accept a signed Verifiable Presentation from the mobile app (``iyou_mobile``)
+    via a QR-code OOB flow.
+
+    Verifies the VP through the Rust crypto bridge and, if valid, updates the
+    challenge's Redis entry to ``{"status": "solved", "did": "…", …}``.  The
+    browser's polling endpoint (``check_challenge_status``) will then complete
+    the Django session login.
+
+    POST JSON body::
+
+        {"verifiable_presentation": {…}, "challenge": "<uuid>"}
+    """
+    try:
+        body = json.loads(request.body)
+        vp_json = body.get('verifiable_presentation')
+        challenge = body.get('challenge')
+
+        if not vp_json or not challenge:
+            return JsonResponse(
+                {'error': 'Missing required fields: verifiable_presentation, challenge'},
+                status=400,
+            )
+
+        cached_raw = cache.get(challenge)
+        if cached_raw is None:
+            return JsonResponse({'error': 'Challenge expired or not found'}, status=404)
+
+        cached = json.loads(cached_raw)
+        if cached['status'] == 'solved':
+            return JsonResponse({'error': 'Challenge already solved'}, status=400)
+
+        verify_vp, import_err = _get_rust_verify_vp()
+        if verify_vp is None:
+            return JsonResponse({
+                'error': (
+                    "Rust Crypto Bridge not found. "
+                    "Run 'maturin develop' to build it."
+                )
+            }, status=500)
+
+        if isinstance(vp_json, str):
+            vp_json = json.loads(vp_json)
+
+        result = json.loads(verify_vp(json.dumps(vp_json)))
+        if not result.get('valid', False):
+            return JsonResponse(
+                {'error': result.get('error', 'Verification failed')},
+                status=401,
+            )
+
+        did = vp_json.get('holder', '')
+        if not did:
+            return JsonResponse({'error': 'No DID found in verifiable presentation'}, status=400)
+
+        cached['status'] = 'solved'
+        cached['did'] = did
+        cache.set(challenge, json.dumps(cached), timeout=300)
+
+        return JsonResponse({'solved': True})
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON payload'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': f'Internal server error: {str(e)}'}, status=500)
+
+
+def check_challenge_status(request, challenge_id):
+    """
+    Polling endpoint called by the desktop browser every ~1 s.
+
+    When the associated challenge has been marked ``solved`` by
+    ``mobile_verify_signature``, this view creates/retrieves the ``User``,
+    calls ``django.contrib.auth.login()``, generates an OIDC redirect, and
+    returns the redirect URL to the browser.
+    """
+    cached_raw = cache.get(challenge_id)
+    if cached_raw is None:
+        return JsonResponse({'error': 'Challenge not found or expired'}, status=404)
+
+    cached = json.loads(cached_raw)
+
+    if cached['status'] != 'solved':
+        return JsonResponse({'solved': False})
+
+    did = cached['did']
+    next_url = cached.get('next_url', '/')
+
+    user, created = User.objects.get_or_create(username=did)
+
+    if not user.is_active:
+        return JsonResponse(
+            {'solved': False, 'error': 'User account is disabled'},
+            status=403,
+        )
+
+    user.backend = 'django.contrib.auth.backends.ModelBackend'
+    login(request, user)
+
+    redirect_url = _build_oidc_redirect(next_url, user)
+    if redirect_url is None:
+        redirect_url = next_url
+
+    cache.delete(challenge_id)
+
+    return JsonResponse({
+        'solved': True,
+        'redirect_url': redirect_url,
+    })
+
+
+@require_POST
+def managed_login(request):
+    """
+    Scaffold view for Level 1 (Managed Convenience) email/password login.
+
+    Future: will hash the password, call did_rust to generate a server-side
+    did:web, create/get a User, and log them in.
+    """
+    email = request.POST.get('email', '').strip()
+    password = request.POST.get('password', '').strip()
+
+    if not email or not password:
+        messages.error(request, 'Email and password are required.')
+    else:
+        messages.info(
+            request,
+            f'Managed auth scaffolding — backend not yet wired. '
+            f'Received email={email}'
+        )
+
+    return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
 
 
 class LoginPageView(View):
@@ -267,11 +425,17 @@ class LoginPageView(View):
         """
         # Get the 'next' parameter from the URL (OIDC redirect URI)
         next_url = request.GET.get('next', '/')
+        is_landing = request.path == '/'
 
         context = {
             'next_url': next_url,
-            'page_title': 'Sovereign Login',
-            'description': 'Authenticate with your Decentralized Identifier',
+            'is_landing_page': is_landing,
+            'page_title': 'iYou' if is_landing else 'Sovereign Login',
+            'description': (
+                'Your Sovereign Gateway to the Decentralized Web'
+                if is_landing
+                else 'Authenticate with your Decentralized Identifier'
+            ),
         }
 
         return render(request, 'auth_bridge/login.html', context)
