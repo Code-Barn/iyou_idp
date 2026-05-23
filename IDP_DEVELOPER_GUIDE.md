@@ -15,9 +15,10 @@ users of all technical levels while preserving the DID architecture:
 | **2 — Community Self-Signing** | Community Self-Signing | OOB QR-code flow with mobile DID wallet (`iyou_mobile`) |
 | **1 — Managed Convenience** | Managed Convenience | OAuth providers (Google, Apple, GitHub) + email/password (scaffold) |
 
-The portal is also the ecosystem's landing page, served at the root URL (`/`)
-with App Store / Google Play / GitHub buttons, and integrates with the standard
-OIDC authorization flow so satellite apps can redirect users for DID-based login.
+The portal is served at the root URL (`/`) and at `/auth/login/` — both render
+the same tiered login card (no landing-page hero content).  After
+authentication the user is redirected to the `next` URL they provided; if none
+was given, the default is `http://127.0.0.1:8001` (WUN).
 
 ## Architecture [L10-50]
 
@@ -101,7 +102,7 @@ iyou_idp/
 ├── config/
 │   ├── __init__.py
 │   ├── settings.py                 # IDP_* env vars, django-environ, production hardening
-│   ├── urls.py                     # Root / → LoginPageView (landing)
+│   ├── urls.py                     # Root / → LoginPageView (login portal)
 │   ├── wsgi.py
 │   └── asgi.py
 ├── src/
@@ -436,7 +437,7 @@ The handshake has several protection layers:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | Landing page — hero + login portal |
+| GET | `/` | Tiered login portal (same as `/auth/login/`) |
 | GET | `/auth/login/` | Compact login page (OIDC redirect target) |
 | POST | `/auth/challenge/` | Generates new challenge (300s TTL) — JSON dict in Redis |
 | GET | `/auth/challenge/` | Health check |
@@ -684,7 +685,7 @@ To force the direct-callback path, ensure:
 ### Long-term Goals [L570-580]
 
 - ✅ **OOB mobile auth** — QR-code flow for iyou_mobile (Level 2, Tab 1)
-- ✅ **Landing page** — Portal hosted at `/` with App Store / Play / GitHub links
+- ✅ **Root login portal** — Tiered login served directly at `/` (no landing page hero)
 - 🔲 Support multiple DID methods (did:web, did:ethr, did:sol)
 - 🔲 Replace the current polling-based iyou-home handshake with a push model
 - 🔲 Add a self-service admin UI for OIDC client registration

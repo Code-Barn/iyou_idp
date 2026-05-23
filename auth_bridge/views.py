@@ -42,6 +42,9 @@ from oidc_provider.lib.utils.token import create_code
 
 logger = logging.getLogger(__name__)
 
+# Where to send the user after authentication when no explicit next_url is given.
+DEFAULT_NEXT_URL = 'http://127.0.0.1:8001'
+
 
 def _build_oidc_redirect(next_url, user):
     """
@@ -138,7 +141,7 @@ def verify_signature(request):
         data = json.loads(request.body)
         vp_json = data.get('verifiable_presentation', None)
         challenge = data.get('challenge', '')
-        next_url = data.get('next_url', '/')
+        next_url = data.get('next_url', DEFAULT_NEXT_URL)
 
         if not vp_json or not challenge:
             return JsonResponse({
@@ -248,7 +251,7 @@ class ChallengeView(View):
         """
         challenge_uuid = str(uuid.uuid4())
         data = json.loads(request.body) if request.body else {}
-        next_url = data.get('next_url', '/')
+        next_url = data.get('next_url', DEFAULT_NEXT_URL)
 
         cache.set(challenge_uuid, json.dumps({
             'status': 'pending',
@@ -360,7 +363,7 @@ def check_challenge_status(request, challenge_id):
         return JsonResponse({'solved': False})
 
     did = cached['did']
-    next_url = cached.get('next_url', '/')
+    next_url = cached.get('next_url', DEFAULT_NEXT_URL)
 
     user, created = User.objects.get_or_create(username=did)
 
@@ -424,18 +427,10 @@ class LoginPageView(View):
             HTTP response with login page template
         """
         # Get the 'next' parameter from the URL (OIDC redirect URI)
-        next_url = request.GET.get('next', '/')
-        is_landing = request.path == '/'
+        next_url = request.GET.get('next', DEFAULT_NEXT_URL)
 
         context = {
             'next_url': next_url,
-            'is_landing_page': is_landing,
-            'page_title': 'iYou' if is_landing else 'Sovereign Login',
-            'description': (
-                'Your Sovereign Gateway to the Decentralized Web'
-                if is_landing
-                else 'Authenticate with your Decentralized Identifier'
-            ),
         }
 
         return render(request, 'auth_bridge/login.html', context)
