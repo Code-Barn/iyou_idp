@@ -426,8 +426,9 @@ class LoginPageView(View):
         Returns:
             HTTP response with login page template
         """
-        # Authenticated users hitting / get redirected to WUN
-        if request.user.is_authenticated:
+        # Authenticated users hitting / with no OIDC flow in progress get
+        # redirected to WUN.  If ?next= is present, let the OIDC flow proceed.
+        if request.user.is_authenticated and not request.GET.get('next'):
             return redirect(DEFAULT_NEXT_URL)
 
         # Get the 'next' parameter from the URL (OIDC redirect URI)
