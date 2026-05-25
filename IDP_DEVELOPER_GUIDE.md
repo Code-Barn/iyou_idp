@@ -1,6 +1,6 @@
-# Developer Guide: Sovereign Identity Provider (IdP) [L1-578]
+# Developer Guide: Sovereign Identity Provider (IdP) [L1-693]
 
-## Overview [L3-10]
+## Overview [L3-22]
 
 The iYou IdP is a Django-based OIDC provider that authenticates users via
 W3C Decentralised Identifiers (DIDs) instead of passwords.  A Rust extension
@@ -20,7 +20,7 @@ the same tiered login card (no landing-page hero content).  After
 authentication the user is redirected to the `next` URL they provided; if none
 was given, the default is `http://127.0.0.1:8001` (WUN).
 
-## Architecture [L10-50]
+## Architecture [L23-76]
 
 ### Level 3 — Desktop WebSocket Flow (Full Sovereignty)
 
@@ -75,7 +75,7 @@ was given, the default is `http://127.0.0.1:8001` (WUN).
        └──────────────────────────────┘                              ┘
 ```
 
-## Project Structure [L52-100]
+## Project Structure [L78-123]
 
 ```
 iyou_idp/
@@ -122,7 +122,7 @@ iyou_idp/
 └── README.md
 ```
 
-## Setup & Installation [L67-108]
+## Setup & Installation [L125-199]
 
 ### Prerequisites [L69-78]
 
@@ -196,9 +196,9 @@ built or `src/` isn't reachable.  Re-run `maturin develop` or copy
 `_crypto.abi3.so` from `.venv/lib/python3.*/site-packages/iyou_idp/` into
 `src/iyou_idp/`.
 
-## Core Components [L108-284]
+## Core Components [L199-339]
 
-### 1. User Model [L110-161]
+### 1. User Model [L201-222]
 
 **`class UserManager`** [L115-126]
 
@@ -219,7 +219,7 @@ def has_perm(self, perm, obj=None): return self.is_superuser
 def has_module_perms(self, app_label): return self.is_superuser
 ```
 
-### 2. Challenge-Response Flow [L195-230]
+### 2. Challenge-Response Flow [L222-269]
 
 Every challenge is stored in Redis as a JSON dict with a **300-second TTL**:
 
@@ -266,7 +266,7 @@ GET  /auth/challenge-status/<uuid>/  →  {solved: true, redirect_url: "..."}
    `django.contrib.auth.login()`, generates the OIDC redirect, deletes the
    challenge, and returns `{solved: true, redirect_url: "..."}`.
 
-### 3. Rust Bridge [L232-260]
+### 3. Rust Bridge [L269-297]
 
 **`fn hello_from_bin`** — smoke-test function, returns a string.
 
@@ -294,7 +294,7 @@ def _get_rust_verify_vp():
 If all attempts fail, the views print full `sys.path` plus the path they
 probed for `_crypto.abi3.so` and return `status=500` with instructions.
 
-### 4. Creating a Superuser [L209-234]
+### 4. Creating a Superuser [L297-311]
 
 ```bash
 uv run python manage.py createsuperuser_did
@@ -308,7 +308,7 @@ Options:
 If no password is set, the user can still log in via DID auth (the
 `DIDAuthBackend` ignores passwords for DID users).
 
-### 5. Authentication Backend [L234-258]
+### 5. Authentication Backend [L311-327]
 
 **`class DIDAuthBackend`** [L242-253]
 
@@ -324,7 +324,7 @@ def authenticate(self, request, username=None, password=None, **kwargs):
 This backend is listed first in `AUTHENTICATION_BACKENDS` in settings.py,
 followed by the standard `ModelBackend` (for admin password login).
 
-### 5. OIDC Provider [L258-284]
+### 6. OIDC Provider [L327-339]
 
 **`def custom_userinfo_claims`** [L263-271] — adds `did`, `preferred_username`,
 and `did_method` to the standard OIDC userinfo endpoint.
@@ -336,7 +336,21 @@ claims to the ID token JWT.
 `sub` claim, ensuring the user's DID is the stable identifier across
 sessions and clients.
 
-## Authentication Flow [L310-380]
+### 7. Post-Login Redirect Configuration
+
+The constant `DEFAULT_NEXT_URL = 'http://127.0.0.1:8001'` in `auth_bridge/views.py`
+controls where the user is sent after authentication when no explicit `next`
+URL was provided by the OIDC client.  This defaults to the WUN satellite app.
+
+All four entry points use this constant as their fallback:
+- `verify_signature()` — WebSocket path
+- `ChallengeView.post()` — stores it in the Redis JSON dict
+- `check_challenge_status()` — polling path
+- `LoginPageView.get()` — reads `?next=` from query params
+
+If WUN runs on a different port or domain, change this constant to match.
+
+## Authentication Flow [L339-434]
 
 The login page is organised as three tabs, each implementing a different
 authentication tier.  Tab switching is instant (client-side JS class toggling)
@@ -375,7 +389,7 @@ persists the active tab across redirects.
   hash the password and generate a server-side `did:web`.
 - Disabled Passkey button (Coming Soon).
 
-### Satellite-App Redirect Safety [L342-360]
+### Satellite-App Redirect Safety [L378-396]
 
 All three tiers share the same redirect mechanism.  The `redirect_url` is
 derived from the `next_url` that was passed in.  When the caller is the OIDC
@@ -393,7 +407,7 @@ Instead of the slower:
 verify → (200) consent page → user clicks Allow → (302) client callback
 ```
 
-### iYou Home Desktop Companion [L360-410]
+### iYou Home Desktop Companion [L396-434]
 
 The "Full Sovereignty" tab attempts a WebSocket connection to
 `ws://localhost:9001` for native signing.  The wire protocol is a simple
@@ -431,9 +445,9 @@ The handshake has several protection layers:
 
 5. **Cache busting** — `<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">` in `<head>` forces re-fetch on every navigation.
 
-## API Endpoints [L412-450]
+## API Endpoints [L434-467]
 
-### Authentication Endpoints [L414-430]
+### Authentication Endpoints [L436-449]
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -446,7 +460,7 @@ The handshake has several protection layers:
 | GET | `/auth/challenge-status/<uuid>/` | Polling — returns `{solved, redirect_url}` when mobile has signed |
 | POST | `/auth/managed-login/` | Scaffold — accepts email+password, returns Django messages |
 
-### Admin DID Endpoints [L325-333]
+### Admin DID Endpoints [L449-457]
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -454,19 +468,68 @@ The handshake has several protection layers:
 | POST | `/auth/admin/did-verify/` | Verifies admin DID challenge |
 | GET | `/auth/admin/did-dashboard/` | Admin dashboard (post-login) |
 
-### OIDC Endpoints [L333-343]
+### OIDC Endpoints [L457-467]
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET/POST | `/openid/authorize/` | OIDC authorization endpoint |
 | POST | `/openid/token/` | Token exchange endpoint |
 | GET | `/openid/userinfo/` | Userinfo endpoint |
-| GET | `/openid/.well-known/openid-configuration/` | Discovery document |
+| GET | `/openid/.well-known/openid-configuration/` | OIDC discovery document |
 | GET | `/openid/jwks/` | JWKS endpoint |
+| GET/POST | `/openid/introspect/` | Token introspection |
+| GET/POST | `/openid/end-session/` | End session |
 
-## Development Workflow [L343-397]
+### OAuth2 Provider Endpoints [L467-480]
 
-### Adding New Features [L345-354]
+| Method | Path | Description |
+|--------|------|-------------|
+| GET/POST | `/oauth/authorize/` | OAuth2 authorization endpoint |
+| POST | `/oauth/token/` | Token exchange endpoint |
+| POST | `/oauth/revoke_token/` | Token revocation |
+| GET | `/oauth/userinfo/` | UserInfo endpoint |
+| GET | `/oauth/.well-known/openid-configuration/` | OAuth2 discovery |
+| GET | `/oauth/.well-known/jwks.json` | JWKS endpoint (JSON) |
+
+### Complete URL Map
+
+All registered URL patterns (as seen by `django.urls`):
+
+```
+/                               → LoginPageView (login portal)
+/auth/login/                    → LoginPageView (same template)
+/auth/challenge/                → ChallengeView
+/auth/verify/                   → verify_signature
+/auth/mobile-verify/            → mobile_verify_signature
+/auth/challenge-status/<id>/    → check_challenge_status
+/auth/managed-login/            → managed_login
+/auth/admin/did-login/          → custom_admin_login
+/auth/admin/did-verify/         → custom_admin_verify
+/auth/admin/did-dashboard/      → custom_admin_dashboard
+/openid/authorize/              → OIDC Authorization Endpoint *
+/openid/token/                  → Token exchange
+/openid/userinfo/               → UserInfo
+/openid/jwks/                   → JWKS
+/openid/.well-known/openid-configuration/  → OIDC Discovery
+/openid/introspect/             → Token introspection
+/openid/end-session/            → End session
+/oauth/authorize/               → OAuth2 Authorization Endpoint
+/oauth/token/                   → Token exchange
+/oauth/revoke_token/            → Token revocation
+/oauth/userinfo/                → UserInfo
+/oauth/.well-known/openid-configuration/  → OAuth2 discovery
+/oauth/.well-known/jwks.json    → JWKS (JSON)
+/admin/                         → Django admin
+```
+
+> The Relying Party (e.g. WUN) must redirect users to **`/openid/authorize/`**
+> with standard OIDC query parameters (`client_id`, `response_type=code`,
+> `redirect_uri`, `scope=openid`, `state`).  Using `/oauth/authorize/` or
+> any `/auth/...` path will return a 404 or unexpected behaviour.
+
+## Development Workflow [L467-521]
+
+### Adding New Features [L469-477]
 
 1. Write a test first in `auth_bridge/tests.py`
 2. Implement the feature
@@ -474,7 +537,7 @@ The handshake has several protection layers:
 4. Run `uv run ruff check auth_bridge/`
 5. Run `uv run python manage.py check`
 
-### Testing [L354-381]
+### Testing [L477-500]
 
 ```bash
 # Run all auth tests
@@ -497,7 +560,7 @@ Key tests:
 - `test_verify_redirects_directly_to_client` — direct-callback: verify returns client URI with code
 - `test_jwks_endpoint_returns_valid_key` — `/openid/jwks/` exposes at least one RSA key
 
-### Debugging [L435-458]
+### Debugging [L500-521]
 
 - **WebSocket not connecting?** Open browser dev tools console.  Look for:
   - `"LOGIN UI VERSION: 3.0.0"` — confirms fresh JS
@@ -518,9 +581,9 @@ Key tests:
 - **Rust bridge not found?** Check the console for the `"="` banner with
   `sys.path` and the probe path.  Re-run `maturin develop`.
 
-## Error Handling [L397-421]
+## Error Handling [L521-554]
 
-### Common Errors & Solutions [L453-470]
+### Common Errors & Solutions [L523-538]
 
 | Error | Cause | Fix |
 |-------|-------|-----|
@@ -535,7 +598,7 @@ Key tests:
 | QR code not appearing | `qrcodejs` CDN not loaded or challenge fetch failed | Check network tab for CDN or `/auth/challenge/` errors |
 | `data.redirect_url` not redirecting | `data.success` falsy or `redirect_url` missing | Check `VERIFY RESPONSE FULL` in console |
 
-### Error Response Format [L412-421]
+### Error Response Format [L538-554]
 
 All JSON error responses follow this structure:
 ```json
@@ -551,9 +614,9 @@ All JSON error responses follow this structure:
 | 403 | User account disabled |
 | 500 | Internal error (bridge import failure, unexpected exception) |
 
-## Deployment [L421-463]
+## Deployment [L554-619]
 
-### Production Checklist [L423-436]
+### Production Checklist [L556-570]
 
 - [ ] Set `IDP_SECRET_KEY` to a strong random value
 - [ ] Set `IDP_BASE_URL` to the public-facing URL (e.g. `https://idp.example.com`)
@@ -567,7 +630,7 @@ All JSON error responses follow this structure:
 - [ ] Set up the Traefik/nginx ingress proxy with HTTPS termination
 - [ ] The entrypoint uses Gunicorn on `:8000` — no additional WSGI server needed
 
-### Docker Deployment [L436-463]
+### Docker Deployment [L570-619]
 
 The project ships a production-ready multi-stage `Dockerfile`:
 
@@ -616,9 +679,9 @@ When `IDP_DEBUG=False`, the following are automatically enabled:
 - `CSRF_COOKIE_SECURE = True`
 - Cookie names are isolated to `idp_sessionid` / `idp_csrftoken` to prevent domain collisions on shared loopback.
 
-## Security Considerations [L463-475]
+## Security Considerations [L619-634]
 
-### Best Practices [L465-475]
+### Best Practices [L621-634]
 
 - Challenges are single-use (deleted from Redis after verification)
 - Challenge TTL is 300 seconds (limited window for replay)
@@ -631,9 +694,9 @@ When `IDP_DEBUG=False`, the following are automatically enabled:
   because both endpoints have no session side-effects (auth is purely cryptographic)
 - The `next_url` is validated against the OIDC client's registered `redirect_uris` before code generation
 
-## Troubleshooting [L475-516]
+## Troubleshooting [L634-675]
 
-### Rust-Python Bridge Issues [L477-493]
+### Rust-Python Bridge Issues [L636-652]
 
 **Symptom:** `No module named 'iyou_idp'` or `Rust Crypto Bridge not found`
 
@@ -649,14 +712,14 @@ If the error persists:
 3. Re-run `maturin develop --manifest-path Cargo.toml`
 4. Or copy the `.so` from `.venv/lib/python3.*/site-packages/iyou_idp/`
 
-### Submodule Issues [L493-506]
+### Submodule Issues [L652-659]
 
 The `crates/rust-did/` submodule must be checked out:
 ```bash
 git submodule update --init --recursive
 ```
 
-### OIDC Configuration Issues [L506-516]
+### OIDC Configuration Issues [L659-675]
 
 **Symptom:** OIDC authorize returns 200 (consent page) instead of 302 with code
 
@@ -672,9 +735,25 @@ To force the direct-callback path, ensure:
 - The `redirect_uri` in the authorize URL matches exactly (trailing slash matters)
 - The `client_id` in the authorize URL matches the registered client
 
-## Roadmap [L560-580]
+**Symptom:** Relying Party gets 404 when redirecting to the IdP
 
-### Short-term Goals [L562-570]
+The Relying Party must redirect the user's browser to
+**`/openid/authorize/`** — not `/oauth/authorize/`, `/auth/login/`,
+or any other path.  Common mistakes:
+
+| Wrong URL | Correct URL |
+|-----------|-------------|
+| `http://127.0.0.1:8000/auth/login/?client_id=...` | `http://127.0.0.1:8000/openid/authorize/?client_id=...` |
+| `http://127.0.0.1:8000/oauth/authorize/?client_id=...` | `http://127.0.0.1:8000/openid/authorize/?client_id=...` |
+| `http://127.0.0.1:8000/openid/authorize?client_id=...` (no trailing slash) | `http://127.0.0.1:8000/openid/authorize/?client_id=...` (trailing slash) |
+
+If the Relying Party uses OIDC discovery, the `authorization_endpoint` in
+`http://127.0.0.1:8000/openid/.well-known/openid-configuration/` provides
+the canonical URL.
+
+## Roadmap [L675-694]
+
+### Short-term Goals [L677-685]
 
 - ⬜ Add OIDC `prompt=login` support to force re-authentication
 - ⬜ Add PKCE (S256) support in the direct-callback path
@@ -682,7 +761,7 @@ To force the direct-callback path, ensure:
 - ⬜ Live OAuth provider integration (Google, Apple, GitHub) in Tab 2
 - ⬜ Live passkey (WebAuthn) support in Tab 2
 
-### Long-term Goals [L570-580]
+### Long-term Goals [L685-694]
 
 - ✅ **OOB mobile auth** — QR-code flow for iyou_mobile (Level 2, Tab 1)
 - ✅ **Root login portal** — Tiered login served directly at `/` (no landing page hero)
