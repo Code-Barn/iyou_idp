@@ -37,6 +37,14 @@
             color: white;
             transform: scale(1.1);
         }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.2s ease-out;
+        }
     </style>
 </head>
 <body class="gradient-bg min-h-screen flex items-center justify-center p-4">
@@ -93,11 +101,29 @@
         </div>
     </div>
 
+    <!-- Download CTA (outside card, always visible) -->
+    <div class="mt-6 text-center">
+        <button id="download-modal-btn"
+                class="inline-flex items-center gap-2 px-5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-full text-sm font-medium transition-colors backdrop-blur-sm border border-white/20">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+            </svg>
+            Get iYou Home
+        </button>
+        <p class="text-xs text-white/50 mt-1">Windows &middot; macOS &middot; Linux</p>
+    </div>
+
     <!-- Hidden form for OIDC redirect -->
     <form id="redirectForm" method="GET" class="hidden">
         <input type="hidden" name="next" id="redirectNext">
     </form>
 
+    <!-- Download Modal -->
+    {% include 'auth_bridge/_download_modal.html' %}
+
+    <script src="{% static 'auth_bridge/js/download_modal.js' %}"></script>
     <script>
         console.log("LOGIN UI VERSION: 3.0.0 - HANDSHAKE START");
 

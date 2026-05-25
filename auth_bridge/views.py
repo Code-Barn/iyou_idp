@@ -426,6 +426,10 @@ class LoginPageView(View):
         Returns:
             HTTP response with login page template
         """
+        # Authenticated users hitting / get redirected to WUN
+        if request.user.is_authenticated:
+            return redirect(DEFAULT_NEXT_URL)
+
         # Get the 'next' parameter from the URL (OIDC redirect URI)
         next_url = request.GET.get('next', DEFAULT_NEXT_URL)
 
