@@ -101,6 +101,30 @@
         </div>
     </div>
 
+    <!-- Download CTAs (outside card, visible on Tab 1 & 2 only) -->
+    <div id="global-download-ctas" class="mt-6 text-center space-y-2 hidden">
+        <div class="flex gap-3 justify-center">
+            <button id="download-modal-btn"
+                    class="inline-flex items-center gap-2 px-5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-full text-sm font-medium transition-colors backdrop-blur-sm border border-white/20">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5"/>
+                    <path d="M2 12l10 5 10-5"/>
+                </svg>
+                Get iYou Home
+            </button>
+            <button id="mobile-download-modal-btn"
+                    class="inline-flex items-center gap-2 px-5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-full text-sm font-medium transition-colors backdrop-blur-sm border border-white/20">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+                    <line x1="12" y1="18" x2="12" y2="18"/>
+                </svg>
+                Get iYou Mobile
+            </button>
+        </div>
+        <p class="text-xs text-white/50">Desktop &middot; iOS &middot; Android</p>
+    </div>
+
     <!-- Hidden form for OIDC redirect -->
     <form id="redirectForm" method="GET" class="hidden">
         <input type="hidden" name="next" id="redirectNext">
@@ -627,6 +651,12 @@
                 tabBtns[idx].classList.add('text-indigo-600', 'border-indigo-600');
                 tabPanes.forEach(p => p.classList.add('hidden'));
                 tabPanes[idx].classList.remove('hidden');
+
+                // Toggle global download CTAs — hide on Tab 0 (has inline buttons), show on 1 & 2
+                var globalCtas = document.getElementById('global-download-ctas');
+                if (globalCtas) {
+                    globalCtas.classList.toggle('hidden', idx === 0);
+                }
 
                 // Community tab lifecycle
                 if (idx === 1) {
