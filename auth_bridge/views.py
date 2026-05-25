@@ -23,6 +23,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from django.contrib.auth import login
+from django.contrib.auth import logout as django_logout
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -418,24 +419,49 @@ class LoginPageView(View):
 
     def get(self, request):
         """
-        Render the login page with Tailwind CSS.
+        Render the login page or authenticated dashboard.
 
-        Args:
-            request: HTTP request object
+        If the user is already authenticated and an OIDC flow is actively
+        in progress (OIDC params exist in ``?next=``), redirect to the
+        ``next`` URL so the OIDC provider can issue a code directly.
+        If no OIDC flow is in progress, render a dashboard that acknowledges
+        the user's sovereign identity with download links for iYou Home and
+        iYou Mobile, plus a logout button.
 
-        Returns:
-            HTTP response with login page template
+        Unauthenticated visitors always see the login card.
         """
-        # Authenticated users hitting / with no OIDC flow in progress get
-        # redirected to WUN.  If ?next= is present, let the OIDC flow proceed.
-        if request.user.is_authenticated and not request.GET.get('next'):
-            return redirect(DEFAULT_NEXT_URL)
+        next_url = request.GET.get('next', '')
 
-        # Get the 'next' parameter from the URL (OIDC redirect URI)
-        next_url = request.GET.get('next', DEFAULT_NEXT_URL)
+        if request.user.is_authenticated:
+            # If the next URL contains OIDC params, this is an active flow.
+            # Redirect so the OIDC provider can auto-generate the auth code.
+            if next_url:
+                parsed = urlparse(next_url)
+                params = parse_qs(parsed.query)
+                if params.get('client_id') and params.get('response_type'):
+                    return redirect(next_url)
 
+            # No active OIDC flow — show authenticated dashboard.
+            context = {
+                'next_url': DEFAULT_NEXT_URL,
+                'user_did': request.user.username,
+            }
+            return render(request, 'auth_bridge/authenticated_dashboard.html', context)
+
+        # Not authenticated — render the standard login page.
+        next_url = next_url or DEFAULT_NEXT_URL
         context = {
             'next_url': next_url,
         }
-
         return render(request, 'auth_bridge/login.html', context)
+
+
+class GlobalLogoutView(View):
+    """
+    Fully clear the IdP session and redirect the user.
+    """
+
+    def get(self, request):
+        django_logout(request)
+        next_page = request.GET.get('next', 'http://127.0.0.1:8001/')
+        return redirect(next_page)

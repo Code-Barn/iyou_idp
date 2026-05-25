@@ -1,0 +1,69 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sovereign Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .dashboard-card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+    <div class="dashboard-card rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
+        <!-- Shield icon -->
+        <div class="mb-4 text-indigo-600">
+            <svg class="w-12 h-12 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 2L3 7v5c0 5.25 3.83 10.15 9 11 5.17-.85 9-5.75 9-11V7l-9-5z"/>
+                <path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-800 mb-1">Your Sovereign Identity</h1>
+        <p class="text-xs text-gray-500 font-mono truncate mb-6">{{ user_did }}</p>
+
+        <p class="text-sm text-gray-600 mb-6">
+            You are authenticated. Access your iYou ecosystem below.
+        </p>
+
+        <!-- Desktop iYou Home -->
+        <a href="{{ next_url }}"
+           class="inline-flex items-center justify-center gap-2 w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-colors mb-3">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+            Enter iYou Home (Desktop)
+        </a>
+
+        <!-- Mobile signer placeholder -->
+        <button disabled
+                class="inline-flex items-center justify-center gap-2 w-full px-5 py-3 bg-gray-200 text-gray-400 rounded-xl text-sm font-medium cursor-not-allowed mb-8">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="5" y="2" width="14" height="20" rx="2"/>
+                <line x1="12" y1="18" x2="12" y2="18"/>
+            </svg>
+            iYou Mobile &mdash; Coming Soon
+        </button>
+
+        <!-- Divider -->
+        <div class="border-t border-gray-200 pt-6">
+            <a href="/auth/logout/"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-500 hover:text-red-600 transition-colors">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                Sign Out
+            </a>
+        </div>
+    </div>
+</body>
+</html>

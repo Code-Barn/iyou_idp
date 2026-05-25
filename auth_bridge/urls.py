@@ -14,7 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from django.urls import path
-from .views import ChallengeView, verify_signature, LoginPageView, managed_login, mobile_verify_signature, check_challenge_status
+from .views import ChallengeView, verify_signature, LoginPageView, managed_login, mobile_verify_signature, check_challenge_status, GlobalLogoutView
 from .admin_views import custom_admin_login, custom_admin_verify, custom_admin_dashboard
 
 app_name = 'auth_bridge'
@@ -31,4 +31,5 @@ urlpatterns = [
     path('managed-login/',             managed_login,             name='managed_login'),
     path('mobile-verify/',             mobile_verify_signature,  name='mobile_verify'),
     path('challenge-status/<str:challenge_id>/', check_challenge_status, name='challenge_status'),
+    path('logout/', GlobalLogoutView.as_view(), name='global_logout'),
 ]

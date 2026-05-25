@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Sovereign Login</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -583,7 +583,13 @@
                              + '&next=' + encodeURIComponent(btoa(currentNextUrl));
 
                 qrContainer.innerHTML = '';
-                new QRCode(qrContainer, { text: oobUri, width: 200, height: 200 });
+                const qrCanvas = document.createElement('canvas');
+                qrContainer.appendChild(qrCanvas);
+                QRCode.toCanvas(qrCanvas, oobUri, { width: 200 })
+                    .catch(function () {
+                        qrContainer.innerHTML = '<span class="text-red-500 text-sm">Failed to render</span>';
+                        statusEl.textContent = 'Could not generate QR code. Please refresh.';
+                    });
                 statusEl.textContent = 'Scan with your mobile app';
                 startCommunityPolling();
             })

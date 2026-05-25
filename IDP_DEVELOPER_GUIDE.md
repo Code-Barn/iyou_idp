@@ -342,13 +342,50 @@ The constant `DEFAULT_NEXT_URL = 'http://127.0.0.1:8001'` in `auth_bridge/views.
 controls where the user is sent after authentication when no explicit `next`
 URL was provided by the OIDC client.  This defaults to the WUN satellite app.
 
-All four entry points use this constant as their fallback:
+All entry points use this constant as their fallback:
 - `verify_signature()` — WebSocket path
 - `ChallengeView.post()` — stores it in the Redis JSON dict
 - `check_challenge_status()` — polling path
 - `LoginPageView.get()` — reads `?next=` from query params
 
+**Authenticated-user redirect:** `LoginPageView.get()` also redirects
+already-authenticated users directly to `DEFAULT_NEXT_URL`, **but only when no
+`?next=` query parameter is present**.  This preserves the OIDC authorization
+code exchange (where `next` contains critical OIDC params).  Unauthenticated
+visitors always see the login card, regardless of `?next=`.
+
 If WUN runs on a different port or domain, change this constant to match.
+
+### Authenticated Dashboard
+
+When an already-logged-in user visits the IdP root (`/`) or `/auth/login/`
+without an active OIDC flow, `LoginPageView.get()` renders
+`authenticated_dashboard.html` instead of the login page.  The dashboard:
+
+- Displays the user's DID.
+- Provides an **"Enter iYou Home"** button linking to `DEFAULT_NEXT_URL`.
+- Shows a disabled **iYou Mobile** placeholder.
+- Offers a **Sign Out** link pointing to `/auth/logout/`.
+
+If the `?next=` parameter IS present and contains OIDC authorization params
+(`client_id`, `response_type`), the view redirects to the `next` URL so the
+OIDC provider can issue an auth code directly (skipping the consent page for
+already-authenticated users).
+
+### Global Logout
+
+An endpoint at `/auth/logout/` fully clears the IdP session:
+
+```python
+class GlobalLogoutView(View):
+    def get(self, request):
+        django_logout(request)
+        next_page = request.GET.get('next', 'http://127.0.0.1:8001/')
+        return redirect(next_page)
+```
+
+Accepts an optional `?next=` parameter to control the post-logout redirect
+(default: `http://127.0.0.1:8001/` — WUN root).
 
 ## Authentication Flow [L339-434]
 
@@ -371,7 +408,7 @@ persists the active tab across redirects.
 
 1. The tab fetches a challenge (`POST /auth/challenge/`) with the current
    `next_url` in the JSON body.
-2. A QR code is rendered using the `qrcodejs` CDN library encoding the URI:
+2. A QR code is rendered using the `qrcode` CDN library encoding the URI:
    `iyouauth://sign?ch=<challenge_id>&url=<origin>&next=<base64(next_url)>`
 3. The mobile app scans the QR code, signs the challenge, and POSTs the VP
    to `{url}/auth/mobile-verify/`.
@@ -459,6 +496,7 @@ The handshake has several protection layers:
 | POST | `/auth/mobile-verify/` | Verifies VP (mobile OOB path), marks challenge `solved` |
 | GET | `/auth/challenge-status/<uuid>/` | Polling — returns `{solved, redirect_url}` when mobile has signed |
 | POST | `/auth/managed-login/` | Scaffold — accepts email+password, returns Django messages |
+| GET | `/auth/logout/` | Global logout — clears IdP session, redirects to WUN (or `?next=`) |
 
 ### Admin DID Endpoints [L449-457]
 
@@ -503,6 +541,7 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/mobile-verify/            → mobile_verify_signature
 /auth/challenge-status/<id>/    → check_challenge_status
 /auth/managed-login/            → managed_login
+/auth/logout/                   → GlobalLogoutView
 /auth/admin/did-login/          → custom_admin_login
 /auth/admin/did-verify/         → custom_admin_verify
 /auth/admin/did-dashboard/      → custom_admin_dashboard
@@ -526,6 +565,40 @@ All registered URL patterns (as seen by `django.urls`):
 > with standard OIDC query parameters (`client_id`, `response_type=code`,
 > `redirect_uri`, `scope=openid`, `state`).  Using `/oauth/authorize/` or
 > any `/auth/...` path will return a 404 or unexpected behaviour.
+
+### Download Modal (Desktop Companion CTA)
+
+A persistent **"Get iYou Home"** button sits below the login card on all tabs.
+Clicking it opens an overlay modal (`_download_modal.html`) with:
+
+**OS auto-detection** — `download_modal.js` inspects
+`navigator.userAgentData.platform` (or `navigator.userAgent` as fallback) and
+highlights the detected OS group with an indigo ring + "Recommended" badge.
+The detected platform banner slides in at the top of the modal.  Three OS
+groups are available:
+
+| Group | Variants |
+|-------|----------|
+| Windows | GUI installer, portable ZIP |
+| macOS   | Intel DMG, Apple Silicon DMG |
+| Linux   | AppImage, deb package |
+
+Each variant lists three download sources:
+1. **GitHub Releases** (`/releases/latest/download/…`)
+2. **Magnet torrent link** (clicked → copies to clipboard via `navigator.clipboard.writeText`)
+3. **IPFS gateway** (placeholder)
+
+**Implementation details:**
+- `auth_bridge/templates/auth_bridge/_download_modal.html` — modal partial
+  with blurred backdrop (`backdrop-blur-sm`), fade-in animation, three
+  `.os-group` sections.
+- `auth_bridge/static/auth_bridge/js/download_modal.js` — vanilla JS module
+  (IIFE) providing: OS detection, open/close (Escape key, backdrop click),
+  auto-scroll to highlighted section, magnet link clipboard copy, MutationObserver
+  to re-highlight on modal re-open.
+- The footer CTA and any element with `.open-download-modal` class open the
+  modal.  Download URLs use a generic `/releases/latest/download/…` scheme
+  (no hardcoded versions).
 
 ## Development Workflow [L467-521]
 
@@ -576,6 +649,16 @@ Key tests:
   - The browser logs `"Scan with your mobile app"` — challenge fetch succeeded
   - The network tab shows `GET /auth/challenge-status/<uuid>/` polling every 1s
   - When the mobile app POSTs, the poll response changes to `{solved: true, redirect_url: "..."}`
+- **QR code shows scrambled vertical lines?** Upgrade the QR library — the
+  old `qrcodejs` v1.0.0 produces canvas rendering artifacts on modern browsers.
+  Switch the CDN script to `qrcode` v1.5.1+ and use `QRCode.toCanvas()`
+  instead of `new QRCode()` (see `login.html`).
+- **Static files (JS/CSS) returning 404?** Two settings must be correct:
+  1. `STATIC_URL = '/static/'` in `settings.py` — must be **absolute** (leading
+     slash) so Django's URL pattern `^static/...` matches incoming requests.
+  2. `env.read_env(BASE_DIR / '.env')` must be called explicitly in `settings.py`
+     — without it, `IDP_DEBUG` always defaults to `False` and the dev server
+     does not serve static files.
 - **Server error on verify?** Look for `"VERIFY RESPONSE FULL:"` in the
   console — the full JSON response is logged.
 - **Rust bridge not found?** Check the console for the `"="` banner with
@@ -595,7 +678,7 @@ Key tests:
 | `Challenge not found or expired` (mobile-verify) | Polling after TTL or bad UUID | Refresh tab to get a fresh challenge |
 | 500 on POST to `/auth/verify/` | import or bridge crash | Check console for `VERIFY RESPONSE FULL` or server traceback |
 | WebSocket never opens | Browser PNA blocking or iyou-home not running | Check pre-flight probe result; use manual paste |
-| QR code not appearing | `qrcodejs` CDN not loaded or challenge fetch failed | Check network tab for CDN or `/auth/challenge/` errors |
+| QR code not appearing or scrambled | `qrcode` CDN not loaded or challenge fetch failed | Check network tab for CDN or `/auth/challenge/` errors |
 | `data.redirect_url` not redirecting | `data.success` falsy or `redirect_url` missing | Check `VERIFY RESPONSE FULL` in console |
 
 ### Error Response Format [L538-554]
