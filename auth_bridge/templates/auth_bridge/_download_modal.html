@@ -1,3 +1,4 @@
+{% load static %}
 <div id="download-modal"
      class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden"
      role="dialog" aria-modal="true" aria-label="Download iYou Home">
@@ -95,7 +96,7 @@
       <!-- Linux -->
       <div id="os-linux" class="os-group rounded-xl border border-gray-200 overflow-hidden">
         <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
-          <svg class="w-5 h-5 text-amber-600" viewBox="0 0 24 24" fill="currentColor"><path d="M20.59 6.54a1.6 1.6 0 00-1.55-1.1h-.34a4.45 4.45 0 01.1-1.04 7.24 7.24 0 00-.7-3.11 2.4 2.4 0 00-2.2-1.25 8.97 8.97 0 00-3.96.89A8.07 8.07 0 008.1 1.04a2.47 2.47 0 00-2.2 1.25 7.24 7.24 0 00-.7 3.11 4.45 4.45 0 01.1 1.04h-.34a1.6 1.6 0 00-1.55 1.1 13.03 13.03 0 00-.41 4.3c.06.9.63 1.07 1.23 1.07h.1l.2-.02c.2.42.48.8.83 1.1-1.46 1.7-2.34 3.58-2.34 5.5 0 3.54 3.67 6.43 8.2 6.43s8.2-2.89 8.2-6.43c0-1.92-.88-3.8-2.34-5.5.35-.3.64-.68.83-1.1l.2.02h.1c.6 0 1.17-.17 1.23-1.08.08-1.34-.02-2.84-.42-4.3z"/></svg>
+           <img src="{% static 'auth_bridge/img/Tux.svg' %}" class="w-5 h-5" alt="Tux">
           <span class="font-semibold text-gray-700 text-sm">Linux</span>
         </div>
         <div class="divide-y divide-gray-100">
