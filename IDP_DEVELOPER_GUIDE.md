@@ -87,7 +87,15 @@ iyou_idp/
 │   │   ├── _tab_sovereign.html     # Tab 0: WebSocket + manual VP flow
 │   │   ├── _tab_community.html     # Tab 1: OOB QR-code flow
 │   │   ├── _tab_managed.html       # Tab 2: OAuth + email/password scaffold
+│   │   ├── _download_modal.html    # Desktop iYou Home download overlay
+│   │   ├── _mobile_download_modal.html  # Mobile iYou download overlay
 │   │   └── admin/                  # Admin DID login templates
+│   ├── static/auth_bridge/
+│   │   ├── js/
+│   │   │   ├── download_modal.js          # Desktop modal controller (IIFE)
+│   │   │   └── mobile_download_modal.js   # Mobile modal controller (IIFE)
+│   │   └── img/
+│   │       └── Tux.svg                    # Linux penguin icon
 │   ├── __init__.py
 │   ├── admin.py
 │   ├── admin_views.py              # DID-based admin login views
@@ -566,39 +574,64 @@ All registered URL patterns (as seen by `django.urls`):
 > `redirect_uri`, `scope=openid`, `state`).  Using `/oauth/authorize/` or
 > any `/auth/...` path will return a 404 or unexpected behaviour.
 
-### Download Modal (Desktop Companion CTA)
+### Download Modals (Desktop & Mobile CTAs)
 
-A persistent **"Get iYou Home"** button sits below the login card on all tabs.
-Clicking it opens an overlay modal (`_download_modal.html`) with:
+The login page offers two download overlay modals, each with a distinct CTA
+placement strategy to avoid page-layout shift:
 
-**OS auto-detection** — `download_modal.js` inspects
-`navigator.userAgentData.platform` (or `navigator.userAgent` as fallback) and
-highlights the detected OS group with an indigo ring + "Recommended" badge.
-The detected platform banner slides in at the top of the modal.  Three OS
-groups are available:
+| Modal | Trigger | Opens On | Placement |
+|-------|---------|----------|-----------|
+| **Desktop** (`_download_modal.html`) | `.open-download-modal` / `#download-modal-btn` | Inline in Tab 0; global below card on Tabs 1 & 2 | **Tab 0:** inside the card; **Tabs 1-2:** below the card |
+| **Mobile** (`_mobile_download_modal.html`) | `.open-mobile-download-modal` / `#mobile-download-modal-btn` | Same as desktop | Same as desktop |
 
-| Group | Variants |
-|-------|----------|
-| Windows | GUI installer, portable ZIP |
-| macOS   | Intel DMG, Apple Silicon DMG |
-| Linux   | AppImage, deb package |
+**Desktop modal** (`_download_modal.html`):
+- **OS auto-detection** — `download_modal.js` inspects
+  `navigator.userAgentData.platform` (or `navigator.userAgent` as fallback) and
+  highlights the detected OS group with an indigo ring + "Recommended" badge.
+  The detected platform banner slides in at the top of the modal.  Three OS
+  groups are available:
 
-Each variant lists three download sources:
-1. **GitHub Releases** (`/releases/latest/download/…`)
-2. **Magnet torrent link** (clicked → copies to clipboard via `navigator.clipboard.writeText`)
-3. **IPFS gateway** (placeholder)
+  | Group | Variants |
+  |-------|----------|
+  | Windows | GUI installer, portable ZIP |
+  | macOS   | Intel DMG, Apple Silicon DMG |
+  | Linux   | AppImage, deb package |
 
-**Implementation details:**
-- `auth_bridge/templates/auth_bridge/_download_modal.html` — modal partial
-  with blurred backdrop (`backdrop-blur-sm`), fade-in animation, three
-  `.os-group` sections.
-- `auth_bridge/static/auth_bridge/js/download_modal.js` — vanilla JS module
-  (IIFE) providing: OS detection, open/close (Escape key, backdrop click),
-  auto-scroll to highlighted section, magnet link clipboard copy, MutationObserver
-  to re-highlight on modal re-open.
-- The footer CTA and any element with `.open-download-modal` class open the
-  modal.  Download URLs use a generic `/releases/latest/download/…` scheme
-  (no hardcoded versions).
+  Each variant lists three download sources:
+  1. **GitHub Releases** (`/releases/latest/download/…`)
+  2. **Magnet torrent link** (clicked → copies to clipboard via `navigator.clipboard.writeText`)
+  3. **IPFS gateway** (placeholder)
+
+- The Linux section header uses a static Tux SVG (`auth_bridge/static/auth_bridge/img/Tux.svg`).
+
+**Mobile download hub** (`_mobile_download_modal.html`):
+
+- **Bimodal distribution model** — two platform tabs (iOS / Android) with
+  auto-detection via `navigator.userAgent`; detected platform gets an indigo
+  ring + "Recommended" banner.
+- Two tracks per platform:
+  - **Managed Track** — App Store / Play Store deep-link targets with
+    "Coming Soon" badge (`cursor-not-allowed`).
+  - **Sovereign Track** — F-Droid repository URL (clipboard copy) + direct
+    `.apk` download for Android; TestFlight placeholder for iOS.
+  Explanatory copy below sovereign links notes that direct payloads use
+  decentralized file layers for privacy and bandwidth preservation.
+- `mobile_download_modal.js` — vanilla JS IIFE with document-level event
+  delegation (catches `.open-mobile-download-modal` and
+  `#mobile-download-modal-btn` from any template), platform detection, tab
+  switching, clipboard helper, Escape/backdrop dismiss, MutationObserver.
+
+**CTA placement logic (JavaScript in `login.html`):**
+- Tab 0 (Full Sovereignty) has inline download buttons inside its own partial
+  (`_tab_sovereign.html`) — the global `#global-download-ctas` footer is
+  hidden when Tab 0 is active.
+- Tab 1 (Community Self-Signing) and Tab 2 (Managed Convenience) hide the
+  inline footer and rely on `#global-download-ctas` below the login card.
+- The `activateTab()` function in `login.html` toggles `hidden` on
+  `#global-download-ctas` based on the active tab index.
+- Both `authenticated_dashboard.html` and `_tab_sovereign.html` also mount
+  `.open-mobile-download-modal` buttons so authenticated and sovereignty-
+  tab users can reach the mobile modal.
 
 ## Development Workflow [L467-521]
 
