@@ -42,14 +42,13 @@
             Enter iYou Home (Desktop)
         </a>
 
-        <!-- Mobile signer placeholder -->
-        <button disabled
-                class="inline-flex items-center justify-center gap-2 w-full px-5 py-3 bg-gray-200 text-gray-400 rounded-xl text-sm font-medium cursor-not-allowed mb-8">
+        <!-- Mobile signer -->
+        <button class="open-mobile-download-modal inline-flex items-center justify-center gap-2 w-full px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm font-medium transition-colors mb-8">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="5" y="2" width="14" height="20" rx="2"/>
                 <line x1="12" y1="18" x2="12" y2="18"/>
             </svg>
-            iYou Mobile &mdash; Coming Soon
+            Get iYou Mobile
         </button>
 
         <!-- Divider -->
@@ -65,5 +64,10 @@
             </a>
         </div>
     </div>
+
+    <!-- Mobile Download Modal -->
+    {% include 'auth_bridge/_mobile_download_modal.html' %}
+
+    <script src="{% static 'auth_bridge/js/mobile_download_modal.js' %}"></script>
 </body>
 </html>
