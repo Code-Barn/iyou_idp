@@ -45,6 +45,9 @@ env = environ.Env(
     REDIS_URL=(str, 'redis://127.0.0.1:6379/1'),
 )
 
+# Load .env file so env vars like IDP_DEBUG take effect during development
+env.read_env(BASE_DIR / '.env')
+
 # Ensure the 'src' directory is in the python path for Mac local dev
 sys.path.append(os.path.join(BASE_DIR, 'src'))
 
