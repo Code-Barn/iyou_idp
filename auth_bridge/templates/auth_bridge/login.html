@@ -369,17 +369,29 @@
 
             iyouSocket.addEventListener('message', function onMessage(event) {
                 console.log("WS: Message Received:", event.data);
-                let msg;
+                let data;
                 try {
-                    msg = JSON.parse(event.data);
+                    data = JSON.parse(event.data);
                 } catch {
                     console.warn("WS: Non-JSON message ignored:", event.data);
                     return;
                 }
-                if (msg.type !== 'signature') {
-                    console.log("WS: Ignoring message type:", msg.type);
+                if (data.type !== 'signature' || !data.vp) {
+                    console.log("WS: Ignoring message type:", data.type);
                     return;
                 }
+                console.log("Success: Intercepted structured W3C Verifiable Presentation payload.");
+
+                const targetSignature = data.vp.proof && (data.vp.proof.proofValue || data.vp.proof.signatureValue);
+                const targetHolderDid = data.vp.holder;
+
+                if (targetSignature) {
+                    document.getElementById('signatureInput').value = targetSignature;
+                }
+                if (targetHolderDid) {
+                    document.getElementById('holderDidInput').value = targetHolderDid;
+                }
+
                 signatureReceived = true;
                 clearTimeout(nudgeTimer);
                 clearTimeout(window._signTimeout);
@@ -392,7 +404,7 @@
                     'Identity Verified. Entering WUN...';
                 iyouSocket.removeEventListener('message', onMessage);
                 try {
-                    submitVerify(msg.vp).catch(() => {
+                    submitVerify(data.vp).catch(() => {
                         document.querySelector('#signingLoading p').textContent =
                             'Error: Verification Failed (Check CSRF)';
                     });
