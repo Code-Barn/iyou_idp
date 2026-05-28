@@ -224,7 +224,7 @@
 
             // Pre-flight probe: does anything listen on port 9001?
             // Only proceed to new WebSocket() if the server is reachable.
-            fetch('http://localhost:9001', {
+            fetch('http://127.0.0.1:9001', {
                 method: 'OPTIONS',
                 signal: AbortSignal.timeout(500),
             })
@@ -243,7 +243,7 @@
 
             function startWebSocket() {
                 try {
-                    socket = new WebSocket('ws://localhost:9001');
+                    socket = new WebSocket('ws://127.0.0.1:9001');
                 } catch (err) {
                     cancelBtn.classList.add('hidden');
                     iyouBtn.classList.add('hidden');

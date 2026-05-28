@@ -29,27 +29,12 @@ RUN uv sync --no-dev
 
 # Copy project files and compile the interior Rust DID crypto module bindings
 COPY . .
-WORKDIR /app/crates/rust-did
-RUN cargo build --release
+    WORKDIR /app/crates/did_rust
 
-# Re-align back to the primary execution context framework
-WORKDIR /app
-RUN uv run python manage.py collectstatic --noinput
+    RUN cargo build --release 2>&1
 
-# Stage 2: Hardened Runtime Environment
-FROM python:3.12-slim
-
-WORKDIR /app
-
-# Install only the slim production client library for Postgres runtime execution
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Extract only the compiled virtualenv and app binaries from the builder stage
-COPY --from=builder /app/.venv /app/.venv
-COPY . .
-COPY --from=builder /app/crates/rust-did/target/release/libdid_rust.so /app/crates/rust-did/
+    # Copy libdid_rust.so out of the builder so the app image can use it
+    COPY --from=builder /app/crates/did_rust/target/release/libdid_rust.so /app/crates/did_rust/
 COPY --from=builder /app/staticfiles /app/staticfiles
 
 ENV PATH="/app/.venv/bin:$PATH" \
