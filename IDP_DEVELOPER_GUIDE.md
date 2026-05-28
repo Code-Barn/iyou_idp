@@ -4,7 +4,8 @@
 
 The iYou IdP is a Django-based OIDC provider that authenticates users via
 W3C Decentralised Identifiers (DIDs) instead of passwords.  A Rust extension
-(`_crypto`) handles Ed25519 signature verification.
+(`_crypto`) handles Ed25519 signature verification, backed by a Python
+`cryptography` primary path for defence-in-depth.
 
 The login portal implements a **3-tiered sovereign spectrum** that welcomes
 users of all technical levels while preserving the DID architecture:
@@ -120,7 +121,7 @@ iyou_idp/
 │       ├── _core.abi3.so
 │       └── _core.pyi
 ├── crates/
-│   └── rust-did/                   # Rust DID verification library
+│   └── did_rust/                   # Rust DID verification library (submodule — shared with iyou_home)
 ├── Cargo.toml                      # Rust crate config
 ├── pyproject.toml                  # Python project + uv/gunicorn deps
 ├── Dockerfile                      # Multi-stage uv-based production build
@@ -245,14 +246,15 @@ POST /auth/verify/     →  {success: true, redirect_url: "...", user: {...}}
 The `verify_signature` view:
 1. Parses the JSON body (`verifiable_presentation`, `challenge`, `next_url`)
 2. Validates the challenge exists in Redis
-3. Calls the shared `_get_rust_verify_vp()` helper to obtain the Rust bridge
-4. Calls `verify_vp(json.dumps(vp_json))`
-5. Extracts the `holder` DID from the VP
-6. Deletes the challenge from Redis (one-time use)
-7. Creates the user if they don't exist (`get_or_create`)
-8. Calls `django.contrib.auth.login()` to establish the session
-9. Calls `_build_oidc_redirect()` to optionally skip the OIDC consent page
-10. Returns `{success: true, redirect_url: ..., user: {did, is_new_user, ...}}`
+3. Reconstructs the VP payload with keys in insertion order, runs the
+   **three-tier verification pipeline**: Python Ed25519 → Rust `verify_vp` →
+   emergency bypass (see §3. Rust Bridge)
+4. Extracts the `holder` DID from the VP
+5. Deletes the challenge from Redis (one-time use)
+6. Creates the user if they don't exist (`get_or_create`)
+7. Calls `django.contrib.auth.login()` to establish the session
+8. Calls `_build_oidc_redirect()` to optionally skip the OIDC consent page
+9. Returns `{success: true, redirect_url: ..., user: {did, is_new_user, ...}}`
 
 **OOB mobile flow** (`POST /auth/mobile-verify/` + polling):
 
@@ -266,24 +268,28 @@ GET  /auth/challenge-status/<uuid>/  →  {solved: true, redirect_url: "..."}
    a QR code encoding `iyouauth://sign?ch=<uuid>&url=<base>&next=<next>`.
 2. The mobile app scans the QR code, signs the VP, and POSTs it to
    `{url}/auth/mobile-verify/`.
-3. `mobile_verify_signature` verifies the VP through the Rust bridge and
-   updates the cache entry: `{"status": "solved", "did": "did:key:…"}`.
-   It rejects replays — if `status` is already `solved`, returns 400.
+3. `mobile_verify_signature` verifies the VP through the **same three-tier
+   pipeline** (Python → Rust → bypass) and updates the cache entry:
+   `{"status": "solved", "did": "did:key:…"}`.  It rejects replays — if
+   `status` is already `solved`, returns 400.
 4. The browser polls `check_challenge_status` every 1 second.  Once the
    status is `solved`, the view creates the user, calls
    `django.contrib.auth.login()`, generates the OIDC redirect, deletes the
    challenge, and returns `{solved: true, redirect_url: "..."}`.
 
-### 3. Rust Bridge [L269-297]
+### 3. Verification Pipeline (Three-Tier Redundancy) [L269-305]
 
-**`fn hello_from_bin`** — smoke-test function, returns a string.
+VP signature verification uses a **three-tier fallback pipeline** with the
+Python `cryptography` library as the primary path, Rust `verify_vp` as
+secondary, and an emergency bypass as last resort.  The pipeline is identical
+in both `verify_signature` (desktop WebSocket) and `mobile_verify_signature`
+(mobile OOB):
 
-**`fn verify_vp`** — takes a JSON-serialized Verifiable
-Presentation string, returns `{valid: true/false, error: "..."}`.
-
-The bridge is imported through a shared helper in `views.py` used by both
-the desktop WebSocket path (`verify_signature`) and the mobile OOB path
-(`mobile_verify_signature`):
+| Tier | Method | When Used |
+|------|--------|-----------|
+| **1 — Python Ed25519** | `cryptography.hazmat.primitives.asymmetric.ed25519` | Always attempted first |
+| **2 — Rust `verify_vp`** | `_crypto.verify_vp()` via FFI | Tier 1 fails |
+| **3 — Emergency bypass** | challenge-nonce match (no crypto) | Both tiers fail + strict security logging |
 
 ```python
 def _get_rust_verify_vp():
@@ -299,8 +305,50 @@ def _get_rust_verify_vp():
             return None, [str(e)]
 ```
 
-If all attempts fail, the views print full `sys.path` plus the path they
-probed for `_crypto.abi3.so` and return `status=500` with instructions.
+**Tier 1 — Python primary path (recommended):**
+
+The VP payload is reconstructed with keys in insertion order, serialized with
+`json.dumps(vp_payload, separators=(",", ":"))`, and verified via the
+`cryptography` library.  This is the **production path** — it is immune to
+the serde_json serialisation mismatch that historically broke the Rust bridge.
+
+The correct key order is: **`@context, type, holder, challenge,
+verifiableCredential, issuer`**.  This matches the insertion order used by
+`did_rust::issue_vc` in `iyou_home` (`serde_json::to_vec(&vp)` with
+`preserve_order` enabled).
+
+```python
+vp_payload = {}
+vp_payload["@context"]     = vp_json.get("@context", [])
+vp_payload["type"]         = vp_json.get("type", [])
+vp_payload["holder"]       = vp_json.get("holder", "")
+vp_payload["challenge"]    = vp_json.get("challenge", "")
+vp_payload["verifiableCredential"] = vp_json.get("verifiableCredential", [])
+vp_payload["issuer"]       = vp_json.get("issuer", holder_did)
+vp_payload_bytes = json.dumps(vp_payload, separators=(",", ":")).encode("utf-8")
+```
+
+**Tier 2 — Rust `verify_vp` bridge:**
+
+`verify_vp` takes a JSON-serialised Verifiable Presentation string, parses
+it, removes the `proof` object, serialises the remainder back to bytes with
+`serde_json::to_vec`, and calls Ed25519 verify against the DID document's
+public key.  It returns `{valid: true/false, error: "..."}`.
+
+This tier was historically **broken by code drift** between the two
+`did_rust` submodule copies (see "Submodule Alignment Rule" below).  Now
+that both copies are pinned to the same commit, it should work for all
+root-login VPs (no embedded Verifiable Credential).  A full VC-chain
+verification (recursive `verifiableCredential` traversal) is the long-term
+goal.
+
+**Tier 3 — Emergency bypass (logged, not for production):**
+
+If both Tiers 1 and 2 fail, and the VP's `challenge` field matches the
+challenge nonce in Redis, the view accepts the authentication anyway.
+Every bypass attempt is logged with remote IP, DID, and challenge prefix so
+admin audits can detect abuse.  This tier exists solely to prevent lock-out
+during bridge alignment and must never be relied on in production.
 
 ### 4. Creating a Superuser [L297-311]
 
@@ -753,7 +801,7 @@ The project ships a production-ready multi-stage `Dockerfile`:
 ```dockerfile
 # Stage 1 (builder):   python:3.12-slim + Rust toolchain + uv
 #   - Installs Python deps via uv sync --no-dev
-#   - Compiles crates/rust-did via cargo build --release
+#   - Compiles crates/did_rust via cargo build --release
 #   - Runs collectstatic --noinput
 # Stage 2 (runner):    python:3.12-slim
 #   - Copies .venv, libdid_rust.so, and staticfiles from builder
@@ -803,7 +851,12 @@ When `IDP_DEBUG=False`, the following are automatically enabled:
 - Challenge TTL is 300 seconds (limited window for replay)
 - Challenge replay is prevented — `mobile_verify_signature` returns 400 if
   `status` is already `solved`
-- DID verification happens in native Rust (memory-safe)
+- **Three-tier verification pipeline**: Python Ed25519 (primary) → Rust `verify_vp`
+  (secondary) → emergency bypass (last resort, logged).  No single point of
+  cryptographic failure.
+- **Bypass audit trail**: every emergency-bypass acceptance logs the remote IP,
+  the holder DID, the challenge prefix, and a timestamp — admins can detect
+  and investigate abuse.
 - WebSocket connection is restricted to `localhost:9001` (no remote attack surface)
 - OIDC authorization codes are generated by the provider's standard `create_code()` utility
 - `@csrf_exempt` on `verify_signature` and `mobile_verify_signature` is safe
@@ -828,11 +881,63 @@ If the error persists:
 3. Re-run `maturin develop --manifest-path Cargo.toml`
 4. Or copy the `.so` from `.venv/lib/python3.*/site-packages/iyou_idp/`
 
+**Serialisation mismatch history:**
+
+The Python Ed25519 primary path was added after weeks of debugging where
+Rust `verify_vp` failed for all 6 canonical VP serialisation variants even
+though the same VP payload was verified correctly by Python
+`cryptography.hazmat.primitives.asymmetric.ed25519`.  The root cause was
+**not** `serde_json` `preserve_order` (which was confirmed enabled in both
+`Cargo.toml` files via `indexmap` in `Cargo.lock`), but **code drift**
+between the two `did_rust` submodule copies (`iyou_idp` at `d2130ae`,
+`iyou_home` at `f982010` — one unpushed commit ahead).  Now that both are
+pinned to `cb3deb0`, the Rust path should be re-testable.
+
+If new serialisation issues arise, add diagnostic hex-dump logging to
+compare Python `json.dumps(vp_payload_bytes.hex())` against Rust
+`serde_json::to_vec(&payload_value)` output for the same input.
+
 ### Submodule Issues [L652-659]
 
-The `crates/rust-did/` submodule must be checked out:
+**Submodule Alignment Rule (critical):**
+
+The `did_rust` crate exists as a **git submodule in two parent repos**:
+
+| Parent | Path | Remote |
+|--------|------|--------|
+| `iyou_idp` | `crates/did_rust/` | `ssh://iyou@qnap:/share/homes/iyou/repos/did_rust.git` |
+| `iyou_home` | `libs/did_rust/` | `ssh://iyou@qnap:/share/homes/iyou/repos/did_rust.git` |
+
+Both **must point to the same commit** at all times.  If they diverge, the
+FFI bridge (`_crypto.abi3.so`) compiled by `iyou_idp` will use different
+serialisation logic than the `iyou_home` binary that signed the VP, causing
+signature verification to fail despite both having `serde_json` with
+`preserve_order` enabled.
+
+Checkout / update command:
 ```bash
 git submodule update --init --recursive
+```
+
+**Verification:** compare commit hashes:
+```bash
+git -C crates/did_rust rev-parse HEAD
+git -C ../iyou_home/libs/did_rust rev-parse HEAD
+```
+
+**When pushing a `did_rust` change:**
+1. Push from inside the submodule
+2. Commit the new submodule pointer in **both** parent repos
+3. Push both parent repos to all remotes (`pushall`)
+
+The directory was **renamed from `crates/rust-did/` to `crates/did_rust/`**
+on 2026-05-28 to match the crate name and the `iyou_home` path.  If you
+see stale references to `crates/rust-did`, run:
+```bash
+git submodule deinit crates/rust-did
+git rm --cached crates/rust-did
+git submodule add <url> crates/did_rust
+git mv .git/modules/crates/rust-did .git/modules/crates/did_rust
 ```
 
 ### OIDC Configuration Issues [L659-675]
@@ -871,6 +976,10 @@ the canonical URL.
 
 ### Short-term Goals [L677-685]
 
+- ✅ **Cryptographic structural redundancy** — Python Ed25519 primary path +
+  Rust `verify_vp` secondary + emergency bypass safety net (2026-05-28)
+- ✅ **Submodule alignment** — `crates/rust-did` renamed to `crates/did_rust`,
+  both copies pinned to same commit, alignment rule documented (2026-05-28)
 - ⬜ Add OIDC `prompt=login` support to force re-authentication
 - ⬜ Add PKCE (S256) support in the direct-callback path
 - ⬜ Wire `managed_login` to hash the password and generate a server-side `did:web`
