@@ -523,11 +523,17 @@ JSON string (rather than a nested object), the Django view handles it via an
 
 The handshake has several protection layers:
 
-1. **Pre-flight probe** — `fetch('http://localhost:9001', {method:'OPTIONS', signal:AbortSignal.timeout(500)})` checks if the port is reachable before committing to `new WebSocket()` (avoids browser thread blocking from PNA checks).
+1. **Mutex connection lock** — A `window.sovereignConnectionLock` state token
+   (`"CONNECTING"` / `"OPEN"` / `"IDLE"`) is claimed *before* the
+   `new WebSocket()` constructor runs, and is verified at the top of
+   `tryConnectIYouHome()`.  Any duplicate call is blocked before any
+   connection attempt begins, eliminating race conditions from rapid script
+   re-evaluation.  A secondary `window.activeSovereignSocket.readyState` check
+   acts as a fallback guard.
 
 2. **Kill Switch** — A "Cancel & Use Manual Paste" button appears
    **immediately** when the linking UI shows.  Clicking it calls
-   `socket.close()` to abort any in-flight TCP connection.
+   `socket.close()` and resets `sovereignConnectionLock` to `"IDLE"`.
 
 3. **2-second force fallback** — If `socket.readyState !== WebSocket.OPEN`
    after 2 seconds, the socket is forcibly closed and the manual paste box
@@ -718,13 +724,20 @@ Key tests:
 
 - **WebSocket not connecting?** Open browser dev tools console.  Look for:
   - `"LOGIN UI VERSION: 3.0.0"` — confirms fresh JS
+  - `"WS: Concurrency lock claimed. Initializing secure socket..."` — mutex
+    guard passed, connection starting
+  - `"Guard: ... Suppressing duplicate call."` — duplicate connection blocked
   - `"WS: Socket Created"` — WebSocket constructor succeeded
-  - `"WS: Connection Opened"` — handshake completed
+  - `"WS: Connection successfully opened and locked."` — `onopen` fired,
+    lock set to `"OPEN"`
+  - `"WS: Connection Opened"` — handshake completed, UI activated
   - `"WS: Socket Error"` — browser blocked or server not listening
   - `"WS: Force-fallback timer expired"` — 2s timeout was reached
-- **Signature not received?** The `alert("MESSAGE RECEIVED: ...")` in the
-  `onmessage` handler is the definitive test.  If it fires, the browser got
-  the data.  If not, the network is swallowing the message.
+  - `"Critical error allocating socket:"` — `new WebSocket()` threw
+- **Signature not received?** Look for `"WS: Message Received:"` in the
+  console.  If it fires with a JSON payload, the browser got the data.  If
+  not, the network is swallowing the message or `sovereignConnectionLock` is
+  blocking the handshake.
 - **OOB flow not completing?** Check:
   - The QR code rendered (inspect the `#qrcode` div in dev tools)
   - The browser logs `"Scan with your mobile app"` — challenge fetch succeeded
@@ -758,7 +771,7 @@ Key tests:
 | `Challenge already solved` | Mobile replayed a solved challenge | Generate a new QR code |
 | `Challenge not found or expired` (mobile-verify) | Polling after TTL or bad UUID | Refresh tab to get a fresh challenge |
 | 500 on POST to `/auth/verify/` | import or bridge crash | Check console for `VERIFY RESPONSE FULL` or server traceback |
-| WebSocket never opens | Browser PNA blocking or iyou-home not running | Check pre-flight probe result; use manual paste |
+| WebSocket never opens | iyou-home not running, browser PNA blocking, or mutex lock preventing duplicate | Check console for `Guard:` or `Critical error` messages; use manual paste |
 | QR code not appearing or scrambled | `qrcode` CDN not loaded or challenge fetch failed | Check network tab for CDN or `/auth/challenge/` errors |
 | `data.redirect_url` not redirecting | `data.success` falsy or `redirect_url` missing | Check `VERIFY RESPONSE FULL` in console |
 

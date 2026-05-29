@@ -198,8 +198,24 @@
             tryConnectIYouHome();
         }
 
-        // Pre-flight probe + WebSocket handshake with iYou Home
+        // Absolute mutex-style connection lock — guards against concurrent duplicates
         function tryConnectIYouHome() {
+            // Gate 1: Absolute Lock Check
+            if (window.sovereignConnectionLock === "CONNECTING" || window.sovereignConnectionLock === "OPEN") {
+                console.log("Guard: Connection loop is currently busy or open. Suppressing duplicate call.");
+                return;
+            }
+
+            // Gate 2: Secondary active reference state verification
+            if (window.activeSovereignSocket && window.activeSovereignSocket.readyState <= 1) {
+                console.log("Guard: WebSocket instance is already active. Suppressing duplicate constructor.");
+                return;
+            }
+
+            // Claim the lock instantly
+            window.sovereignConnectionLock = "CONNECTING";
+            console.log("WS: Concurrency lock claimed. Initializing secure socket...");
+
             const iyouBtn = document.getElementById('iyouHomeBtn');
             const manualSection = document.getElementById('manualSection');
             const cancelBtn = document.getElementById('cancelIyouBtn');
@@ -207,7 +223,7 @@
             iyouBtn.textContent = '🔗 Linking...';
             iyouBtn.disabled = true;
             iyouBtn.classList.remove('hidden');
-            cancelBtn.classList.remove('hidden');  // Kill Switch — available immediately
+            cancelBtn.classList.remove('hidden');
             manualSection.classList.add('hidden');
 
             let cancelled = false;
@@ -217,43 +233,34 @@
                 console.log("WS: Kill Switch pressed, closing socket");
                 cancelled = true;
                 if (socket) { socket.close(); socket = null; }
+                window.activeSovereignSocket = null;
+                window.sovereignConnectionLock = "IDLE";
                 cancelBtn.classList.add('hidden');
                 iyouBtn.classList.add('hidden');
                 showManualFallback();
             };
 
-            // Pre-flight probe: does anything listen on port 9001?
-            // Only proceed to new WebSocket() if the server is reachable.
-            fetch('http://127.0.0.1:9001', {
-                method: 'OPTIONS',
-                signal: AbortSignal.timeout(500),
-            })
-            .then(() => {
-                if (cancelled) return;
-                startWebSocket();
-            })
-            .catch(() => {
-                if (cancelled) return;
-                cancelBtn.classList.add('hidden');
-                iyouBtn.classList.add('hidden');
-                showManualFallback(
-                    'Could not connect to iYou Home. Please paste your signature manually.'
-                );
-            });
+            try {
+                socket = new WebSocket('ws://127.0.0.1:9001');
+                window.activeSovereignSocket = socket;
 
-            function startWebSocket() {
-                try {
-                    socket = new WebSocket('ws://127.0.0.1:9001');
-                } catch (err) {
-                    cancelBtn.classList.add('hidden');
-                    iyouBtn.classList.add('hidden');
-                    showManualFallback(
-                        err.name === 'SecurityError'
-                            ? 'Local link blocked by browser security. Please paste manually.'
-                            : 'Could not connect to iYou Home. Please paste your signature manually.'
-                    );
-                    return;
-                }
+                socket.onopen = function() {
+                    window.sovereignConnectionLock = "OPEN";
+                    console.log("WS: Connection successfully opened and locked.");
+                };
+
+                socket.onclose = function(e) {
+                    console.log("WS: Socket Closed. Code:", e.code);
+                    window.activeSovereignSocket = null;
+                    window.sovereignConnectionLock = "IDLE";
+                };
+
+                socket.onerror = function(err) {
+                    console.error("WS: Socket Error:", err);
+                    window.activeSovereignSocket = null;
+                    window.sovereignConnectionLock = "IDLE";
+                };
+
                 console.log("WS: Socket Created, readyState:", socket.readyState);
 
                 const forceFallback = setTimeout(() => {
@@ -299,6 +306,17 @@
                     }
                     iyouSocket = null;
                 });
+            } catch (err) {
+                window.sovereignConnectionLock = "IDLE";
+                window.activeSovereignSocket = null;
+                cancelBtn.classList.add('hidden');
+                iyouBtn.classList.add('hidden');
+                showManualFallback(
+                    err.name === 'SecurityError'
+                        ? 'Local link blocked by browser security. Please paste manually.'
+                        : 'Could not connect to iYou Home. Please paste your signature manually.'
+                );
+                console.error("Critical error allocating socket:", err);
             }
         }
 
