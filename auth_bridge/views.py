@@ -46,7 +46,8 @@ from oidc_provider.lib.utils.token import create_code
 logger = logging.getLogger(__name__)
 
 # Where to send the user after authentication when no explicit next_url is given.
-DEFAULT_NEXT_URL = 'http://127.0.0.1:8001'
+from django.conf import settings as django_settings
+DEFAULT_NEXT_URL = django_settings.IDP_WUN_URL
 
 
 def _build_oidc_redirect(next_url, user):
@@ -689,6 +690,7 @@ class LoginPageView(View):
             context = {
                 'next_url': DEFAULT_NEXT_URL,
                 'user_did': request.user.username,
+                'home_ws_url': django_settings.IDP_HOME_WS_URL,
             }
             return render(request, 'auth_bridge/authenticated_dashboard.html', context)
 
@@ -696,6 +698,7 @@ class LoginPageView(View):
         next_url = next_url or DEFAULT_NEXT_URL
         context = {
             'next_url': next_url,
+            'home_ws_url': django_settings.IDP_HOME_WS_URL,
         }
         return render(request, 'auth_bridge/login.html', context)
 
@@ -707,5 +710,5 @@ class GlobalLogoutView(View):
 
     def get(self, request):
         django_logout(request)
-        next_page = request.GET.get('next', 'http://127.0.0.1:8001/')
+        next_page = request.GET.get('next', django_settings.IDP_WUN_URL + '/')
         return redirect(next_page)

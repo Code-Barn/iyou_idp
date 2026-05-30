@@ -36,13 +36,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
     IDP_SECRET_KEY=(str, 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5'),
-    IDP_BASE_URL=(str, 'http://127.0.0.1:8000'),
+    IDP_BASE_URL=(str, 'http://iyou-idp.identity.svc.cluster.local:8000'),
+    IDP_WUN_URL=(str, 'http://iyou-wun.satellite.svc.cluster.local:8001'),
+    IDP_HOME_URL=(str, 'http://iyou-home.user.svc.cluster.local:9000'),
+    IDP_HOME_WS_URL=(str, 'ws://iyou-home.user.svc.cluster.local:9001'),
     IDP_DEBUG=(bool, False),
-    IDP_ALLOWED_HOSTS=(list, ['127.0.0.1']),
-    IDP_CSRF_TRUSTED_ORIGINS=(list, ['http://127.0.0.1:8000']),
+    IDP_ALLOWED_HOSTS=(list, ['iyou-idp.identity.svc.cluster.local', 'iyou-idp', 'localhost']),
+    IDP_CSRF_TRUSTED_ORIGINS=(list, ['http://iyou-idp.identity.svc.cluster.local:8000']),
     IDP_CORS_ALLOWED_ORIGINS=(list, []),
     DATABASE_URL=(str, 'sqlite:///db.sqlite3'),
-    REDIS_URL=(str, 'redis://127.0.0.1:6379/1'),
+    REDIS_URL=(str, 'redis://iyou-redis-master.identity.svc.cluster.local:6379/1'),
 )
 
 # Load .env file so env vars like IDP_DEBUG take effect during development
@@ -61,8 +64,11 @@ SECRET_KEY = env('IDP_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env('IDP_DEBUG')
 
-# Single BASE_URL to switch the entire IdP's identity between Tailscale and 127.0.0.1
+# Single BASE_URL to switch the entire IdP's identity between cluster DNS and localhost
 IDP_BASE_URL = env('IDP_BASE_URL')
+IDP_WUN_URL = env('IDP_WUN_URL')
+IDP_HOME_URL = env('IDP_HOME_URL')
+IDP_HOME_WS_URL = env('IDP_HOME_WS_URL')
 
 ALLOWED_HOSTS = env('IDP_ALLOWED_HOSTS')
 

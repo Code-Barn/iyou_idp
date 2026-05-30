@@ -241,7 +241,7 @@
             };
 
             try {
-                socket = new WebSocket('ws://127.0.0.1:9001');
+                socket = new WebSocket('{{ home_ws_url }}');
                 window.activeSovereignSocket = socket;
 
                 socket.onopen = function() {
