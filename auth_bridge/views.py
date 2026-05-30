@@ -691,6 +691,8 @@ class LoginPageView(View):
                 'next_url': DEFAULT_NEXT_URL,
                 'user_did': request.user.username,
                 'home_ws_url': django_settings.IDP_HOME_WS_URL,
+                'wun_url': django_settings.IDP_WUN_URL,
+                'idp_base_url': django_settings.IDP_BASE_URL,
             }
             return render(request, 'auth_bridge/authenticated_dashboard.html', context)
 
@@ -699,6 +701,8 @@ class LoginPageView(View):
         context = {
             'next_url': next_url,
             'home_ws_url': django_settings.IDP_HOME_WS_URL,
+            'wun_url': django_settings.IDP_WUN_URL,
+            'idp_base_url': django_settings.IDP_BASE_URL,
         }
         return render(request, 'auth_bridge/login.html', context)
 

@@ -23,21 +23,27 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Inject the modern uv packager tool layer
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copy dependency manifests and sync production virtual environment
+# Copy dependency manifests, Rust crate source, and sync production virtual environment
 COPY pyproject.toml uv.lock Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
+COPY src/ ./src/
 RUN uv sync --no-dev
 
-# Install maturin for native Rust-to-Python bridge compilation
-RUN uv pip install 'maturin>=1.0,<2.0'
-
-# Copy the remaining project source
-COPY . .
+# Install maturin via uv tool (isolated from project venv)
+RUN uv tool install 'maturin>=1.0,<2.0'
 
 # Compile the _crypto.abi3.so PyO3 extension via maturin
-RUN maturin build --release --out /app/dist && \
+RUN uv tool run maturin build --release --out /app/dist && \
     uv pip install /app/dist/*.whl && \
-    uv pip uninstall maturin -y
+    uv tool uninstall maturin
+
+# Locate the compiled _crypto .so for the final stage to reference
+RUN mkdir -p /app/_crypto_dist && \
+    cp $(find /app/.venv/lib -name '_crypto*.so' -print -quit) /app/_crypto_dist/ && \
+    echo "Located _crypto at:" && ls -la /app/_crypto_dist/
+
+# Copy the remaining project source (manage.py, config, templates, static, etc.)
+COPY . .
 
 # Harvest all static assets at build time
 RUN DJANGO_SETTINGS_MODULE=config.settings uv run python manage.py collectstatic --noinput
@@ -67,9 +73,9 @@ COPY --from=builder /app/auth_bridge /app/auth_bridge
 COPY --from=builder /app/manage.py /app/manage.py
 COPY --from=builder /app/pyproject.toml /app/pyproject.toml
 
-# Copy the compiled _crypto.abi3.so from site-packages into the app source tree
+# Copy the compiled _crypto.abi3.so (located via find in builder)
 # so the sys.path fallback in settings.py picks it up
-COPY --from=builder /app/.venv/lib/python3.12/site-packages/iyou_idp/_crypto*.so /app/src/iyou_idp/
+COPY --from=builder /app/_crypto_dist/_crypto*.so /app/src/iyou_idp/
 COPY --from=builder /app/src/iyou_idp/__init__.py /app/src/iyou_idp/__init__.py
 
 # Copy and secure the entrypoint

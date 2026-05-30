@@ -164,10 +164,43 @@
         const CHALLENGE_URL = "{% url 'auth_bridge:challenge' %}";
         const CHALLENGE_STATUS_URL = "/auth/challenge-status/";
 
+        // Satellite destination — opened in a new tab after successful auth
+        const WUN_URL = '{{ wun_url|escapejs }}';
+
         // State
         let currentChallenge = null;
         let currentNextUrl = '{{ next_url|escapejs }}';
         let iyouSocket = null;
+        let authPopupRef = null;
+
+        // Open a blank popup during the user-click context so the browser
+        // allows it.  The real URL is set inside the async success handler.
+        function reserveAuthPopup() {
+            try {
+                authPopupRef = window.open('', '_blank');
+            } catch (_) {
+                authPopupRef = null;
+            }
+            return authPopupRef;
+        }
+
+        // Dual-window success: launch the satellite app in a new tab and
+        // keep the current tab on the IdP profile interface.
+        function onAuthSuccess(redirectUrl) {
+            if (authPopupRef && !authPopupRef.closed) {
+                // Popup was reserved during the click gesture — safe to navigate
+                try { authPopupRef.location.href = redirectUrl; } catch (_) {}
+                authPopupRef = null;
+            } else {
+                // Fallback: try an immediate open (may be blocked)
+                const fallback = window.open(redirectUrl, '_blank');
+                if (!fallback || fallback.closed) {
+                    console.warn("Popup blocked — user must click the fallback link");
+                }
+            }
+            // Stay on the IdP to show the authenticated profile interface
+            window.location.href = '/';
+        }
 
         // Initialize
         function init() {
@@ -346,6 +379,9 @@
 
         // Step 2: Sign via iYou Home native socket
         function signWithIYouHome() {
+            // Reserve popup synchronously during the user click gesture
+            reserveAuthPopup();
+
             if (!iyouSocket || iyouSocket.readyState !== WebSocket.OPEN) {
                 showError('Connection to iYou Home lost. Please refresh and try again.');
                 return;
@@ -464,21 +500,22 @@
                 signingLoading.classList.add('hidden');
 
                 if (data.success && data.redirect_url) {
-                    console.log("LOGIN SUCCESS: Redirecting to", data.redirect_url);
+                    console.log("LOGIN SUCCESS: Opening", data.redirect_url, "in new tab");
                     step2Indicator.classList.remove('active');
                     step3Indicator.classList.add('active');
                     step2Content.classList.add('hidden');
                     step3Content.classList.remove('hidden');
 
-                    // Fail-safe: if the redirect doesn't fire within 500ms,
-                    // show a clickable button.
+                    // Fail-safe: if the dual-window route doesn't fire
+                    // within 500ms, show a clickable fallback link.
                     const manualLink = document.getElementById('manualSuccessLink');
                     manualLink.href = data.redirect_url;
                     setTimeout(() => {
                         manualLink.classList.remove('hidden');
                     }, 500);
 
-                    window.location.href = data.redirect_url;
+                    // Launch satellite in new tab, stay on IdP profile
+                    onAuthSuccess(data.redirect_url);
                     return { success: true };
                 } else {
                     console.error('Login failed:', data.error);
@@ -539,6 +576,9 @@
 
         // Step 2: Manual submit — read from textarea and delegate to submitVerify
         function handleManualSubmit() {
+            // Reserve popup synchronously during the user click gesture
+            reserveAuthPopup();
+
             const vpJson = vpTextarea.value;
 
             if (!vpJson) {
@@ -652,7 +692,9 @@
                             clearInterval(communityPollId);
                             communityPollId = null;
                             document.getElementById('community-status').textContent = 'Verified! Redirecting…';
-                            window.location.href = data.redirect_url;
+                            // Dual-window: satellite in new tab, stay on IdP
+                            window.open(data.redirect_url, '_blank');
+                            window.location.href = '/';
                         }
                     })
                     .catch(() => { /* keep polling until TTL expires */ });

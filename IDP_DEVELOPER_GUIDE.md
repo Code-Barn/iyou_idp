@@ -18,15 +18,17 @@ users of all technical levels while preserving the DID architecture:
 
 The portal is served at the root URL (`/`) and at `/auth/login/` — both render
 the same tiered login card (no landing-page hero content).  After
-authentication the user is redirected to the `next` URL they provided; if none
-was given, the default is `http://127.0.0.1:8001` (WUN).
+authentication the satellite app (WUN) is opened in a **new browser tab** via
+the `redirect_url`, while the current tab stays on the IdP and transitions to
+the authenticated profile interface at `/`.  If no explicit `next` URL was
+provided, the default is the value of `IDP_WUN_URL`.
 
 ## Architecture [L23-76]
 
 ### Level 3 — Desktop WebSocket Flow (Full Sovereignty)
 
 ```
-  Browser                     Django IdP (port 8001)         iYou Home (port 9001)
+  Browser tab 1 (IdP)          Django IdP (port 8000)         iYou Home (port 9001)
        │                              │                              │
        ├── GET / or /auth/login/ ────►│                              │
        │◄── login page (HTML+JS) ─────┤                              │
@@ -34,7 +36,7 @@ was given, the default is `http://127.0.0.1:8001` (WUN).
        │  ── pre-flight probe ────────┼────── fetch OPTIONS ────────►│
        │◄────────── 200/404 ──────────┼──────────────────────────────┤
        │                              │                              │
-       │  ── WebSocket handshake ─────┼──────── ws://local ─────────►│
+       │  ── WebSocket handshake ─────┼──────── ws://$IDP_HOME_WS    ►│
        │◄────────── connected ────────┼──────────────────────────────┤
        │                              │                              │
        │  POST /auth/challenge/ ─────►│                              │
@@ -46,14 +48,16 @@ was given, the default is `http://127.0.0.1:8001` (WUN).
        │  POST /auth/verify/ ────────►│                              │
        │◄── {redirect_url:...} ───────┤                              │
        │                              │                              │
-       │  window.location = redirect  │                              │
+       │  window.open(redirect,'_blank')──►  Browser tab 2 (WUN)     │
+       │  window.location.href = '/'   │                              │
+       │  (shows authenticated dash)   │                              │
        └──────────────────────────────┘                              ┘
 ```
 
 ### Level 2 — OOB QR-Code Flow (Community Self-Signing)
 
 ```
-  Browser (Tab 2)             Django IdP (port 8001)        iyou_mobile (phone)
+  Browser tab 1 (IdP)          Django IdP (port 8000)        iyou_mobile (phone)
        │                              │                              │
        │  POST /auth/challenge/ ─────►│                              │
        │◄── {challenge: uuid} ────────┤                              │
@@ -72,7 +76,9 @@ was given, the default is `http://127.0.0.1:8001` (WUN).
        │◄── {solved:true,             │                              │
        │     redirect_url:…} ─────────┤                              │
        │                              │                              │
-       │  window.location = redirect  │                              │
+       │  window.open(redirect,'_blank')──►  Browser tab 2 (WUN)     │
+       │  window.location.href = '/'   │                              │
+       │  (shows authenticated dash)   │                              │
        └──────────────────────────────┘                              ┘
 ```
 
@@ -124,10 +130,13 @@ iyou_idp/
 │   └── did_rust/                   # Rust DID verification library (submodule — shared with iyou_home)
 ├── Cargo.toml                      # Rust crate config
 ├── pyproject.toml                  # Python project + uv/gunicorn deps
-├── Dockerfile                      # Multi-stage uv-based production build
-├── docker-entrypoint.sh            # migrate + gunicorn entrypoint
+├── Dockerfile                      # Multi-stage uv + maturin production build
+├── docker-entrypoint.sh            # collectstatic + migrate + gunicorn entrypoint
 ├── .dockerignore                   # Build context filter
 ├── .env.example
+├── scripts/
+│   ├── build-image.sh              # Local container build wrapper
+│   └── deploy-idp-remote.sh        # Cross-VM 6-stage deployment pipeline
 └── README.md
 ```
 
@@ -167,10 +176,18 @@ uv run python manage.py runserver 0.0.0.0:8001
 
 **Quick start with Docker:**
 ```bash
+# Build using the convenience wrapper
+./scripts/build-image.sh
+
+# Or build directly
 docker build -t iyou-idp:latest .
+
 docker run -p 8000:8000 \
   -e IDP_SECRET_KEY="insecure-dev-key-only" \
   -e IDP_BASE_URL="http://localhost:8000" \
+  -e IDP_WUN_URL="http://localhost:8001" \
+  -e IDP_HOME_URL="http://localhost:9000" \
+  -e IDP_HOME_WS_URL="ws://localhost:9001" \
   -e IDP_DEBUG=True \
   -e IDP_ALLOWED_HOSTS="localhost,127.0.0.1" \
   -e IDP_CSRF_TRUSTED_ORIGINS="http://localhost:8000" \
@@ -394,9 +411,10 @@ sessions and clients.
 
 ### 7. Post-Login Redirect Configuration
 
-The constant `DEFAULT_NEXT_URL = 'http://127.0.0.1:8001'` in `auth_bridge/views.py`
-controls where the user is sent after authentication when no explicit `next`
-URL was provided by the OIDC client.  This defaults to the WUN satellite app.
+The constant `DEFAULT_NEXT_URL` in `auth_bridge/views.py` reads from
+`settings.IDP_WUN_URL` environment variable.  It controls where the user
+is directed after authentication when no explicit `next` URL was provided
+by the OIDC client.
 
 All entry points use this constant as their fallback:
 - `verify_signature()` — WebSocket path
@@ -405,12 +423,35 @@ All entry points use this constant as their fallback:
 - `LoginPageView.get()` — reads `?next=` from query params
 
 **Authenticated-user redirect:** `LoginPageView.get()` also redirects
-already-authenticated users directly to `DEFAULT_NEXT_URL`, **but only when no
+already-authenticated users directly to `IDP_WUN_URL`, **but only when no
 `?next=` query parameter is present**.  This preserves the OIDC authorization
 code exchange (where `next` contains critical OIDC params).  Unauthenticated
 visitors always see the login card, regardless of `?next=`.
 
-If WUN runs on a different port or domain, change this constant to match.
+#### Dual-Window Behaviour
+
+After a successful login the JavaScript handler calls `onAuthSuccess(redirectUrl)`:
+
+1. **New tab**: the satellite app (`redirectUrl`, typically the WUN OIDC callback
+   with `?code=...&state=...`) is opened via `window.open(url, '_blank')`.
+2. **Same tab**: the IdP page reloads at `/` to reveal the authenticated profile
+   interface (`authenticated_dashboard.html`).
+
+**Popup-blocker resilience:** The `reserveAuthPopup()` helper fires
+`window.open('', '_blank')` **synchronously** inside the user-click event
+handler (`signWithIYouHome()` or `handleManualSubmit()`), which browsers
+permit because it is a direct user gesture.  The real destination URL is
+assigned later inside the async `fetch().then()` callback via
+`authPopupRef.location.href`.  If the popup was blocked, a visible fallback
+link appears after 500 ms.
+
+The dual-window flow applies to all three auth tiers:
+- **Tab 0 (Full Sovereignty):** `submitVerify()` success handler
+- **Tab 1 (Community Self-Signing):** `startCommunityPolling()` success handler
+- **Tab 2 (Managed Convenience):** future implementation
+
+To configure the satellite destination, set the `IDP_WUN_URL` environment
+variable (cluster-internal DNS or public domain).
 
 ### Authenticated Dashboard
 
@@ -419,7 +460,9 @@ without an active OIDC flow, `LoginPageView.get()` renders
 `authenticated_dashboard.html` instead of the login page.  The dashboard:
 
 - Displays the user's DID.
-- Provides an **"Enter iYou Home"** button linking to `DEFAULT_NEXT_URL`.
+- Provides an **"Enter iYou Home"** button linking to `IDP_WUN_URL` with
+  `target="_blank" rel="noopener noreferrer"` so the satellite app opens
+  in a new tab while the dashboard stays visible.
 - Shows a disabled **iYou Mobile** placeholder.
 - Offers a **Sign Out** link pointing to `/auth/logout/`.
 
@@ -436,12 +479,12 @@ An endpoint at `/auth/logout/` fully clears the IdP session:
 class GlobalLogoutView(View):
     def get(self, request):
         django_logout(request)
-        next_page = request.GET.get('next', 'http://127.0.0.1:8001/')
+        next_page = request.GET.get('next', settings.IDP_WUN_URL + '/')
         return redirect(next_page)
 ```
 
 Accepts an optional `?next=` parameter to control the post-logout redirect
-(default: `http://127.0.0.1:8001/` — WUN root).
+(default: `IDP_WUN_URL + '/'` — WUN root).
 
 ## Authentication Flow [L339-434]
 
@@ -459,6 +502,7 @@ persists the active tab across redirects.
 5. `POST /auth/verify/` with `{verifiable_presentation, challenge, next_url}`
 6. Server validates challenge in Redis, calls `_get_rust_verify_vp()`, logs in user
 7. Returns `{success, redirect_url, user}`
+8. JS calls `onAuthSuccess(redirect_url)` → satellite in new tab, stays on IdP at `/`
 
 ### Tab 1 — Community Self-Signing (OOB Mobile Flow)
 
@@ -472,7 +516,8 @@ persists the active tab across redirects.
 5. When the challenge is solved, the polling endpoint creates the user,
    calls `django.contrib.auth.login()`, generates the OIDC redirect, and
    returns `{solved: true, redirect_url: "..."}`.
-6. The browser navigates to the redirect URL.
+6. The browser opens the redirect URL in a new tab and
+   redirects the IdP tab to `/` (dual-window behaviour).
 
 ### Tab 2 — Managed Convenience (Scaffold)
 
@@ -503,8 +548,9 @@ verify → (200) consent page → user clicks Allow → (302) client callback
 ### iYou Home Desktop Companion [L396-434]
 
 The "Full Sovereignty" tab attempts a WebSocket connection to
-`ws://localhost:9001` for native signing.  The wire protocol is a simple
-JSON request/response exchange:
+`IDP_HOME_WS_URL` (default `ws://iyou-home.user.svc.cluster.local:9001`)
+for native signing.  In local development this resolves to `ws://localhost:9001`.
+The wire protocol is a simple JSON request/response exchange:
 
 **Request** (browser → iYou Home):
 ```json
@@ -774,6 +820,7 @@ Key tests:
 | WebSocket never opens | iyou-home not running, browser PNA blocking, or mutex lock preventing duplicate | Check console for `Guard:` or `Critical error` messages; use manual paste |
 | QR code not appearing or scrambled | `qrcode` CDN not loaded or challenge fetch failed | Check network tab for CDN or `/auth/challenge/` errors |
 | `data.redirect_url` not redirecting | `data.success` falsy or `redirect_url` missing | Check `VERIFY RESPONSE FULL` in console |
+| Satellite app not opening in new tab | Browser popup blocker | `reserveAuthPopup()` must fire synchronously in click handler; check console for `"Popup blocked"` warning; the 500 ms fallback link appears below the spinner |
 
 ### Error Response Format [L538-554]
 
@@ -796,7 +843,9 @@ All JSON error responses follow this structure:
 ### Production Checklist [L556-570]
 
 - [ ] Set `IDP_SECRET_KEY` to a strong random value
-- [ ] Set `IDP_BASE_URL` to the public-facing URL (e.g. `https://idp.example.com`)
+- [ ] Set `IDP_BASE_URL` to the public-facing URL (e.g. `https://iyou.me`)
+- [ ] Set `IDP_WUN_URL` to the satellite app URL (e.g. `https://wun.iyou.me`)
+- [ ] Set `IDP_HOME_URL` and `IDP_HOME_WS_URL` for the desktop companion service
 - [ ] Set `IDP_DEBUG=False`
 - [ ] Set `IDP_ALLOWED_HOSTS` to the domain(s) (comma-separated)
 - [ ] Set `IDP_CSRF_TRUSTED_ORIGINS` to match the public origin(s)
@@ -812,13 +861,15 @@ All JSON error responses follow this structure:
 The project ships a production-ready multi-stage `Dockerfile`:
 
 ```dockerfile
-# Stage 1 (builder):   python:3.12-slim + Rust toolchain + uv
+# Stage 1 (builder):   python:3.12-slim + Rust toolchain + uv + maturin
 #   - Installs Python deps via uv sync --no-dev
-#   - Compiles crates/did_rust via cargo build --release
+#   - Installs maturin, compiles _crypto.abi3.so via maturin build --release
+#   - Installs the compiled wheel, removes maturin
 #   - Runs collectstatic --noinput
 # Stage 2 (runner):    python:3.12-slim
-#   - Copies .venv, libdid_rust.so, and staticfiles from builder
-#   - Runs docker-entrypoint.sh (migrate + gunicorn)
+#   - Copies .venv, _crypto.abi3.so, staticfiles, and Django source from builder
+#   - Non-root USER app, HEALTHCHECK on :8000/auth/challenge/
+#   - Runs docker-entrypoint.sh (collectstatic + migrate + gunicorn)
 ```
 
 **Build and run:**
@@ -827,11 +878,14 @@ docker build -t iyou-idp:latest .
 docker run -d --name iyou-idp \
   -p 8000:8000 \
   -e IDP_SECRET_KEY="<generated-secret>" \
-  -e IDP_BASE_URL="https://idp.example.com" \
+  -e IDP_BASE_URL="https://iyou.me" \
+  -e IDP_WUN_URL="https://wun.iyou.me" \
+  -e IDP_HOME_URL="http://iyou-home.user.svc.cluster.local:9000" \
+  -e IDP_HOME_WS_URL="ws://iyou-home.user.svc.cluster.local:9001" \
   -e IDP_DEBUG=False \
-  -e IDP_ALLOWED_HOSTS="idp.example.com" \
-  -e IDP_CSRF_TRUSTED_ORIGINS="https://idp.example.com" \
-  -e IDP_CORS_ALLOWED_ORIGINS="https://app.example.com" \
+  -e IDP_ALLOWED_HOSTS="iyou.me" \
+  -e IDP_CSRF_TRUSTED_ORIGINS="https://iyou.me" \
+  -e IDP_CORS_ALLOWED_ORIGINS="https://wun.iyou.me" \
   -e DATABASE_URL="postgres://user:pass@db:5432/iyou_idp" \
   -e REDIS_URL="redis://redis:6379/1" \
   iyou-idp:latest
@@ -842,13 +896,16 @@ docker run -d --name iyou-idp \
 | Variable | Type | Default | Description |
 |---|---|---|---|
 | `IDP_SECRET_KEY` | `str` | (dev fallback) | Django secret key — required in production |
-| `IDP_BASE_URL` | `str` | `http://127.0.0.1:8000` | Public-facing base URL for OIDC endpoints |
+| `IDP_BASE_URL` | `str` | `http://iyou-idp.identity.svc.cluster.local:8000` | Public-facing base URL for OIDC endpoints |
+| `IDP_WUN_URL` | `str` | `http://iyou-wun.satellite.svc.cluster.local:8001` | Satellite app URL — opened in new tab after login |
+| `IDP_HOME_URL` | `str` | `http://iyou-home.user.svc.cluster.local:9000` | Desktop home app URL |
+| `IDP_HOME_WS_URL` | `str` | `ws://iyou-home.user.svc.cluster.local:9001` | WebSocket URL for native desktop signing handshake |
 | `IDP_DEBUG` | `bool` | `False` | Enable debug mode (dev only) |
-| `IDP_ALLOWED_HOSTS` | `list` | `127.0.0.1` | Comma-separated allowed host/domain list |
-| `IDP_CSRF_TRUSTED_ORIGINS` | `list` | `http://127.0.0.1:8000` | Origins allowed to POST CSRF-protected forms |
+| `IDP_ALLOWED_HOSTS` | `list` | `['iyou-idp.identity.svc.cluster.local', 'iyou-idp', 'localhost']` | Comma-separated allowed host/domain list |
+| `IDP_CSRF_TRUSTED_ORIGINS` | `list` | `['http://iyou-idp.identity.svc.cluster.local:8000']` | Origins allowed to POST CSRF-protected forms |
 | `IDP_CORS_ALLOWED_ORIGINS` | `list` | `[]` | Origins allowed for CORS (satellite app domains) |
 | `DATABASE_URL` | `str` | `sqlite:///db.sqlite3` | Database connection string (use PostgreSQL in production) |
-| `REDIS_URL` | `str` | `redis://127.0.0.1:6379/1` | Redis connection for challenge-response caching |
+| `REDIS_URL` | `str` | `redis://iyou-redis-master.identity.svc.cluster.local:6379/1` | Redis connection for challenge-response caching |
 
 When `IDP_DEBUG=False`, the following are automatically enabled:
 - `SECURE_PROXY_SSL_HEADER` — trusts `X-Forwarded-Proto: https` from Traefik/nginx
@@ -870,7 +927,10 @@ When `IDP_DEBUG=False`, the following are automatically enabled:
 - **Bypass audit trail**: every emergency-bypass acceptance logs the remote IP,
   the holder DID, the challenge prefix, and a timestamp — admins can detect
   and investigate abuse.
-- WebSocket connection is restricted to `localhost:9001` (no remote attack surface)
+- WebSocket connection targets `IDP_HOME_WS_URL` (defaults to
+  `ws://iyou-home.user.svc.cluster.local:9001`); in local dev this resolves
+  to the browser's own loopback, but in-cluster it routes to the desktop
+  companion service via cluster DNS — no remote attack surface exposed.
 - OIDC authorization codes are generated by the provider's standard `create_code()` utility
 - `@csrf_exempt` on `verify_signature` and `mobile_verify_signature` is safe
   because both endpoints have no session side-effects (auth is purely cryptographic)
