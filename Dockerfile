@@ -46,7 +46,8 @@ RUN mkdir -p /app/_crypto_dist && \
 COPY . .
 
 # Harvest all static assets at build time
-RUN DJANGO_SETTINGS_MODULE=config.settings uv run python manage.py collectstatic --noinput
+ENV DJANGO_SETTINGS_MODULE=config.settings
+RUN uv run python manage.py collectstatic --noinput
 
 # Stage 2: Slim runtime — production image
 FROM python:3.12-slim

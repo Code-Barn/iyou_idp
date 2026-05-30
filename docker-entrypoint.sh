@@ -1,9 +1,6 @@
 #!/bin/sh
 set -e
 
-echo "Collecting static assets..."
-python manage.py collectstatic --noinput
-
 echo "Executing Database Migrations..."
 python manage.py migrate --noinput
 
