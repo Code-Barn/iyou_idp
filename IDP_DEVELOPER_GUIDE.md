@@ -131,7 +131,7 @@ iyou_idp/
 ├── Cargo.toml                      # Rust crate config
 ├── pyproject.toml                  # Python project + uv/gunicorn deps
 ├── Dockerfile                      # Multi-stage uv + maturin production build
-├── docker-entrypoint.sh            # collectstatic + migrate + gunicorn entrypoint
+├── docker-entrypoint.sh            # migrate + gunicorn entrypoint
 ├── .dockerignore                   # Build context filter
 ├── .env.example
 ├── scripts/
@@ -548,8 +548,8 @@ verify → (200) consent page → user clicks Allow → (302) client callback
 ### iYou Home Desktop Companion [L396-434]
 
 The "Full Sovereignty" tab attempts a WebSocket connection to
-`IDP_HOME_WS_URL` (default `ws://iyou-home.user.svc.cluster.local:9001`)
-for native signing.  In local development this resolves to `ws://localhost:9001`.
+`IDP_HOME_WS_URL` (default `wss://localhost:9001/`)
+for native signing.  In local development override with `ws://localhost:9001`.
 The wire protocol is a simple JSON request/response exchange:
 
 **Request** (browser → iYou Home):
@@ -793,12 +793,11 @@ Key tests:
   old `qrcodejs` v1.0.0 produces canvas rendering artifacts on modern browsers.
   Switch the CDN script to `qrcode` v1.5.1+ and use `QRCode.toCanvas()`
   instead of `new QRCode()` (see `login.html`).
-- **Static files (JS/CSS) returning 404?** Two settings must be correct:
-  1. `STATIC_URL = '/static/'` in `settings.py` — must be **absolute** (leading
-     slash) so Django's URL pattern `^static/...` matches incoming requests.
-  2. `env.read_env(BASE_DIR / '.env')` must be called explicitly in `settings.py`
-     — without it, `IDP_DEBUG` always defaults to `False` and the dev server
-     does not serve static files.
+- **Static files (JS/CSS/images) returning 404?** Verify:
+  1. WhiteNoise middleware is present in `MIDDLEWARE` (see Static File Serving section).
+  2. `collectstatic --noinput` ran during the Docker build stage (check builder logs for the `collectstatic` step).
+  3. The file exists in `STATIC_ROOT` — `ls staticfiles/auth_bridge/js/` inside the container.
+  4. If using `runserver` locally, `IDP_DEBUG=True` is required (WhiteNoise is bypassed in DEBUG mode for the dev server).
 - **Server error on verify?** Look for `"VERIFY RESPONSE FULL:"` in the
   console — the full JSON response is logged.
 - **Rust bridge not found?** Check the console for the `"="` banner with
@@ -869,7 +868,7 @@ The project ships a production-ready multi-stage `Dockerfile`:
 # Stage 2 (runner):    python:3.12-slim
 #   - Copies .venv, _crypto.abi3.so, staticfiles, and Django source from builder
 #   - Non-root USER app, HEALTHCHECK on :8000/auth/challenge/
-#   - Runs docker-entrypoint.sh (collectstatic + migrate + gunicorn)
+#   - Runs docker-entrypoint.sh (migrate + gunicorn)
 ```
 
 **Build and run:**
@@ -881,7 +880,7 @@ docker run -d --name iyou-idp \
   -e IDP_BASE_URL="https://iyou.me" \
   -e IDP_WUN_URL="https://wun.iyou.me" \
   -e IDP_HOME_URL="http://iyou-home.user.svc.cluster.local:9000" \
-  -e IDP_HOME_WS_URL="ws://iyou-home.user.svc.cluster.local:9001" \
+  -e IDP_HOME_WS_URL="wss://localhost:9001" \
   -e IDP_DEBUG=False \
   -e IDP_ALLOWED_HOSTS="iyou.me" \
   -e IDP_CSRF_TRUSTED_ORIGINS="https://iyou.me" \
@@ -899,7 +898,7 @@ docker run -d --name iyou-idp \
 | `IDP_BASE_URL` | `str` | `http://iyou-idp.identity.svc.cluster.local:8000` | Public-facing base URL for OIDC endpoints |
 | `IDP_WUN_URL` | `str` | `http://iyou-wun.satellite.svc.cluster.local:8001` | Satellite app URL — opened in new tab after login |
 | `IDP_HOME_URL` | `str` | `http://iyou-home.user.svc.cluster.local:9000` | Desktop home app URL |
-| `IDP_HOME_WS_URL` | `str` | `ws://iyou-home.user.svc.cluster.local:9001` | WebSocket URL for native desktop signing handshake |
+| `IDP_HOME_WS_URL` | `str` | `wss://localhost:9001/` | WebSocket URL for native desktop signing handshake |
 | `IDP_DEBUG` | `bool` | `False` | Enable debug mode (dev only) |
 | `IDP_ALLOWED_HOSTS` | `list` | `['iyou-idp.identity.svc.cluster.local', 'iyou-idp', 'localhost']` | Comma-separated allowed host/domain list |
 | `IDP_CSRF_TRUSTED_ORIGINS` | `list` | `['http://iyou-idp.identity.svc.cluster.local:8000']` | Origins allowed to POST CSRF-protected forms |
@@ -912,6 +911,45 @@ When `IDP_DEBUG=False`, the following are automatically enabled:
 - `SESSION_COOKIE_SECURE = True`
 - `CSRF_COOKIE_SECURE = True`
 - Cookie names are isolated to `idp_sessionid` / `idp_csrftoken` to prevent domain collisions on shared loopback.
+
+### Static File Serving (WhiteNoise)
+
+Static assets (JS, CSS, images) are served at runtime by **WhiteNoise**, not
+Django's development server.  Configuration in `config/settings.py`:
+
+```python
+INSTALLED_APPS = [
+    ...
+    'django.contrib.staticfiles',   # (already present)
+]
+
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',   # <-- added
+    ...
+]
+
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
+```
+
+`CompressedStaticFilesStorage` serves pre-compressed `.gz` variants when
+available and falls back to uncompressed files — no manifest-hash lookup, so
+dynamically referenced assets (e.g. `Tux.svg`) never cause a 404.
+
+**Build-time collection:** `collectstatic --noinput` runs during the Docker
+builder stage (not at container start), so the `staticfiles/` directory is
+baked into the image layer.  The entrypoint only runs `migrate` + `gunicorn`.
+
+To verify assets are reachable after deployment:
+```bash
+curl -sI https://iyou.me/static/auth_bridge/js/download_modal.js | head -5
+# Expected: 200 OK, Content-Type: application/javascript
+```
 
 ## Security Considerations [L619-634]
 
@@ -928,9 +966,9 @@ When `IDP_DEBUG=False`, the following are automatically enabled:
   the holder DID, the challenge prefix, and a timestamp — admins can detect
   and investigate abuse.
 - WebSocket connection targets `IDP_HOME_WS_URL` (defaults to
-  `ws://iyou-home.user.svc.cluster.local:9001`); in local dev this resolves
-  to the browser's own loopback, but in-cluster it routes to the desktop
-  companion service via cluster DNS — no remote attack surface exposed.
+  `wss://localhost:9001/`); override with `ws://localhost:9001` for local dev.
+  In-cluster the companion service URL is set via environment variable.
+  No remote attack surface is exposed.
 - OIDC authorization codes are generated by the provider's standard `create_code()` utility
 - `@csrf_exempt` on `verify_signature` and `mobile_verify_signature` is safe
   because both endpoints have no session side-effects (auth is purely cryptographic)
