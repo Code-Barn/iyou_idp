@@ -407,18 +407,26 @@ class ChallengeView(View):
             JsonResponse: Contains the challenge UUID.
         """
         challenge_uuid = str(uuid.uuid4())
-        data = json.loads(request.body) if request.body else {}
+        try:
+            data = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            data = {}
         next_url = data.get('next_url', DEFAULT_NEXT_URL)
 
-        cache.set(challenge_uuid, json.dumps({
-            'status': 'pending',
-            'did': None,
-            'next_url': next_url,
-        }), timeout=300)
+        try:
+            cache.set(challenge_uuid, json.dumps({
+                'status': 'pending',
+                'did': None,
+                'next_url': next_url,
+            }), timeout=300)
+            stored = True
+        except Exception:
+            stored = False
 
         return JsonResponse({
             'challenge': challenge_uuid,
             'expires_in': 300,
+            'stored': stored,
         })
 
     def get(self, request):

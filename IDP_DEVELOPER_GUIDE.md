@@ -256,7 +256,7 @@ Every challenge is stored in Redis as a JSON dict with a **300-second TTL**:
 **Desktop WebSocket flow** (`POST /auth/verify/`):
 
 ```
-POST /auth/challenge/  →  {challenge: "<uuid>", expires_in: 300}
+POST /auth/challenge/  →  {challenge: "<uuid>", expires_in: 300, stored: true|false}
 POST /auth/verify/     →  {success: true, redirect_url: "...", user: {...}}
 ```
 
@@ -598,7 +598,7 @@ The handshake has several protection layers:
 |--------|------|-------------|
 | GET | `/` | Tiered login portal (same as `/auth/login/`) |
 | GET | `/auth/login/` | Compact login page (OIDC redirect target) |
-| POST | `/auth/challenge/` | Generates new challenge (300s TTL) — JSON dict in Redis |
+| POST | `/auth/challenge/` | Generates new challenge (300s TTL) — JSON dict in Redis; returns `{challenge, expires_in, stored}` |
 | GET | `/auth/challenge/` | Health check |
 | POST | `/auth/verify/` | Verifies VP (desktop WebSocket path), logs in, returns redirect |
 | POST | `/auth/mobile-verify/` | Verifies VP (mobile OOB path), marks challenge `solved` |
@@ -836,6 +836,7 @@ All JSON error responses follow this structure:
 | 401 | Verification failed (signature invalid) |
 | 403 | User account disabled |
 | 500 | Internal error (bridge import failure, unexpected exception) |
+| — | `stored: false` in challenge response | Redis/cache unavailable — challenge not persisted; retry or fall back to desktop WebSocket flow |
 
 ## Deployment [L554-619]
 
