@@ -39,7 +39,7 @@ env = environ.Env(
     IDP_BASE_URL=(str, 'http://iyou-idp.identity.svc.cluster.local:8000'),
     IDP_WUN_URL=(str, 'http://iyou-wun.satellite.svc.cluster.local:8001'),
     IDP_HOME_URL=(str, 'http://iyou-home.user.svc.cluster.local:9000'),
-    IDP_HOME_WS_URL=(str, 'ws://iyou-home.user.svc.cluster.local:9001'),
+    IDP_HOME_WS_URL=(str, 'wss://localhost:9001/'),
     IDP_DEBUG=(bool, False),
     IDP_ALLOWED_HOSTS=(list, ['iyou-idp.identity.svc.cluster.local', 'iyou-idp', 'localhost']),
     IDP_CSRF_TRUSTED_ORIGINS=(list, ['http://iyou-idp.identity.svc.cluster.local:8000']),
@@ -91,6 +91,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -173,6 +174,11 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
