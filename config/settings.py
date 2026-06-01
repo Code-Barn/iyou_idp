@@ -35,106 +35,115 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
-    IDP_SECRET_KEY=(str, 'django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5'),
-    IDP_BASE_URL=(str, 'http://iyou-idp.identity.svc.cluster.local:8000'),
-    IDP_WUN_URL=(str, 'http://iyou-wun.satellite.svc.cluster.local:8001'),
-    IDP_HOME_URL=(str, 'http://iyou-home.user.svc.cluster.local:9000'),
-    IDP_HOME_WS_URL=(str, 'wss://localhost:9001/'),
+    IDP_SECRET_KEY=(
+        str,
+        "django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5",
+    ),
+    IDP_BASE_URL=env("IDP_BASE_URL", default="https://iyou.me"),
+    IDP_WUN_URL=env("IDP_WUN_URL", default="https://wun.iyou.me"),
+    IDP_HOME_URL=env("IDP_HOME_URL", default="https://home.iyou.me"),
+    IDP_HOME_WS_URL=env("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/"),
     IDP_DEBUG=(bool, False),
-    IDP_ALLOWED_HOSTS=(list, ['iyou-idp.identity.svc.cluster.local', 'iyou-idp', 'localhost']),
-    IDP_CSRF_TRUSTED_ORIGINS=(list, ['http://iyou-idp.identity.svc.cluster.local:8000']),
+    IDP_ALLOWED_HOSTS=(
+        list,
+        ["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"],
+    ),
+    IDP_CSRF_TRUSTED_ORIGINS=(
+        list,
+        ["http://iyou-idp.identity.svc.cluster.local:8000"],
+    ),
     IDP_CORS_ALLOWED_ORIGINS=(list, []),
-    DATABASE_URL=(str, 'sqlite:///db.sqlite3'),
-    REDIS_URL=(str, 'redis://iyou-redis-master.identity.svc.cluster.local:6379/1'),
+    DATABASE_URL=(str, "sqlite:///db.sqlite3"),
+    REDIS_URL=(str, "redis://iyou-redis-master.identity.svc.cluster.local:6379/1"),
 )
 
 # Load .env file so env vars like IDP_DEBUG take effect during development
-env.read_env(BASE_DIR / '.env')
+env.read_env(BASE_DIR / ".env")
 
 # Ensure the 'src' directory is in the python path for Mac local dev
-sys.path.append(os.path.join(BASE_DIR, 'src'))
+sys.path.append(os.path.join(BASE_DIR, "src"))
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env('IDP_SECRET_KEY')
+SECRET_KEY = env("IDP_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env('IDP_DEBUG')
+DEBUG = env("IDP_DEBUG")
 
 # Single BASE_URL to switch the entire IdP's identity between cluster DNS and localhost
-IDP_BASE_URL = env('IDP_BASE_URL')
-IDP_WUN_URL = env('IDP_WUN_URL')
-IDP_HOME_URL = env('IDP_HOME_URL')
-IDP_HOME_WS_URL = env('IDP_HOME_WS_URL')
+IDP_BASE_URL = env("IDP_BASE_URL")
+IDP_WUN_URL = env("IDP_WUN_URL")
+IDP_HOME_URL = env("IDP_HOME_URL")
+IDP_HOME_WS_URL = env("IDP_HOME_WS_URL")
 
-ALLOWED_HOSTS = env('IDP_ALLOWED_HOSTS')
+ALLOWED_HOSTS = env("IDP_ALLOWED_HOSTS")
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'corsheaders',
-    'oauth2_provider',
-    'oidc_provider',
-    'auth_bridge',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "corsheaders",
+    "oauth2_provider",
+    "oidc_provider",
+    "auth_bridge",
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 # Production: explicit CORS whitelist from environment.
 # For local dev, set IDP_CORS_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://127.0.0.1:8001
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = env('IDP_CORS_ALLOWED_ORIGINS')
+CORS_ALLOWED_ORIGINS = env("IDP_CORS_ALLOWED_ORIGINS")
 
 # Critical for the browser to allow OIDC redirect/handshake on insecure (HTTP) origins
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
-CSRF_TRUSTED_ORIGINS = env('IDP_CSRF_TRUSTED_ORIGINS')
+CSRF_TRUSTED_ORIGINS = env("IDP_CSRF_TRUSTED_ORIGINS")
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+WSGI_APPLICATION = "config.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': env.db_url('DATABASE_URL'),
+    "default": env.db_url("DATABASE_URL"),
 }
 
 
@@ -143,16 +152,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -160,9 +169,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -172,11 +181,11 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
-    'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
 WHITENOISE_AUTOTUNE = True
@@ -184,39 +193,39 @@ WHITENOISE_AUTOTUNE = True
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Custom User Model
-AUTH_USER_MODEL = 'auth_bridge.User'
+AUTH_USER_MODEL = "auth_bridge.User"
 
 # Custom Authentication Backend
 AUTHENTICATION_BACKENDS = [
-    'auth_bridge.backend.DIDAuthBackend',
-    'django.contrib.auth.backends.ModelBackend',  # Fallback
+    "auth_bridge.backend.DIDAuthBackend",
+    "django.contrib.auth.backends.ModelBackend",  # Fallback
 ]
 
 # Redis Configuration for challenge-response state
 CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': env('REDIS_URL'),
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        }
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": env("REDIS_URL"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
     }
 }
 
 # Login URL for authentication
-LOGIN_URL = '/auth/login/'
+LOGIN_URL = "/auth/login/"
 
 # Cookie isolation — unique names prevent domain collisions on shared 127.0.0.1
 # SameSite=Lax allows the cookie on top-level redirects without requiring Secure.
 SESSION_COOKIE_NAME = "idp_sessionid"
-SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_NAME = "idp_csrftoken"
 
 if not DEBUG:
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 else:
@@ -226,6 +235,6 @@ else:
 # OIDC Provider Settings
 # All endpoints derive from IDP_BASE_URL so switching between Tailscale/localhost is one line.
 SITE_URL = IDP_BASE_URL
-OIDC_USERINFO = 'auth_bridge.oidc.custom_userinfo_claims'
-OIDC_IDTOKEN_PROCESSING_HOOK = 'auth_bridge.oidc.custom_idtoken_processing_hook'
-OIDC_IDTOKEN_SUB_GENERATOR = 'auth_bridge.oidc.custom_sub_generator'
+OIDC_USERINFO = "auth_bridge.oidc.custom_userinfo_claims"
+OIDC_IDTOKEN_PROCESSING_HOOK = "auth_bridge.oidc.custom_idtoken_processing_hook"
+OIDC_IDTOKEN_SUB_GENERATOR = "auth_bridge.oidc.custom_sub_generator"
