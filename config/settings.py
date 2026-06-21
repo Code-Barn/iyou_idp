@@ -34,30 +34,9 @@ import environ
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-env = environ.Env(
-    IDP_SECRET_KEY=(
-        str,
-        "django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5",
-    ),
-    IDP_BASE_URL=env("IDP_BASE_URL", default="https://iyou.me"),
-    IDP_WUN_URL=env("IDP_WUN_URL", default="https://wun.iyou.me"),
-    IDP_HOME_URL=env("IDP_HOME_URL", default="https://home.iyou.me"),
-    IDP_HOME_WS_URL=env("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/"),
-    IDP_DEBUG=(bool, False),
-    IDP_ALLOWED_HOSTS=(
-        list,
-        ["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"],
-    ),
-    IDP_CSRF_TRUSTED_ORIGINS=(
-        list,
-        ["http://iyou-idp.identity.svc.cluster.local:8000"],
-    ),
-    IDP_CORS_ALLOWED_ORIGINS=(list, []),
-    DATABASE_URL=(str, "sqlite:///db.sqlite3"),
-    REDIS_URL=(str, "redis://iyou-redis-master.identity.svc.cluster.local:6379/1"),
-)
+env = environ.Env()
 
-# Load .env file so env vars like IDP_DEBUG take effect during development
+# Load .env file so env vars take effect during development
 env.read_env(BASE_DIR / ".env")
 
 # Ensure the 'src' directory is in the python path for Mac local dev
@@ -68,18 +47,21 @@ sys.path.append(os.path.join(BASE_DIR, "src"))
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env("IDP_SECRET_KEY")
+SECRET_KEY = env("IDP_SECRET_KEY", default="django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env("IDP_DEBUG")
+DEBUG = env.bool("IDP_DEBUG", default=False)
 
 # Single BASE_URL to switch the entire IdP's identity between cluster DNS and localhost
-IDP_BASE_URL = env("IDP_BASE_URL")
-IDP_WUN_URL = env("IDP_WUN_URL")
-IDP_HOME_URL = env("IDP_HOME_URL")
-IDP_HOME_WS_URL = env("IDP_HOME_WS_URL")
+IDP_BASE_URL = env("IDP_BASE_URL", default="http://iyou-idp.identity.svc.cluster.local:8000")
+IDP_WUN_URL = env("IDP_WUN_URL", default="http://127.0.0.1:8001")
+IDP_HOME_URL = env("IDP_HOME_URL", default="http://iyou-home.user.svc.cluster.local:9000")
+IDP_HOME_WS_URL = env("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/")
 
-ALLOWED_HOSTS = env("IDP_ALLOWED_HOSTS")
+# Master admin DID for automatic superuser elevation
+ADMIN_DID = env("ADMIN_DID", default="did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV")
+
+ALLOWED_HOSTS = env.list("IDP_ALLOWED_HOSTS", default=["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"])
 
 
 # Application definition
@@ -112,12 +94,12 @@ MIDDLEWARE = [
 # Production: explicit CORS whitelist from environment.
 # For local dev, set IDP_CORS_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://127.0.0.1:8001
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = env("IDP_CORS_ALLOWED_ORIGINS")
+CORS_ALLOWED_ORIGINS = env.list("IDP_CORS_ALLOWED_ORIGINS", default=[])
 
 # Critical for the browser to allow OIDC redirect/handshake on insecure (HTTP) origins
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
-CSRF_TRUSTED_ORIGINS = env("IDP_CSRF_TRUSTED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env.list("IDP_CSRF_TRUSTED_ORIGINS", default=["http://iyou-idp.identity.svc.cluster.local:8000"])
 
 ROOT_URLCONF = "config.urls"
 
@@ -143,7 +125,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    "default": env.db_url("DATABASE_URL"),
+    "default": env.db_url("DATABASE_URL", default="sqlite:///db.sqlite3"),
 }
 
 
@@ -208,7 +190,7 @@ AUTHENTICATION_BACKENDS = [
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": env("REDIS_URL"),
+        "LOCATION": env("REDIS_URL", default="redis://iyou-redis-master.identity.svc.cluster.local:6379/1"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },

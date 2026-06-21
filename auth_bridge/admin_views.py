@@ -24,6 +24,7 @@ from django.core.cache import cache
 from django.http import JsonResponse
 from django.contrib import messages
 from auth_bridge.models import User
+from auth_bridge.backend import evaluate_sovereign_admin_posture
 import uuid
 import json
 
@@ -93,6 +94,7 @@ def custom_admin_verify(request):
         # Get user and check if they're a staff user
         try:
             user = User.objects.get(username=did)
+            user = evaluate_sovereign_admin_posture(user)
             if not user.is_staff:
                 return JsonResponse({
                     'error': 'User is not an admin user'

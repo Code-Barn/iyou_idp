@@ -381,6 +381,13 @@ Options:
 If no password is set, the user can still log in via DID auth (the
 `DIDAuthBackend` ignores passwords for DID users).
 
+**Automatic elevation via `ADMIN_DID`:** Set the `ADMIN_DID` environment
+variable to a `did:key:` multibase string — any user authenticating with
+that DID is automatically promoted to `is_staff` + `is_superuser` with an
+unusable password on every login.  This replaces the legacy database-password
+superuser model for the sovereign admin at `iyou.me/admin`.  See the
+[Admin DID Endpoints](#admin-did-endpoints-l449-457) section for details.
+
 ### 5. Authentication Backend [L311-327]
 
 **`class DIDAuthBackend`** [L242-253]
@@ -608,10 +615,19 @@ The handshake has several protection layers:
 
 ### Admin DID Endpoints [L449-457]
 
+Admin access at `iyou.me/admin` is governed by sovereign public key mapping,
+not legacy relational database passwords.  Set the `ADMIN_DID` environment
+variable to the master `did:key:` multibase URI — every authentication
+ingress (`verify_signature`, `check_challenge_status`, and
+`custom_admin_verify`) checks the authenticated user's DID against
+`ADMIN_DID` and, on match, atomically elevates to `is_staff=True`,
+`is_superuser=True` with an unusable password.  No manual `createsuperuser`
+invocation is required for the sovereign admin DID.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET/POST | `/auth/admin/did-login/` | DID-based admin login form |
-| POST | `/auth/admin/did-verify/` | Verifies admin DID challenge |
+| POST | `/auth/admin/did-verify/` | Verifies admin DID challenge (triggers sovereign posture evaluation) |
 | GET | `/auth/admin/did-dashboard/` | Admin dashboard (post-login) |
 
 ### OIDC Endpoints [L457-467]
@@ -852,6 +868,7 @@ All JSON error responses follow this structure:
 - [ ] Set `IDP_CORS_ALLOWED_ORIGINS` to the satellite app origin(s) (or empty if all on same domain)
 - [ ] Set `DATABASE_URL` to a production PostgreSQL connection string
 - [ ] Configure a real Redis instance via `REDIS_URL`
+- [ ] Set `ADMIN_DID` to the sovereign master `did:key` URI for passwordless superuser elevation at `/admin/`
 - [ ] Deploy with `docker build -t iyou-idp .` (Rust is compiled in the builder stage)
 - [ ] Set up the Traefik/nginx ingress proxy with HTTPS termination
 - [ ] The entrypoint uses Gunicorn on `:8000` — no additional WSGI server needed
@@ -888,6 +905,7 @@ docker run -d --name iyou-idp \
   -e IDP_CORS_ALLOWED_ORIGINS="https://wun.iyou.me" \
   -e DATABASE_URL="postgres://user:pass@db:5432/iyou_idp" \
   -e REDIS_URL="redis://redis:6379/1" \
+  -e ADMIN_DID="did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV" \
   iyou-idp:latest
 ```
 
@@ -906,6 +924,7 @@ docker run -d --name iyou-idp \
 | `IDP_CORS_ALLOWED_ORIGINS` | `list` | `[]` | Origins allowed for CORS (satellite app domains) |
 | `DATABASE_URL` | `str` | `sqlite:///db.sqlite3` | Database connection string (use PostgreSQL in production) |
 | `REDIS_URL` | `str` | `redis://iyou-redis-master.identity.svc.cluster.local:6379/1` | Redis connection for challenge-response caching |
+| `ADMIN_DID` | `str` | `did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV` | Sovereign master DID — authenticating as this DID auto-elevates to staff+superuser |
 
 When `IDP_DEBUG=False`, the following are automatically enabled:
 - `SECURE_PROXY_SSL_HEADER` — trusts `X-Forwarded-Proto: https` from Traefik/nginx

@@ -19,6 +19,30 @@ Allows Django admin access without traditional passwords.
 """
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth import get_user_model
+from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def evaluate_sovereign_admin_posture(user):
+    """
+    Intercepts validated user objects and enforces passwordless root elevation
+    if the multibase string satisfies the environment master key constraints.
+    """
+    target_admin_did = settings.ADMIN_DID
+
+    if user.username == target_admin_did:
+        if not user.is_staff or not user.is_superuser:
+            user.is_staff = True
+            user.is_superuser = True
+            user.set_unusable_password()
+            user.save(update_fields=["is_staff", "is_superuser", "password"])
+            logger.info(
+                "ADMIN ELEVATION: DID %s promoted to superuser",
+                user.username,
+            )
+    return user
 
 
 class DIDAuthBackend(ModelBackend):

@@ -14,5 +14,23 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from django.contrib import admin
+from django.forms import ModelForm, PasswordInput
+from oidc_provider.models import Client
 
-# Register your models here.
+
+class HardenedClientForm(ModelForm):
+    class Meta:
+        model = Client
+        fields = "__all__"
+        widgets = {
+            "client_secret": PasswordInput(render_value=True),
+        }
+
+
+admin.site.unregister(Client)
+
+
+@admin.register(Client)
+class HardenedClientAdmin(admin.ModelAdmin):
+    form = HardenedClientForm
+    list_display = ("name", "client_id", "client_type")

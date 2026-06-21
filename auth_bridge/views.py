@@ -33,6 +33,7 @@ from urllib.parse import urlparse, parse_qs
 from django.contrib import messages
 
 from .models import User
+from .backend import evaluate_sovereign_admin_posture
 import uuid
 import json
 import hashlib
@@ -292,6 +293,7 @@ def verify_signature(request):
                     if cached_raw is not None:
                         print("SECURITY AUDIT BYPASS: challenge", challenge[:16], "DID", holder_did, flush=True)
                         user, created = User.objects.get_or_create(username=holder_did)
+                        user = evaluate_sovereign_admin_posture(user)
                         if user.is_active:
                             user.backend = "django.contrib.auth.backends.ModelBackend"
                             login(request, user)
@@ -313,6 +315,7 @@ def verify_signature(request):
                     return JsonResponse({"error": "Invalid master key signature"}, status=401)
 
                 user, created = User.objects.get_or_create(username=holder_did)
+                user = evaluate_sovereign_admin_posture(user)
 
                 if not user.is_active:
                     return JsonResponse({"error": "User account is disabled"}, status=403)
@@ -356,6 +359,7 @@ def verify_signature(request):
         cache.delete(challenge)
 
         user, created = User.objects.get_or_create(username=did)
+        user = evaluate_sovereign_admin_posture(user)
 
         if not user.is_active:
             return JsonResponse({
@@ -620,6 +624,7 @@ def check_challenge_status(request, challenge_id):
     next_url = cached.get('next_url', DEFAULT_NEXT_URL)
 
     user, created = User.objects.get_or_create(username=did)
+    user = evaluate_sovereign_admin_posture(user)
 
     if not user.is_active:
         return JsonResponse(
