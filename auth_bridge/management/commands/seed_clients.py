@@ -24,25 +24,45 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         satellites = {
-            "dc-tech": {
-                "name": "DC_Tech Platform",
+            "dctech": {
+                "name": "DC Tech Platform",
                 "secret_env": "DCTECH_CLIENT_SECRET",
                 "redirects": [
                     "https://dctech.iyou.me/oidc/callback/",
                     "https://legal.dctech.iyou.me/oidc/callback/",
                 ],
             },
-            "hive": {
+            "iyou-hive": {
                 "name": "Hive Satellite Workspace",
                 "secret_env": "HIVE_CLIENT_SECRET",
                 "redirects": ["https://hive.iyou.me/oidc/callback/"],
             },
-            "poly": {
+            "iyou-name": {
+                "name": "Name Profile Directory",
+                "secret_env": "NAME_CLIENT_SECRET",
+                "redirects": ["https://name.iyou.me/oidc/callback/"],
+            },
+            "iyou-poly": {
                 "name": "Poly Governance Node",
                 "secret_env": "POLY_CLIENT_SECRET",
                 "redirects": ["https://poly.iyou.me/oidc/callback/"],
             },
-            "wun": {
+            "iyou-ride": {
+                "name": "Ride Marketplace",
+                "secret_env": "RIDE_CLIENT_SECRET",
+                "redirects": ["https://ride.iyou.me/oidc/callback/"],
+            },
+            "iyou-safe": {
+                "name": "Safe Accountability Hub",
+                "secret_env": "SAFE_CLIENT_SECRET",
+                "redirects": ["https://safe.iyou.me/oidc/callback/"],
+            },
+            "iyou-talk": {
+                "name": "Talk Peer Support",
+                "secret_env": "TALK_CLIENT_SECRET",
+                "redirects": ["https://talk.iyou.me/oidc/callback/"],
+            },
+            "iyou-wun": {
                 "name": "Wun Social Engine",
                 "secret_env": "WUN_CLIENT_SECRET",
                 "redirects": ["https://wun.iyou.me/oidc/callback/"],
