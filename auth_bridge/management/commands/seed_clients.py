@@ -42,6 +42,11 @@ class Command(BaseCommand):
                 "secret_env": "NAME_CLIENT_SECRET",
                 "redirects": ["https://name.iyou.me/oidc/callback/"],
             },
+            "iyou-play": {
+                "name": "iyou-play",
+                "secret_env": "PLAY_CLIENT_SECRET",
+                "redirects": ["https://play.iyou.me/oidc/callback/"],
+            },
             "iyou-poly": {
                 "name": "Poly Governance Node",
                 "secret_env": "POLY_CLIENT_SECRET",
