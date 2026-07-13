@@ -37,10 +37,12 @@ from .backend import evaluate_sovereign_admin_posture
 import uuid
 import json
 import hashlib
+import hmac
 import sys
 import base58
 import os
 import logging
+from base64 import urlsafe_b64encode
 from oidc_provider.models import Client, UserConsent
 from oidc_provider.lib.utils.token import create_code
 
@@ -87,6 +89,9 @@ def _build_oidc_redirect(next_url, user):
     code_challenge_method = params.get('code_challenge_method', [None])[0]
     state = params.get('state', [''])[0]
 
+    if code_challenge and code_challenge_method != 'S256':
+        return None
+
     code_obj = create_code(
         user=user,
         client=client,
@@ -94,10 +99,17 @@ def _build_oidc_redirect(next_url, user):
         nonce=nonce,
         is_authentication='openid' in scope_list,
         code_challenge=code_challenge,
-        code_challenge_method=code_challenge_method,
+        code_challenge_method=code_challenge_method or ('S256' if code_challenge else None),
     )
     code_obj.save()
     logger.info("OIDC CODE ISSUED: code=%s user_did=%s client=%s", code_obj.code, user.username, client.client_id)
+
+    if code_challenge:
+        cache.set(
+            f"pkce:{code_obj.code}",
+            json.dumps({"code_challenge": code_challenge, "code_challenge_method": "S256"}),
+            timeout=300,
+        )
 
     # Persist consent so subsequent OIDC requests auto-approve
     date_given = timezone.now()
@@ -668,6 +680,62 @@ def managed_login(request):
         )
 
     return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class PkceTokenView(View):
+    """
+    Token exchange endpoint with Redis-backed PKCE S256 enforcement.
+
+    Performs a pre-validation gate against cached PKCE challenges before
+    delegating to the standard ``django-oidc-provider`` token machinery.
+    On verification failure the Redis entry is shredded and an explicit
+    ``invalid_grant`` error is returned.
+    """
+
+    def post(self, request, *args, **kwargs):
+        code = request.POST.get('code', '')
+        code_verifier = request.POST.get('code_verifier')
+
+        if code and code_verifier:
+            pkce_key = f"pkce:{code}"
+            pkce_raw = cache.get(pkce_key)
+
+            if pkce_raw is not None:
+                pkce_data = json.loads(pkce_raw)
+                stored_challenge = pkce_data['code_challenge']
+                method = pkce_data.get('code_challenge_method', 'S256')
+
+                if method != 'S256':
+                    cache.delete(pkce_key)
+                    return JsonResponse(
+                        {'error': 'invalid_request', 'error_description': 'Only S256 code challenge method is supported'},
+                        status=400,
+                    )
+
+                computed_challenge = (
+                    urlsafe_b64encode(
+                        hashlib.sha256(code_verifier.encode('ascii')).digest()
+                    )
+                    .decode('utf-8')
+                    .replace('=', '')
+                )
+
+                if not hmac.compare_digest(computed_challenge, stored_challenge):
+                    cache.delete(pkce_key)
+                    logger.warning(
+                        "PKCE VERIFICATION FAILED: code=%s computed=%s expected=%s",
+                        code[:8], computed_challenge[:8], stored_challenge[:8],
+                    )
+                    return JsonResponse(
+                        {'error': 'invalid_grant', 'error_description': 'Code verifier mismatch'},
+                        status=400,
+                    )
+
+                cache.delete(pkce_key)
+
+        from oidc_provider.views import TokenView as LibraryTokenView
+        return LibraryTokenView.as_view()(request, *args, **kwargs)
 
 
 class LoginPageView(View):

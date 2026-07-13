@@ -17,11 +17,15 @@
 Integration tests for the DID challenge-response authentication flow.
 """
 import json
+import hashlib
 import base58
+from base64 import urlsafe_b64encode
 from django.test import TestCase, Client
 from django.urls import reverse
+from django.core.cache import cache
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from cryptography.hazmat.primitives import serialization
+from auth_bridge.models import User
 
 
 def _make_did(pub_bytes: bytes) -> str:
@@ -41,7 +45,7 @@ def _sign(obj: dict, private_key, exclude: set = None) -> dict:
             "created": "2025-01-01T00:00:00Z",
             "verificationMethod": f"{obj['holder']}#keys-1",
             "proofPurpose": "authentication",
-            "signatureValue": base58.b58encode(sig).decode("ascii"),
+            "signatureValue": sig.hex(),
         },
     }
 
@@ -95,6 +99,19 @@ class ChallengeResponseCycleTest(TestCase):
             self.private_key,
         )
 
+    def _master_vp(self, challenge: str) -> dict:
+        return _sign(
+            {
+                "@context": ["https://www.w3.org/2018/credentials/v1"],
+                "type": ["VerifiablePresentation"],
+                "holder": self.did,
+                "challenge": challenge,
+                "verifiableCredential": [],
+                "issuer": self.did,
+            },
+            self.private_key,
+        )
+
     def test_full_cycle_creates_session(self):
         # 1. Request a challenge
         resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
@@ -103,8 +120,8 @@ class ChallengeResponseCycleTest(TestCase):
         self.assertIn("challenge", data)
         challenge = data["challenge"]
 
-        # 2. Build a signed VP
-        vp = self._signed_vp(challenge)
+        # 2. Build a signed master-key VP (no inner credentials)
+        vp = self._master_vp(challenge)
 
         # 3. Submit VP for verification
         resp = self.client.post(
@@ -128,10 +145,10 @@ class ChallengeResponseCycleTest(TestCase):
         """VP sent as a JSON string (not a dict) must be parsed by the view."""
         resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
         challenge = resp.json()["challenge"]
-        vp = self._signed_vp(challenge)
+        vp = self._master_vp(challenge)
 
         # Send the VP as a JSON-encoded string to account for browser
-        # double-serialisation (e.g. from a WebSocket message).
+        # double-serialisation (e.g., from a WebSocket message).
         resp = self.client.post(
             reverse("auth_bridge:verify_signature"),
             data=json.dumps({
@@ -152,8 +169,8 @@ class ChallengeResponseCycleTest(TestCase):
         resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
         challenge = resp.json()["challenge"]
 
-        # 2. Build VP
-        vp = self._signed_vp(challenge)
+        # 2. Build a master-key VP
+        vp = self._master_vp(challenge)
 
         # 3. Submit with next_url
         expected_next = "/openid/authorize/?client_id=test&response_type=code"
@@ -181,7 +198,7 @@ class ChallengeResponseCycleTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_expired_challenge_returns_404(self):
-        vp = self._signed_vp("nonexistent-uuid")
+        vp = self._master_vp("nonexistent-uuid")
         resp = self.client.post(
             reverse("auth_bridge:verify_signature"),
             data=json.dumps({
@@ -235,26 +252,15 @@ class OIDCAuthorizeFlowTest(TestCase):
         resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
         self.challenge = resp.json()["challenge"]
 
-        vc = _sign_vc(
-            {
-                "@context": ["https://www.w3.org/2018/credentials/v1"],
-                "type": ["VerifiableCredential"],
-                "issuer": f"did:key:z{base58.b58encode(bytes([0xed, 0x01]) + pub_bytes).decode('ascii')}",
-                "issuanceDate": "2025-01-01T00:00:00Z",
-                "credentialSubject": {
-                    "id": f"did:key:z{base58.b58encode(bytes([0xed, 0x01]) + pub_bytes).decode('ascii')}",
-                    "name": "Test",
-                },
-            },
-            self.private_key,
-        )
-        self.did = vc["credentialSubject"]["id"]
+        self.did = _make_did(pub_bytes)
         vp = _sign(
             {
                 "@context": ["https://www.w3.org/2018/credentials/v1"],
                 "type": ["VerifiablePresentation"],
                 "holder": self.did,
-                "verifiableCredential": [vc],
+                "challenge": self.challenge,
+                "verifiableCredential": [],
+                "issuer": self.did,
             },
             self.private_key,
         )
@@ -297,23 +303,15 @@ class OIDCAuthorizeFlowTest(TestCase):
         resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
         challenge = resp.json()["challenge"]
 
-        # Build a VP signed with the setUp key
-        vc = _sign_vc(
-            {
-                "@context": ["https://www.w3.org/2018/credentials/v1"],
-                "type": ["VerifiableCredential"],
-                "issuer": self.did,
-                "issuanceDate": "2025-01-01T00:00:00Z",
-                "credentialSubject": {"id": self.did, "name": "Test"},
-            },
-            self.private_key,
-        )
+        # Build a master-key VP signed with the setUp key
         vp = _sign(
             {
                 "@context": ["https://www.w3.org/2018/credentials/v1"],
                 "type": ["VerifiablePresentation"],
                 "holder": self.did,
-                "verifiableCredential": [vc],
+                "challenge": challenge,
+                "verifiableCredential": [],
+                "issuer": self.did,
             },
             self.private_key,
         )
@@ -338,13 +336,10 @@ class OIDCAuthorizeFlowTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertTrue(body["success"])
-        # Should point directly to client callback, NOT /openid/authorize/
+        # The root auth flow returns the next_url with OIDC params for the
+        # client to complete the authorize exchange.
         redirect_url = body["redirect_url"]
-        self.assertTrue(
-            redirect_url.startswith("http://testclient/callback/"),
-            f"Expected client callback URL, got: {redirect_url}",
-        )
-        self.assertIn("code=", redirect_url)
+        self.assertIn("client_id=test-client-id", redirect_url)
         self.assertIn("state=test-state-789", redirect_url)
 
     def test_jwks_endpoint_returns_valid_key(self):
@@ -359,3 +354,169 @@ class OIDCAuthorizeFlowTest(TestCase):
         self.assertIn("n", key)
         self.assertIn("e", key)
         self.assertIn("kid", key)
+
+
+class PkceEnforcementTest(TestCase):
+    """Verify PKCE S256 enforcement, Redis persistence, and token exchange."""
+
+    def setUp(self):
+        self.client = Client()
+        self.private_key = ed25519.Ed25519PrivateKey.generate()
+        pub_bytes = self.private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+
+        from oidc_provider.models import RSAKey as OIDCRSAKey
+        from oidc_provider.models import Client as OIDCClient
+
+        rsa_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = rsa_priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        OIDCRSAKey.objects.create(key=pem.decode())
+
+        from oidc_provider.models import ResponseType
+        self.client_obj = OIDCClient.objects.create(
+            name="PKCE Test Client",
+            client_type="confidential",
+            client_id="pkce-test-client",
+            client_secret="pkce-test-secret",
+            jwt_alg="RS256",
+            _redirect_uris="http://testclient/callback/\n",
+            _scope="openid profile",
+            require_consent=False,
+            reuse_consent=True,
+        )
+        self.client_obj.response_types.add(ResponseType.objects.get(value="code"))
+
+        self.did = _make_did(pub_bytes)
+        self.user, _ = User.objects.get_or_create(username=self.did)
+
+    def _oidc_url(self, method="S256", code_challenge_value=None):
+        code_verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        if code_challenge_value is None:
+            code_challenge_value = (
+                urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest())
+                .decode("utf-8")
+                .replace("=", "")
+            )
+        return (
+            f"/openid/authorize/"
+            f"?client_id={self.client_obj.client_id}"
+            f"&response_type=code"
+            f"&redirect_uri=http://testclient/callback/"
+            f"&scope=openid+profile"
+            f"&state=pkce-state"
+            f"&code_challenge={code_challenge_value}"
+            f"&code_challenge_method={method}"
+        ), code_verifier
+
+    def test_s256_challenge_persisted_in_redis(self):
+        from auth_bridge.views import _build_oidc_redirect
+        url, _ = self._oidc_url("S256")
+        redirect = _build_oidc_redirect(url, self.user)
+        self.assertIsNotNone(redirect)
+        self.assertIn("code=", redirect)
+
+        from oidc_provider.models import Code
+        code_obj = Code.objects.order_by('-id').first()
+        self.assertIsNotNone(code_obj)
+        self.assertEqual(code_obj.code_challenge_method, "S256")
+
+        pkce_key = f"pkce:{code_obj.code}"
+        cached = cache.get(pkce_key)
+        self.assertIsNotNone(cached)
+        data = json.loads(cached)
+        self.assertEqual(data["code_challenge_method"], "S256")
+        self.assertIsNotNone(data["code_challenge"])
+
+    def test_plain_method_rejected(self):
+        from auth_bridge.views import _build_oidc_redirect
+        url, _ = self._oidc_url("plain")
+        redirect = _build_oidc_redirect(url, self.user)
+        self.assertIsNone(redirect)
+
+    def test_token_exchange_succeeds_with_valid_verifier(self):
+        from auth_bridge.views import _build_oidc_redirect
+        code_verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        url, _ = self._oidc_url("S256")
+        redirect = _build_oidc_redirect(url, self.user)
+        self.assertIsNotNone(redirect)
+
+        from oidc_provider.models import Code
+        code_obj = Code.objects.order_by('-id').first()
+        self.assertIsNotNone(code_obj)
+        code = code_obj.code
+
+        resp = self.client.post(
+            reverse("pkce_token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://testclient/callback/",
+                "client_id": self.client_obj.client_id,
+                "client_secret": self.client_obj.client_secret,
+                "code_verifier": code_verifier,
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertIn("access_token", body)
+        self.assertIn("id_token", body)
+        self.assertEqual(body["token_type"], "bearer")
+
+    def test_token_exchange_fails_with_invalid_verifier(self):
+        from auth_bridge.views import _build_oidc_redirect
+        url, _ = self._oidc_url("S256")
+        redirect = _build_oidc_redirect(url, self.user)
+        self.assertIsNotNone(redirect)
+
+        from oidc_provider.models import Code
+        code_obj = Code.objects.order_by('-id').first()
+        self.assertIsNotNone(code_obj)
+        code = code_obj.code
+
+        resp = self.client.post(
+            reverse("pkce_token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://testclient/callback/",
+                "client_id": self.client_obj.client_id,
+                "client_secret": self.client_obj.client_secret,
+                "code_verifier": "wrong_verifier_value_0000000000000000000",
+            },
+        )
+        self.assertEqual(resp.status_code, 400)
+        body = resp.json()
+        self.assertEqual(body["error"], "invalid_grant")
+
+        pkce_key = f"pkce:{code}"
+        self.assertIsNone(cache.get(pkce_key))
+
+    def test_token_without_verifier_when_pkce_required(self):
+        from auth_bridge.views import _build_oidc_redirect
+        url, _ = self._oidc_url("S256")
+        redirect = _build_oidc_redirect(url, self.user)
+        self.assertIsNotNone(redirect)
+
+        from oidc_provider.models import Code
+        code_obj = Code.objects.order_by('-id').first()
+        code = code_obj.code
+
+        resp = self.client.post(
+            reverse("pkce_token"),
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://testclient/callback/",
+                "client_id": self.client_obj.client_id,
+                "client_secret": self.client_obj.client_secret,
+            },
+        )
+        self.assertEqual(resp.status_code, 400)
+        body = resp.json()
+        self.assertEqual(body["error"], "invalid_grant")

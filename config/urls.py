@@ -15,13 +15,15 @@
 
 from django.contrib import admin
 from django.urls import path, include
-from auth_bridge.views import LoginPageView
+from auth_bridge.views import LoginPageView, PkceTokenView
 
 urlpatterns = [
     path('', LoginPageView.as_view(), name='landing'),
     path('admin/', admin.site.urls),
     # auth/ must come before openid/ to avoid any routing conflict
     path('auth/', include('auth_bridge.urls')),
+    # Intercept the token endpoint before the library's catch-all to enforce PKCE
+    path('openid/token/', PkceTokenView.as_view(), name='pkce_token'),
     path('openid/', include('oidc_provider.urls', namespace='oidc_provider')),
     path('oauth/', include('oauth2_provider.urls', namespace='oauth2_provider')),
 ]
