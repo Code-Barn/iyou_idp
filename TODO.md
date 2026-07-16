@@ -16,6 +16,7 @@
 ## Layer 1 — PKCE / Auth
 
 - [x] PKCE Phase 2 complete — **Done 2026-07-13**
+- [x] Identity Mesh Hardening: shifted satellite client databases to public client configurations; removed cleartext client secrets; synchronized update blocks to prevent stale data type columns during seed_clients routines — **Done 2026-07-13**
 
 ## Layer 2 — Security Hardening
 
