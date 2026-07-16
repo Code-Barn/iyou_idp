@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import os
-import secrets
 from django.core.management.base import BaseCommand
 from oidc_provider.models import Client, ResponseType
 
@@ -26,7 +24,6 @@ class Command(BaseCommand):
         satellites = {
             "dctech": {
                 "name": "DC Tech Platform",
-                "secret_env": "DCTECH_CLIENT_SECRET",
                 "redirects": [
                     "https://dctech.iyou.me/oidc/callback/",
                     "https://legal.dctech.iyou.me/oidc/callback/",
@@ -34,42 +31,38 @@ class Command(BaseCommand):
             },
             "iyou-hive": {
                 "name": "Hive Satellite Workspace",
-                "secret_env": "HIVE_CLIENT_SECRET",
                 "redirects": ["https://hive.iyou.me/oidc/callback/"],
             },
             "iyou-name": {
                 "name": "Name Profile Directory",
-                "secret_env": "NAME_CLIENT_SECRET",
                 "redirects": ["https://name.iyou.me/oidc/callback/"],
             },
             "iyou-play": {
                 "name": "iyou-play",
-                "secret_env": "PLAY_CLIENT_SECRET",
                 "redirects": ["https://play.iyou.me/oidc/callback/"],
             },
             "iyou-poly": {
                 "name": "Poly Governance Node",
-                "secret_env": "POLY_CLIENT_SECRET",
                 "redirects": ["https://poly.iyou.me/oidc/callback/"],
             },
             "iyou-ride": {
                 "name": "Ride Marketplace",
-                "secret_env": "RIDE_CLIENT_SECRET",
                 "redirects": ["https://ride.iyou.me/oidc/callback/"],
             },
             "iyou-safe": {
                 "name": "Safe Accountability Hub",
-                "secret_env": "SAFE_CLIENT_SECRET",
                 "redirects": ["https://safe.iyou.me/oidc/callback/"],
+            },
+            "iyou-clar": {
+                "name": "Clar Policy",
+                "redirects": ["https://clar.iyou.me/oidc/callback/"],
             },
             "iyou-talk": {
                 "name": "Talk Peer Support",
-                "secret_env": "TALK_CLIENT_SECRET",
                 "redirects": ["https://talk.iyou.me/oidc/callback/"],
             },
             "iyou-wun": {
                 "name": "Wun Social Engine",
-                "secret_env": "WUN_CLIENT_SECRET",
                 "redirects": ["https://wun.iyou.me/oidc/callback/"],
             },
         }
@@ -82,23 +75,12 @@ class Command(BaseCommand):
         for slug, data in satellites.items():
             client_id = f"{slug}-satellite-client"
 
-            raw_secret = os.environ.get(data["secret_env"], "").strip()
-
-            if not raw_secret:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"[POSTURE ALERT]: {data['secret_env']} empty. "
-                        "Generating runtime anchor token."
-                    )
-                )
-                raw_secret = secrets.token_urlsafe(48)
-
             client, created = Client.objects.get_or_create(
                 client_id=client_id,
                 defaults={
                     "name": data["name"],
-                    "client_type": "confidential",
-                    "client_secret": raw_secret,
+                    "client_type": "public",
+                    "client_secret": "",
                     "_redirect_uris": "\n".join(data["redirects"]),
                     "_scope": "openid profile email",
                     "jwt_alg": "RS256",
@@ -111,7 +93,8 @@ class Command(BaseCommand):
                     self.style.SUCCESS(f"Created client: {client_id}")
                 )
             else:
-                client.client_secret = raw_secret
+                client.client_type = "public"
+                client.client_secret = ""
                 client._redirect_uris = "\n".join(data["redirects"])
                 client._scope = "openid profile email"
                 client.name = data["name"]
