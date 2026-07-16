@@ -164,42 +164,17 @@
         const CHALLENGE_URL = "{% url 'auth_bridge:challenge' %}";
         const CHALLENGE_STATUS_URL = "/auth/challenge-status/";
 
-        // Satellite destination — opened in a new tab after successful auth
+        // Satellite destination — navigated to inline after successful auth
         const WUN_URL = '{{ wun_url|escapejs }}';
 
         // State
         let currentChallenge = null;
         let currentNextUrl = '{{ next_url|escapejs }}';
         let iyouSocket = null;
-        let authPopupRef = null;
 
-        // Open a blank popup during the user-click context so the browser
-        // allows it.  The real URL is set inside the async success handler.
-        function reserveAuthPopup() {
-            try {
-                authPopupRef = window.open('', '_blank');
-            } catch (_) {
-                authPopupRef = null;
-            }
-            return authPopupRef;
-        }
-
-        // Dual-window success: launch the satellite app in a new tab and
-        // keep the current tab on the IdP profile interface.
+        // Navigate the current window to the satellite redirect URL.
         function onAuthSuccess(redirectUrl) {
-            if (authPopupRef && !authPopupRef.closed) {
-                // Popup was reserved during the click gesture — safe to navigate
-                try { authPopupRef.location.href = redirectUrl; } catch (_) {}
-                authPopupRef = null;
-            } else {
-                // Fallback: try an immediate open (may be blocked)
-                const fallback = window.open(redirectUrl, '_blank');
-                if (!fallback || fallback.closed) {
-                    console.warn("Popup blocked — user must click the fallback link");
-                }
-            }
-            // Stay on the IdP to show the authenticated profile interface
-            window.location.href = '/';
+            window.location.href = redirectUrl;
         }
 
         // Initialize
@@ -576,9 +551,6 @@
 
         // Step 2: Manual submit — read from textarea and delegate to submitVerify
         function handleManualSubmit() {
-            // Reserve popup synchronously during the user click gesture
-            reserveAuthPopup();
-
             const vpJson = vpTextarea.value;
 
             if (!vpJson) {
@@ -692,9 +664,7 @@
                             clearInterval(communityPollId);
                             communityPollId = null;
                             document.getElementById('community-status').textContent = 'Verified! Redirecting…';
-                            // Dual-window: satellite in new tab, stay on IdP
-                            window.open(data.redirect_url, '_blank');
-                            window.location.href = '/';
+                            window.location.href = data.redirect_url;
                         }
                     })
                     .catch(() => { /* keep polling until TTL expires */ });
