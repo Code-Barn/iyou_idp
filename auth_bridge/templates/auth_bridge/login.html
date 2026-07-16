@@ -354,9 +354,6 @@
 
         // Step 2: Sign via iYou Home native socket
         function signWithIYouHome() {
-            // Reserve popup synchronously during the user click gesture
-            reserveAuthPopup();
-
             if (!iyouSocket || iyouSocket.readyState !== WebSocket.OPEN) {
                 showError('Connection to iYou Home lost. Please refresh and try again.');
                 return;
