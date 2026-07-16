@@ -52,6 +52,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | Dirty-FFlag Pattern | poly, name, hive, ride, dctech, safe, talk, clar | Open | `user.save()` only when state changes |
 | Exception Guard | poly, name, hive, ride, dctech, talk, clar | Open | `try/except requests.RequestException` on HTTP calls |
 | Secret Stripping | poly, name, hive, ride, dctech, safe, talk, clar | Open | Remove `OIDC_RP_CLIENT_SECRET` from container manifests |
+| Rule 5 — Logout View | poly, name, hive, ride, dctech, safe, talk, clar | Open | Add `path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout")` to config/urls.py |
 
 ### Layout / UI
 

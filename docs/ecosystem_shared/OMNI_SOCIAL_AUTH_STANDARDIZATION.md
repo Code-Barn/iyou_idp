@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-This document defines the **4 Uncompromising Rules of Ingress Federation** — the non-negotiable technical constraints that every iyou_ satellite application must satisfy to participate in the OIDC authentication mesh with iyou_idp.
+This document defines the **5 Uncompromising Rules of Ingress Federation** — the non-negotiable technical constraints that every iyou_ satellite application must satisfy to participate in the OIDC authentication mesh with iyou_idp.
 
 These rules were established during the resolution of system-wide login crashes across the relying party grid. Every rule exists because a violation of it produced a specific, reproducible failure mode in production.
 
@@ -36,7 +36,7 @@ All satellite implementations must conform to the patterns in this module. Per-a
 
 ---
 
-## 3. The 4 Uncompromising Rules
+## 3. The 5 Uncompromising Rules
 
 ### Rule 1: Reverse-Proxy Header Awareness
 
@@ -71,6 +71,43 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 | Login loop with no error detail | Redirect URI mismatch, silently rejected | Add `SECURE_PROXY_SSL_HEADER` |
 
 **Validated across:** All 10 rendering satellites.
+
+#### Rule 1 Extension: Inline Window Integrity
+
+**Frontend authentication transitions MUST use single-tab navigation (`window.location.href`). Fabricated popup reservation blocks are strictly deprecated.**
+
+The iyou_ ecosystem uses server-side OIDC redirects — the browser navigates away from the satellite to iyou_idp, authenticates, and redirects back. This flow requires the current tab to be the navigation target. Popup-based auth breaks this contract:
+
+1. **Popup blockers** — Browsers aggressively block `window.open()` calls from non-user-initiated contexts. Auth popups silently fail, leaving the user on a stale page with no feedback.
+2. **Session isolation** — A popup opens a separate browsing context with its own cookie jar. The OIDC callback lands in the popup, sets the session, but the original tab never receives it. The user sees a logged-out state in the main window.
+3. **CSRF surface expansion** — Popups create additional entry points that bypass the main tab's CSRF token state, weakening the protection provided by Django's middleware.
+
+**Forbidden patterns:**
+
+```javascript
+// DO NOT USE — popup-based auth is deprecated
+window.open("/oidc/authorize/?...", "_blank");
+reserveAuthPopup();
+window.open(authUrl, "authPopup", "width=500,height=600");
+```
+
+**Required pattern:**
+
+```javascript
+// USE — single-tab navigation
+window.location.href = "/oidc/authorize/?...";
+```
+
+**Failure mode if violated:**
+
+| Symptom | Root cause | Fix |
+|:---|:---|:---|
+| Auth popup blocked by browser | `window.open()` from non-initiated context | Use `window.location.href` |
+| User logged in inside popup but not in main tab | Session cookie scoped to popup context | Use single-tab navigation |
+| "Auth popup closed" errors in console | Popup closed before callback completed | Remove popup flow entirely |
+| CSRF token mismatch on callback | Popup bypasses main tab's CSRF state | Use single-tab navigation |
+
+**Applies to:** All frontend JavaScript across the ecosystem — login buttons, re-authentication triggers, session refresh handlers.
 
 ---
 
@@ -295,6 +332,64 @@ if dirty:
 | Unnecessary DB writes on every login | `user.save()` called unconditionally | Use dirty-flag pattern |
 
 **Validated across:** All 10 rendering satellites.
+
+---
+
+### Rule 5: Explicit Logout View Architecture
+
+**Every app MUST include a dedicated OIDC logout route in its primary URLconf:**
+
+```python
+# config/urls.py — required in EVERY satellite
+from mozilla_django_oidc.views import OIDCLogoutView
+
+urlpatterns = [
+    path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout"),
+    # ... other routes
+]
+```
+
+**Why this rule exists:**
+
+The iyou_ ecosystem uses session-based OIDC with signed cookies. When a user logs out of one satellite, the session teardown must propagate cleanly through `mozilla_django_oidc`'s `OIDCLogoutView` — which clears the local Django session, invalidates the OIDC tokens, and redirects to the IDP's logout endpoint for federated session termination.
+
+Without an explicit logout route:
+
+1. **Session teardown loops** — Django's default logout machinery may redirect back to itself or to a login view that immediately re-authenticates via the still-valid OIDC session cookie, creating an infinite redirect loop.
+2. **Template reversing failures** — Dashboard templates and navigation macros that reference `{% url 'oidc_logout' %}` raise `NoReverseMatch` exceptions, breaking the UI for all users on that node.
+3. **Federated logout incomplete** — The IDP's session is never terminated, so the user appears logged out locally but remains authenticated at the IDP — a security gap that allows silent re-authentication on any other satellite.
+
+**Implementation:**
+
+The route MUST be named `oidc_logout` (not `logout`, not `oidc_logout_view`) to match the convention used by `mozilla_django_oidc`'s default URL resolution and the dashboard templates shared across all satellites.
+
+```python
+# config/urls.py
+from django.urls import path
+from mozilla_django_oidc.views import OIDCLogoutView
+
+urlpatterns = [
+    path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout"),
+]
+```
+
+**Companion setting (in settings.py):**
+
+```python
+# Required for OIDCLogoutView to redirect after logout
+LOGOUT_REDIRECT_URL = "/"
+```
+
+**Failure mode if violated:**
+
+| Symptom | Root cause | Fix |
+|:---|:---|:---|
+| Infinite redirect loop on logout | No `OIDCLogoutView` route — session cookie persists | Add `path("oidc/logout/", ...)` |
+| `NoReverseMatch` in templates | `{% url 'oidc_logout' %}` has no matching URL | Name the route `oidc_logout` |
+| User appears logged out but re-authenticates | IDP session not terminated | `OIDCLogoutView` handles federated logout |
+| Dashboard nav shows "Log Out" link that 404s | Logout route missing from URLconf | Add the route |
+
+**Validated across:** iyou_idp (system root), iyou_wun, iyou_poly, iyou_name, iyou_hive, iyou_ride, dc_tech_website, iyou_safe, iyou_talk, iyou_clar, iyou_play.
 
 ---
 
