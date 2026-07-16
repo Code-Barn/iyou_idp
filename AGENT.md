@@ -1,5 +1,14 @@
 # iYou Identity Provider — Agent Guide
 
+## 🔒 CRITICAL: OpenID Connect & Ingress Invariants
+All authentication and user provisioning logic in this repository MUST conform strictly to the canonical ecosystem specifications located at:
+- `docs/ecosystem_shared/OMNI_SOCIAL_AUTH_STANDARDIZATION.md`
+- `docs/ecosystem_shared/AUTH_FLOW_SPECIFICATION.md`
+
+Reference Implementation to follow: `docs/ecosystem_shared/auth_pkce.py`
+
+Do NOT implement cleartext client secrets, do NOT use email addresses as database lookup anchors, and ensure all post-auth logic implements the `evaluate_sovereign_admin_posture` routine.
+
 ## Project
 Django-based OIDC provider that authenticates users via W3C DIDs instead of passwords. Rust extension (`_crypto`) handles Ed25519 signature verification, backed by Python `cryptography` primary path.
 
@@ -76,4 +85,4 @@ iyou_idp/
 - OIDC clients use `/openid/authorize/` (not `/oauth/authorize/` or `/auth/login/`)
 - DIsable built-in `/admin/` login; admin auth goes through `/auth/admin/did-login/`
 - Challenge TTL is 300 seconds; challenges are single-use
-- Dual-window post-login: satellite app opens in new tab, IdP tab stays at authenticated dashboard
+- Post-login routing is inline: `window.location.href` navigates the current tab to the satellite callback URL
