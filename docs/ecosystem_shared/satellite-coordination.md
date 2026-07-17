@@ -16,9 +16,9 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 |:---|:---|:---|:---|:---|
 | iyou_idp | `~/CODE_BASE/iyou_idp/` | [TODO.md](../../../iyou_idp/TODO.md) | ✅ Hardened | System root. Public client config, secret removal. SEC-001 pending. |
 | iyou_wun | `~/CODE_BASE/iyou_wun/` | [TODO.md](../../../iyou_wun/TODO.md) | ✅ Hardened / Operational | **Golden baseline.** Federated login, inline redirection, single-window UX loop, and admin panel privilege matching verified in production over revision 24. |
-| iyou_poly | `~/CODE_BASE/iyou_poly/` | [TODO.md](../../../iyou_poly/TODO.md) | ⏳ Pending | Three-tier claims resolution. Needs alignment to canonical pattern. |
-| iyou_name | `~/CODE_BASE/iyou_name/` | [TODO.md](../../../iyou_name/TODO.md) | ⏳ Pending | Sub claim pinning done. Needs proxy header, public client, state relay. |
-| iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | ⏳ Pending | Session override removed. Needs full 4-rule alignment. |
+| iyou_poly | `~/CODE_BASE/iyou_poly/` | [TODO.md](../../../iyou_poly/TODO.md) | ✅ Hardened / Operational | PKCE configuration confirmed, backend resolution verified over ModelBackend. |
+| iyou_name | `~/CODE_BASE/iyou_name/` | [TODO.md](../../../iyou_name/TODO.md) | ✅ Hardened / Operational | Import error resolved by transitioning class hierarchy to canonical ModelBackend foundations. |
+| iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | ⚠️ Blocked / Inflight 500 | Awaiting pod log extraction pass to isolate backend exception details. |
 | iyou_ride | `~/CODE_BASE/iyou_ride/` | [TODO.md](../../../iyou_ride/TODO.md) | ⏳ Pending | SessionMiddleware at index 2. Needs full 4-rule alignment. |
 | dc_tech_website | `~/CODE_BASE/dc_tech_website/` | [TODO.md](../../../dc_tech_website/TODO.md) | ⏳ Pending | username=did lookup done. Needs proxy header, public client, state relay. |
 | iyou_safe | `~/CODE_BASE/iyou_safe/` | [TODO.md](../../../iyou_safe/TODO.md) | ⏳ Pending | Exception guard done. Needs proxy header, public client, state relay. |
@@ -53,6 +53,9 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | Exception Guard | poly, name, hive, ride, dctech, talk, clar | Open | `try/except requests.RequestException` on HTTP calls |
 | Secret Stripping | poly, name, hive, ride, dctech, safe, talk, clar | Open | Remove `OIDC_RP_CLIENT_SECRET` from container manifests |
 | Rule 5 — Logout View | poly, name, hive, ride, dctech, safe, talk, clar | Open | Add `path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout")` to config/urls.py |
+| Rule 6 — No Loopbacks | all satellites | Open | No `ws://127.0.0.1:9001` or `http://127.0.0.1` in templates. Use `wss://home.iyou.me:9001`. |
+| Rule 7 — No Runtime CSS Compilers | all satellites | Open | Remove `cdn.tailwindcss.com` scripts. Use pre-compiled static CSS. |
+| Rule 8 — Local Asset Vendoring | all satellites | Open | Vendor converse.js, bootstrap, icon fonts locally. No hotlinked CDNs (unpkg, cdnjs). |
 
 ### Layout / UI
 

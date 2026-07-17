@@ -183,6 +183,10 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
             request.session[SESSION_KEY_OIDC_LOGIN_NEXT] = get_next_url(
                 request, redirect_field_name
             )
+
+            # Force an explicit, immediate session save to prevent
+            # redirection race conditions when an already-authenticated
+            # root IDP session triggers a rapid redirect cycle.
             request.session.save()
 
             # -- Redirect to iyou_idp -----------------------------------------

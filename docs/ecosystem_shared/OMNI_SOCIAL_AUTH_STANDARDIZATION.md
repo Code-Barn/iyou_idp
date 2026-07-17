@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-This document defines the **5 Uncompromising Rules of Ingress Federation** — the non-negotiable technical constraints that every iyou_ satellite application must satisfy to participate in the OIDC authentication mesh with iyou_idp.
+This document defines the **8 Uncompromising Rules of Ecosystem Integration** — the non-negotiable technical constraints that every iyou_ satellite application must satisfy to participate in the OIDC authentication mesh with iyou_idp and maintain presentation-layer integrity across the sovereign mesh.
 
 These rules were established during the resolution of system-wide login crashes across the relying party grid. Every rule exists because a violation of it produced a specific, reproducible failure mode in production.
 
@@ -36,7 +36,7 @@ All satellite implementations must conform to the patterns in this module. Per-a
 
 ---
 
-## 3. The 5 Uncompromising Rules
+## 3. The 8 Uncompromising Rules
 
 ### Rule 1: Reverse-Proxy Header Awareness
 
@@ -390,6 +390,140 @@ LOGOUT_REDIRECT_URL = "/"
 | Dashboard nav shows "Log Out" link that 404s | Logout route missing from URLconf | Add the route |
 
 **Validated across:** iyou_idp (system root), iyou_wun, iyou_poly, iyou_name, iyou_hive, iyou_ride, dc_tech_website, iyou_safe, iyou_talk, iyou_clar, iyou_play.
+
+---
+
+### Rule 6: Secure Cryptographic Bridge Addressing (No Loopbacks)
+
+**Production templates must never hardcode loopback references for signature connections. All frontend assets must dynamically resolve to the unified, TLS-protected signature broker domain.**
+
+The iyou_ ecosystem uses a WebSocket-based signature broker (`home.iyou.me:9001`) for DID challenge verification between the browser and the mobile signing device. Production templates must connect to this broker over TLS (`wss://`), never to a loopback address.
+
+**Forbidden patterns:**
+
+```html
+<!-- DO NOT USE — loopback references break production -->
+<script>
+  const ws = new WebSocket("ws://127.0.0.1:9001");
+</script>
+<a href="http://127.0.0.1:9001">Sign Challenge</a>
+```
+
+**Required pattern:**
+
+```html
+<!-- USE — TLS-protected production endpoint -->
+<script>
+  const ws = new WebSocket("wss://home.iyou.me:9001");
+</script>
+```
+
+**Why this rule exists:**
+
+1. **Mixed-content rejection** — Browsers block `ws://` (insecure) connections from pages loaded over `https://`. The signature handshake silently fails with a console error.
+2. **Localhost is unreachable in production** — The `127.0.0.1:9001` port is only open on the developer's machine. Deployed containers have no loopback listener — the connection times out.
+3. **Certificate mismatch** — If a loopback address somehow resolves, the TLS certificate won't match `127.0.0.1`, causing a handshake failure.
+
+**Failure mode if violated:**
+
+| Symptom | Root cause | Fix |
+|:---|:---|:---|
+| Mixed-content console error | `ws://` from `https://` page blocked by browser | Use `wss://home.iyou.me:9001` |
+| WebSocket connection timeout | `127.0.0.1` unreachable in container | Use production domain |
+| TLS handshake failure | Certificate doesn't match loopback IP | Use production domain |
+
+**Applies to:** All frontend JavaScript and HTML templates that initiate DID signature verification.
+
+---
+
+### Rule 7: Elimination of Runtime CSS Compilers
+
+**The use of `cdn.tailwindcss.com` runtime play scripts is strictly prohibited.**
+
+Satellites must utilize static compilation chains (PostCSS/Tailwind CLI) or leverage pre-built static assets. Runtime CDN scripts inject a JavaScript-based compiler that processes Tailwind classes at page load — this is a development convenience, not a production mechanism.
+
+**Forbidden pattern:**
+
+```html
+<!-- DO NOT USE — runtime compiler, causes variable resolution failures -->
+<script src="https://cdn.tailwindcss.com"></script>
+```
+
+**Required pattern:**
+
+```html
+<!-- USE — pre-compiled static CSS -->
+<link rel="stylesheet" href="{% static 'css/output.css' %}">
+```
+
+**Why this rule exists:**
+
+1. **Variable resolution failures** — The runtime compiler processes classes asynchronously. If the script is blocked, delayed, or encounters an unrecognized directive, it throws `ReferenceError: Can't find variable: tailwind` and the page renders unstyled.
+2. **Content Security Policy violations** — Strict CSP headers block inline scripts and external CDN domains. The runtime compiler is rejected by CSP, leaving the page unstyled.
+3. **Performance penalty** — The runtime compiler parses every DOM element on every page load. On content-heavy pages (family trees, feeds), this adds 500ms–2s of render-blocking computation.
+
+**Failure mode if violated:**
+
+| Symptom | Root cause | Fix |
+|:---|:---|:---|
+| `ReferenceError: Can't find variable: tailwind` | Runtime compiler blocked or delayed | Use pre-compiled static CSS |
+| Unstyled page despite Tailwind classes in HTML | CSP rejects `cdn.tailwindcss.com` | Use `collectstatic` output |
+| Slow initial render on content-heavy pages | Runtime compiler processes DOM at load | Pre-compile with Tailwind CLI |
+
+**Applies to:** All HTML templates across the ecosystem.
+
+---
+
+### Rule 8: Local Asset Vendoring & MIME Integrity
+
+**Satellites must never hotlink core visual dependencies to ephemeral third-party CDNs. All critical frontend scripts must be vendored locally inside Django's static files directory and served via `collectstatic`.**
+
+Third-party CDNs (unpkg, cdnjs, jsdelivr) are external dependencies that can change, disappear, or be poisoned. Critical frontend scripts — especially those involved in authentication or messaging — must be vendored locally to guarantee integrity and availability.
+
+**Forbidden pattern:**
+
+```html
+<!-- DO NOT USE — hotlinked to ephemeral CDN -->
+<script src="https://unpkg.com/converse.js@9.0.0/dist/converse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+```
+
+**Required pattern:**
+
+```html
+<!-- USE — vendored locally, served via collectstatic -->
+<script src="{% static 'vendor/converse.min.js' %}"></script>
+<script src="{% static 'vendor/bootstrap.bundle.min.js' %}"></script>
+```
+
+**Vendor directory structure:**
+
+```
+static/
+└── vendor/
+    ├── converse.min.js
+    ├── bootstrap.bundle.min.js
+    ├── bootstrap.min.css
+    └── bootstrap-icons.woff2
+```
+
+**Why this rule exists:**
+
+1. **CDN poisoning** — A compromised CDN serves malicious JavaScript to every satellite. Since the script is loaded in the browser context, it has full access to session cookies and DOM.
+2. **Availability risk** — If unpkg or cdnjs has an outage, every satellite's UI breaks simultaneously. Local vendoring eliminates this single point of failure.
+3. **MIME type enforcement** — Browsers enforce `X-Content-Type-Options: nosniff` when serving static files. Vendored files served by Django's `collectstatic` have correct `Content-Type` headers. CDN responses may have incorrect or missing headers, causing the browser to reject the script.
+4. **Cache invalidation** — CDN URLs with version pins (`@9.0.0`) can be silently updated by the CDN operator. Local files are pinned to the exact version vendored by the team.
+
+**Failure mode if violated:**
+
+| Symptom | Root cause | Fix |
+|:---|:---|:---|
+| UI disappears during CDN outage | External dependency unreachable | Vendor locally |
+| Malicious script injection | CDN poisoning attack | Vendor locally + integrity checks |
+| `ERR_BLOCKED_BY_CLIENT` on script | CSP blocks external CDN domain | Vendor locally |
+| Script loads but browser rejects it | MIME type mismatch from CDN | Serve via `collectstatic` |
+
+**Applies to:** All third-party JavaScript and CSS loaded by satellite templates — converse.js, bootstrap, icon fonts, and any future dependencies.
 
 ---
 
