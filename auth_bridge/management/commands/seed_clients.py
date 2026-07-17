@@ -84,6 +84,8 @@ class Command(BaseCommand):
                     "_redirect_uris": "\n".join(data["redirects"]),
                     "_scope": "openid profile email",
                     "jwt_alg": "RS256",
+                    "require_consent": False,
+                    "reuse_consent": True,
                 },
             )
 
@@ -95,6 +97,8 @@ class Command(BaseCommand):
             else:
                 client.client_type = "public"
                 client.client_secret = ""
+                client.require_consent = False
+                client.reuse_consent = True
                 client._redirect_uris = "\n".join(data["redirects"])
                 client._scope = "openid profile email"
                 client.name = data["name"]
