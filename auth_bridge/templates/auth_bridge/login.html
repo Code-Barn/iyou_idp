@@ -354,11 +354,6 @@
 
         // Step 2: Sign via iYou Home native socket
         function signWithIYouHome() {
-            if (!iyouSocket || iyouSocket.readyState !== WebSocket.OPEN) {
-                showError('Connection to iYou Home lost. Please refresh and try again.');
-                return;
-            }
-
             const btn = document.getElementById('iyouHomeBtn');
             btn.disabled = true;
             btn.textContent = '⏳ Waiting for signature...';
@@ -386,12 +381,38 @@
                 );
             }, 60000);
 
-            const msg = {
-                type: 'sign',
-                challenge: currentChallenge
-            };
-            console.log("OUTBOUND WS DATA:", JSON.stringify(msg));
-            iyouSocket.send(JSON.stringify(msg));
+            function sendSignChallenge() {
+                const msg = {
+                    type: 'sign',
+                    challenge: currentChallenge
+                };
+                console.log("OUTBOUND WS DATA:", JSON.stringify(msg));
+                iyouSocket.send(JSON.stringify(msg));
+            }
+
+            if (iyouSocket && iyouSocket.readyState === WebSocket.OPEN) {
+                sendSignChallenge();
+            } else {
+                subtitle.textContent = 'Waiting for iYou Home connection...';
+                let attempts = 0;
+                const maxAttempts = 25;
+                const poll = setInterval(() => {
+                    attempts++;
+                    if (iyouSocket && iyouSocket.readyState === WebSocket.OPEN) {
+                        clearInterval(poll);
+                        sendSignChallenge();
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(poll);
+                        clearTimeout(nudgeTimer);
+                        clearTimeout(window._signTimeout);
+                        window._signTimeout = null;
+                        boredLink.classList.add('hidden');
+                        showManualFallback(
+                            'Connection to iYou Home timed out. Please paste your signature manually.'
+                        );
+                    }
+                }, 200);
+            }
 
             iyouSocket.addEventListener('message', function onMessage(event) {
                 console.log("WS: Message Received:", event.data);
