@@ -15,7 +15,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | App | Repo | TODO.md | Auth Status | Key Items |
 |:---|:---|:---|:---|:---|
 | iyou_idp | `~/CODE_BASE/iyou_idp/` | [TODO.md](../../../iyou_idp/TODO.md) | ✅ Hardened | System root. Public client config, secret removal. SEC-001 pending. |
-| iyou_wun | `~/CODE_BASE/iyou_wun/` | [TODO.md](../../../iyou_wun/TODO.md) | 🛠️ In-Flight Alignment | Instance State Relay, sub claim anchoring, ADMIN_DID, Sovereign Posture Hook validated. Pending scope adjustment to `"openid profile email"`. |
+| iyou_wun | `~/CODE_BASE/iyou_wun/` | [TODO.md](../../../iyou_wun/TODO.md) | ✅ Hardened / Operational | **Golden baseline.** Federated login, inline redirection, single-window UX loop, and admin panel privilege matching verified in production over revision 24. |
 | iyou_poly | `~/CODE_BASE/iyou_poly/` | [TODO.md](../../../iyou_poly/TODO.md) | ⏳ Pending | Three-tier claims resolution. Needs alignment to canonical pattern. |
 | iyou_name | `~/CODE_BASE/iyou_name/` | [TODO.md](../../../iyou_name/TODO.md) | ⏳ Pending | Sub claim pinning done. Needs proxy header, public client, state relay. |
 | iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | ⏳ Pending | Session override removed. Needs full 4-rule alignment. |
@@ -80,3 +80,8 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 2. **Propagate** to the satellite's `TODO.md` by editing the file directly.
 3. **Agents** in each repo pick up tasks from their local `TODO.md`.
 4. **Status updates** flow back: agent marks `[x]` in local TODO, hub syncs this index.
+
+## Sync Status
+
+- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 15 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `satellite-coordination.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
+- **Last sync:** 2026-07-16
