@@ -53,7 +53,7 @@ clients. This means:
 - `response_types = ["code"]` — authorization code flow only
 - `jwt_alg = "RS256"` — ID tokens signed with server RSA key
 - `_scope = "openid profile email"` — default scope set
-- `require_consent = True` / `reuse_consent = True` — consent auto-granted for 90 days
+- `require_consent = False` / `reuse_consent = True` — consent bypassed entirely for trusted satellites
 
 **Client ID format:** `{slug}-satellite-client` (e.g., `iyou-wun-satellite-client`)
 

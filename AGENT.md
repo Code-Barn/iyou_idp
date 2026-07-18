@@ -9,6 +9,17 @@ Reference Implementation to follow: `docs/ecosystem_shared/auth_pkce.py`
 
 Do NOT implement cleartext client secrets, do NOT use email addresses as database lookup anchors, and ensure all post-auth logic implements the `evaluate_sovereign_admin_posture` routine.
 
+## 🔒 CRITICAL: Auth Flow Specification Sync Rule
+`AUTH_FLOW_SPECIFICATION.md` at the repo root is the **Single Source of Truth (SSOT)**. Any edit to this file **must** be propagated to both downstream copies in the same commit:
+1. `docs/ecosystem_shared/AUTH_FLOW_SPECIFICATION.md` (local ecosystem mirror)
+2. `/Users/macuser/CODE_BASE/omni_social/docs/AUTH_FLOW_SPECIFICATION.md` (omni_social repo)
+
+Use `cp` to sync:
+```bash
+cp AUTH_FLOW_SPECIFICATION.md docs/ecosystem_shared/AUTH_FLOW_SPECIFICATION.md
+cp AUTH_FLOW_SPECIFICATION.md /Users/macuser/CODE_BASE/omni_social/docs/AUTH_FLOW_SPECIFICATION.md
+```
+
 ## Project
 Django-based OIDC provider that authenticates users via W3C DIDs instead of passwords. Rust extension (`_crypto`) handles Ed25519 signature verification, backed by Python `cryptography` primary path.
 
