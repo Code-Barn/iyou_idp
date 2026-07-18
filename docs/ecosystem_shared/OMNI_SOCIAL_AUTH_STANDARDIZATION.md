@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-This document defines the **8 Uncompromising Rules of Ecosystem Integration** — the non-negotiable technical constraints that every iyou_ satellite application must satisfy to participate in the OIDC authentication mesh with iyou_idp and maintain presentation-layer integrity across the sovereign mesh.
+This document defines the **9 Uncompromising Rules of Ecosystem Integration** — the non-negotiable technical constraints that every iyou_ satellite application must satisfy to participate in the OIDC authentication mesh with iyou_idp and maintain presentation-layer integrity across the sovereign mesh.
 
 These rules were established during the resolution of system-wide login crashes across the relying party grid. Every rule exists because a violation of it produced a specific, reproducible failure mode in production.
 
@@ -36,7 +36,7 @@ All satellite implementations must conform to the patterns in this module. Per-a
 
 ---
 
-## 3. The 8 Uncompromising Rules
+## 3. The 9 Uncompromising Rules
 
 ### Rule 1: Reverse-Proxy Header Awareness
 
@@ -527,7 +527,90 @@ static/
 
 ---
 
-## 4. Required Settings Checklist
+### Rule 9: Django 6.0 Core Backend Model Base Constraints
+
+**All custom authentication backends must explicitly inherit from `django.contrib.auth.backends.ModelBackend`.**
+
+Django 6.0 enforces stricter type checking on authentication backend return values. Backends that do not inherit from `ModelBackend` — or that inherit from an intermediate class that breaks the MRO chain — produce runtime token exchange drops: the backend returns a user object, but Django's auth machinery rejects it because it doesn't satisfy the expected base class contract.
+
+**Required pattern:**
+
+```python
+from django.contrib import auth
+
+class PKCEAuthenticationBackend(auth.Backend):
+    """Explicitly inherits from ModelBackend via django.contrib.auth."""
+    # ...
+```
+
+**Forbidden pattern:**
+
+```python
+# DO NOT USE — breaks MRO chain, causes token exchange drops
+class PKCEAuthenticationBackend:
+    def authenticate(self, request, **kwargs):
+        # ...
+```
+
+**Why this rule exists:**
+
+1. **MRO enforcement** — Django 6.0's `authenticate()` function validates that the returned user instance is an `isinstance()` of the model class returned by `get_user_model()`. Without `ModelBackend` in the inheritance chain, this check fails silently and the user is not logged in.
+2. **Token exchange drops** — The OIDC callback receives a valid access token, the backend provisions the user correctly, but Django's auth middleware rejects the return value. The user sees a blank page or a redirect loop instead of being logged in.
+3. **Silent failure** — No exception is raised. The backend's `authenticate()` returns a user, but `django.contrib.auth.login()` ignores it because the type check fails.
+
+**Failure mode if violated:**
+
+| Symptom | Root cause | Fix |
+|:---|:---|:---|
+| Token exchange succeeds but user not logged in | Backend return value fails `isinstance` check | Inherit from `auth.Backend` (which inherits `ModelBackend`) |
+| Blank page after OIDC callback | Auth middleware silently rejects user | Ensure backend extends `auth.Backend` |
+| Redirect loop on login | Auth state never set because user rejected | Verify MRO chain includes `ModelBackend` |
+
+**Validated across:** iyou_idp, iyou_wun, iyou_poly, iyou_name.
+
+---
+
+## 4. SSOT Layout Include Mandate
+
+**Satellites must utilize native Django template `{% include %}` statements to inherit shared layout components directly at the opening `<body>` tag layer, ensuring visual identity parity without code duplication.**
+
+The ecosystem bar and secure header are maintained as single-source-of-truth templates inside `docs/ecosystem_shared/`. Satellites pull them in via `{% include %}` — they do not copy, fork, or manually replicate these files.
+
+**Required pattern:**
+
+```html
+<!-- base.html — at the opening <body> tag -->
+<body class="bg-gray-100 min-h-screen">
+  {% include "ecosystem_shared/_ecosystem_bar.html" %}
+  {% include "ecosystem_shared/_standard_header.html" %}
+  {% block content %}{% endblock %}
+</body>
+```
+
+**Why this rule exists:**
+
+1. **Code duplication** — If satellites copy the bar/header into their own `templates/includes/`, the copies diverge from the canonical source. Fixes in `omni_social` don't propagate.
+2. **Maintenance drift** — Manual copies require manual updates across 10+ repos. The `{% include %}` pattern ensures all satellites render the same markup from a single file.
+3. **Visual identity parity** — The ecosystem bar is the user's trust anchor. If one satellite renders a stale version, the mesh looks broken.
+
+**File locations:**
+
+| Component | Canonical source | Satellite include path |
+|:---|:---|:---|
+| Ecosystem bar | `omni_social/templates/includes/_ecosystem_bar.html` | `ecosystem_shared/_ecosystem_bar.html` |
+| Standard header | `omni_social/templates/includes/_standard_header.html` | `ecosystem_shared/_standard_header.html` |
+
+**Failure mode if violated:**
+
+| Symptom | Root cause | Fix |
+|:---|:---|:---|
+| Satellite shows stale ecosystem bar | Bar was copied, not included | Use `{% include %}` from `ecosystem_shared/` |
+| App link points to wrong URL | Manual copy not updated | Regenerate via `generate_templates.py` |
+| Visual inconsistency across mesh | Different satellites render different bar versions | Use `{% include %}` from `ecosystem_shared/` |
+
+---
+
+## 5. Required Settings Checklist
 
 Every satellite MUST have these settings before deployment:
 
@@ -558,7 +641,7 @@ AUTHENTICATION_BACKENDS = [
 
 ---
 
-## 5. URLconf Template
+## 6. URLconf Template
 
 ```python
 from templates.utils.auth_pkce import (
@@ -582,7 +665,7 @@ urlpatterns = [
 
 ---
 
-## 6. Middleware Ordering
+## 7. Middleware Ordering
 
 The session middleware MUST load before any custom middleware that touches `request.session`:
 
@@ -601,7 +684,7 @@ MIDDLEWARE = [
 
 ---
 
-## 7. Resolved Failure Modes
+## 8. Resolved Failure Modes
 
 These are the production failure modes that established the 4 rules above. They are documented here to prevent regression.
 
@@ -618,7 +701,7 @@ Full audit details: `docs/audits/2026_PKCE_IMPLEMENTATION_MATRIX.md` (Section 4)
 
 ---
 
-## 8. Cross-References
+## 9. Cross-References
 
 | Document | Path | Purpose |
 |:---|:---|:---|
@@ -631,7 +714,7 @@ Full audit details: `docs/audits/2026_PKCE_IMPLEMENTATION_MATRIX.md` (Section 4)
 
 ---
 
-## 9. Canonical Passwordless Passthrough & Sovereign Admin Posture Matrix
+## 10. Canonical Passwordless Passthrough & Sovereign Admin Posture Matrix
 
 > Design signatures extracted from iyou_idp's pass-through authentication
 > layout, sourced from `docs/AUTH_FLOW_SPECIFICATION.md`. This is the
