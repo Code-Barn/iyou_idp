@@ -250,6 +250,22 @@ Backend (authenticate):
 
 **Validated across:** All 10 rendering satellites.
 
+### Rule 3 — mozilla_django_oidc 5.x Compatibility Note
+
+**Breaking change in 5.x:** The library now enforces a strict assertion that `code_challenge` and `code_verifier` must either both be present or both absent in the token exchange. This surfaced as 302 redirect loops across dc-tech, safe, hive, clar, and play after upgrading.
+
+**The fix:** In your satellite's `auth_pkce.py`, ensure the `code_verifier` is passed through to the token payload:
+
+```python
+# WRONG — causes 302 loop with mozilla_django_oidc 5.x
+token_payload["code_verifier"] = None
+
+# CORRECT — forward the actual verifier
+token_payload["code_verifier"] = code_verifier
+```
+
+If you override `authenticate()` in your backend, verify that `kwargs.get("code_verifier")` is forwarded to the token payload, not hardcoded to `None`.
+
 ---
 
 ### Rule 4: Sovereign Profile Anchoring
