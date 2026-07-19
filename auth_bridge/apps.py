@@ -14,8 +14,14 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from django.apps import AppConfig
+from django.core.management import call_command
 
 
 class AuthBridgeConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'auth_bridge'
+    
+    def ready(self):
+        # Auto-provision clients and consents on application startup
+        # This ensures the system is always in a valid state
+        call_command('seed_clients')

@@ -15,7 +15,7 @@
 
 from django.contrib import admin
 from django.urls import path, include
-from auth_bridge.views import LoginPageView, PkceTokenView
+from auth_bridge.views import LoginPageView, PkceTokenView, SovereignAuthorizeView
 
 urlpatterns = [
     path('', LoginPageView.as_view(), name='landing'),
@@ -24,6 +24,8 @@ urlpatterns = [
     path('auth/', include('auth_bridge.urls')),
     # Intercept the token endpoint before the library's catch-all to enforce PKCE
     path('openid/token/', PkceTokenView.as_view(), name='pkce_token'),
+    # Intercept the authorize endpoint to bypass consent for trusted clients
+    path('openid/authorize/', SovereignAuthorizeView.as_view(), name='sovereign_authorize'),
     path('openid/', include('oidc_provider.urls', namespace='oidc_provider')),
     path('oauth/', include('oauth2_provider.urls', namespace='oauth2_provider')),
 ]

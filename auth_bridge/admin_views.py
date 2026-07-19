@@ -22,7 +22,6 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_protect
 from django.core.cache import cache
 from django.http import JsonResponse
-from django.contrib import messages
 from auth_bridge.models import User
 from auth_bridge.backend import evaluate_sovereign_admin_posture
 import uuid

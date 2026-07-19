@@ -14,11 +14,14 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from django.core.management.base import BaseCommand
-from oidc_provider.models import Client, ResponseType
+from oidc_provider.models import Client, ResponseType, UserConsent
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
 
 
 class Command(BaseCommand):
-    help = "Programmatically provisions hardened ecosystem OIDC clients."
+    help = "Programmatically provisions hardened ecosystem OIDC clients and auto-provisions admin user consents."
 
     def handle(self, *args, **options):
         satellites = {
@@ -72,6 +75,22 @@ class Command(BaseCommand):
             defaults={"description": "code (Authorization Code Flow)"},
         )
 
+        # Get or create admin user for consent auto-provisioning
+        User = get_user_model()
+        admin_user, admin_created = User.objects.get_or_create(
+            username="did:admin:superuser",
+            defaults={
+                "is_staff": True,
+                "is_superuser": True,
+                "is_active": True,
+            }
+        )
+        
+        if admin_created:
+            self.stdout.write(
+                self.style.SUCCESS("Created admin user: did:admin:superuser")
+            )
+
         for slug, data in satellites.items():
             client_id = f"{slug}-satellite-client"
 
@@ -106,4 +125,28 @@ class Command(BaseCommand):
                 client.response_types.add(code_response_type)
                 self.stdout.write(
                     self.style.SUCCESS(f"Synchronized client array: {client_id}")
+                )
+
+            # Auto-provision user consent for admin user
+            consent, consent_created = UserConsent.objects.get_or_create(
+                user=admin_user,
+                client=client,
+                defaults={
+                    "_scope": "openid profile email",
+                    "expires_at": timezone.now() + timedelta(days=365),
+                    "date_given": timezone.now(),
+                }
+            )
+            
+            if consent_created:
+                self.stdout.write(
+                    self.style.SUCCESS(f"Created admin consent for client: {client_id}")
+                )
+            else:
+                # Update existing consent to ensure it's current
+                consent._scope = "openid profile email"
+                consent.expires_at = timezone.now() + timedelta(days=365)
+                consent.save()
+                self.stdout.write(
+                    self.style.SUCCESS(f"Updated admin consent for client: {client_id}")
                 )

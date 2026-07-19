@@ -20,7 +20,7 @@ Supports password-based fallback for admin access during Alpha phase.
 """
 import os
 from getpass import getpass
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 
@@ -101,7 +101,7 @@ class Command(BaseCommand):
         self.stdout.write(f'Is superuser: {user.is_superuser}')
         self.stdout.write(f'Is staff: {user.is_staff}')
         if password:
-            self.stdout.write(f'Password: set')
+            self.stdout.write('Password: set')
         else:
             self.stdout.write(
                 self.style.WARNING(

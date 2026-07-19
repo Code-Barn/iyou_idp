@@ -31,6 +31,7 @@ from datetime import timedelta
 from urllib.parse import urlparse, parse_qs
 
 from django.contrib import messages
+from django.conf import settings as django_settings
 
 from .models import User
 from .backend import evaluate_sovereign_admin_posture
@@ -45,11 +46,14 @@ import logging
 from base64 import urlsafe_b64encode
 from oidc_provider.models import Client, UserConsent
 from oidc_provider.lib.utils.token import create_code
+from oidc_provider.views import AuthorizeView
+from oidc_provider.lib.errors import AuthorizeError, ClientIdError, RedirectUriError
+from oidc_provider.lib.utils.common import redirect as oidc_redirect
+from oidc_provider.compat import get_attr_or_callable
 
 logger = logging.getLogger(__name__)
 
 # Where to send the user after authentication when no explicit next_url is given.
-from django.conf import settings as django_settings
 DEFAULT_NEXT_URL = django_settings.IDP_WUN_URL
 
 
@@ -797,3 +801,32 @@ class GlobalLogoutView(View):
         django_logout(request)
         next_page = request.GET.get('next', django_settings.IDP_WUN_URL + '/')
         return redirect(next_page)
+
+
+class SovereignAuthorizeView(AuthorizeView):
+    """
+    Bypass the consent prompt for trusted clients.
+
+    When a client defines ``require_consent = False``, any authenticated user
+    is immediately issued an authorization code without rendering the consent
+    template.  This removes the interactive consent step for all DID-authenticated
+    identity contexts on trusted relying parties.
+    """
+
+    def get(self, request, *args, **kwargs):
+        authorize = self.authorize_endpoint_class(request)
+
+        try:
+            authorize.validate_params()
+
+            if (
+                get_attr_or_callable(request.user, "is_authenticated")
+                and not authorize.client.require_consent
+                and "consent" not in authorize.params["prompt"]
+            ):
+                return oidc_redirect(authorize.create_response_uri())
+
+        except (ClientIdError, RedirectUriError, AuthorizeError):
+            pass
+
+        return super().get(request, *args, **kwargs)
