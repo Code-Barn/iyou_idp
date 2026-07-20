@@ -17,6 +17,8 @@ from django.contrib import admin
 from django.forms import ModelForm, PasswordInput
 from oidc_provider.models import Client
 
+from auth_bridge.models import SovereignInfrastructureLease
+
 
 class HardenedClientForm(ModelForm):
     class Meta:
@@ -34,3 +36,16 @@ admin.site.unregister(Client)
 class HardenedClientAdmin(admin.ModelAdmin):
     form = HardenedClientForm
     list_display = ("name", "client_id", "client_type")
+
+
+@admin.register(SovereignInfrastructureLease)
+class SovereignInfrastructureLeaseAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "is_active",
+        "pinning_quota_bytes",
+        "expires_at",
+        "created_at",
+    )
+    list_filter = ("is_active",)
+    search_fields = ("user__email", "user__custodial_did")

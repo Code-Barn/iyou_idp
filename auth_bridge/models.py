@@ -15,8 +15,10 @@
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.utils import timezone
 
 
 class SovereignUserManager(BaseUserManager):
@@ -91,3 +93,25 @@ class FederatedIdentity(models.Model):
 
     def __str__(self):
         return f"{self.provider.upper()} link -> {self.user.email}"
+
+
+class SovereignInfrastructureLease(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="infra_lease",
+    )
+    is_active = models.BooleanField(default=False)
+    pinning_quota_bytes = models.BigIntegerField(default=10737418240)
+    billing_token_hash = models.CharField(max_length=64, blank=True, null=True)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_lease_valid(self):
+        return self.is_active and self.expires_at > timezone.now()
+
+    def __str__(self):
+        return f"Lease({self.user.email}) active={self.is_active}"
