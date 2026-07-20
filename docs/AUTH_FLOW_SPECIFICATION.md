@@ -352,9 +352,11 @@ class User(AbstractBaseUser):
 
 | Claim | Value | Source |
 |-------|-------|--------|
-| `sub` | `did:key:z6Mk...` | `custom_sub_generator` → `user.username` |
+| `sub` | `did:key:z6Mk...` | `custom_sub_generator` → `user.custodial_did` |
 | `did` | `did:key:z6Mk...` | `custom_idtoken_processing_hook` |
 | `did_method` | `key` | Extracted from DID (part after `did:`) |
+| `account_tier` | `managed_free` / `managed_premium` / `sovereign` | `custom_idtoken_processing_hook` |
+| `iyou_infra` | `{accelerated, pinning_pool_endpoint, quota_max_bytes}` or `{accelerated: false}` | `custom_idtoken_processing_hook` — from `SovereignInfrastructureLease` if valid, else fallback |
 | `iss` | `IDP_BASE_URL` | Library default |
 | `aud` | `{client_id}` | Library default |
 | `exp` | +1 hour | Library default |
@@ -369,8 +371,10 @@ class User(AbstractBaseUser):
 | `did` | `did:key:z6Mk...` |
 | `preferred_username` | `did:key:z6Mk...` |
 | `did_method` | `key` |
+| `account_tier` | `managed_free` / `managed_premium` / `sovereign` |
 | `email` | (if available) |
 | `name` | (if available) |
+| `iyou_infra` | `{accelerated: true/false, pinning_pool_endpoint, quota_max_bytes}` — from `SovereignInfrastructureLease` if valid, else fallback |
 
 ---
 
