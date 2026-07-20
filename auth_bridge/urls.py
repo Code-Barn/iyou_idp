@@ -15,6 +15,7 @@
 
 from django.urls import path
 from .views import ChallengeView, verify_signature, LoginPageView, managed_login, mobile_verify_signature, check_challenge_status, GlobalLogoutView
+from .views_oauth import OAuthInitiateView, OAuthCallbackView
 from .admin_views import custom_admin_login, custom_admin_verify, custom_admin_dashboard
 
 app_name = 'auth_bridge'
@@ -32,4 +33,6 @@ urlpatterns = [
     path('mobile-verify/',             mobile_verify_signature,  name='mobile_verify'),
     path('challenge-status/<str:challenge_id>/', check_challenge_status, name='challenge_status'),
     path('logout/', GlobalLogoutView.as_view(), name='global_logout'),
+    path('oauth/initiate/<str:provider>/', OAuthInitiateView.as_view(), name='oauth_initiate'),
+    path('oauth/callback/<str:provider>/', OAuthCallbackView.as_view(), name='oauth_callback'),
 ]

@@ -92,7 +92,7 @@ def custom_admin_verify(request):
 
         # Get user and check if they're a staff user
         try:
-            user = User.objects.get(username=did)
+            user = User.objects.get(custodial_did=did)
             user = evaluate_sovereign_admin_posture(user)
             if not user.is_staff:
                 return JsonResponse({
@@ -139,6 +139,6 @@ def custom_admin_dashboard(request):
 
     return render(request, 'admin/did_dashboard.html', {
         'user': request.user,
-        'did': request.user.username,
+        'did': request.user.custodial_did,
         'is_superuser': request.user.is_superuser
     })

@@ -14,17 +14,17 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 | App | Repo | TODO.md | Auth Status | Key Items |
 |:---|:---|:---|:---|:---|
-| iyou_idp | `~/CODE_BASE/iyou_idp/` | [TODO.md](../../../iyou_idp/TODO.md) | ✅ Hardened | System root. Public client config, secret removal. SEC-001 pending. |
+| iyou_idp | `~/CODE_BASE/iyou_idp/` | [TODO.md](../../../iyou_idp/TODO.md) | ✅ Hardened / Operational | System root. Public client config, secret removal. SEC-001 pending. |
 | iyou_wun | `~/CODE_BASE/iyou_wun/` | [TODO.md](../../../iyou_wun/TODO.md) | ✅ Hardened / Operational | **Golden baseline.** Federated login, inline redirection, single-window UX loop, and admin panel privilege matching verified in production over revision 24. |
 | iyou_poly | `~/CODE_BASE/iyou_poly/` | [TODO.md](../../../iyou_poly/TODO.md) | ✅ Hardened / Operational | PKCE configuration confirmed, backend resolution verified over ModelBackend. |
 | iyou_name | `~/CODE_BASE/iyou_name/` | [TODO.md](../../../iyou_name/TODO.md) | ✅ Hardened / Operational | Import error resolved by transitioning class hierarchy to canonical ModelBackend foundations. |
-| iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | ⚠️ Blocked / Inflight 500 | Awaiting pod log extraction pass to isolate backend exception details. |
-| iyou_ride | `~/CODE_BASE/iyou_ride/` | [TODO.md](../../../iyou_ride/TODO.md) | ⏳ Pending | SessionMiddleware at index 2. Needs full 4-rule alignment. |
-| dc_tech_website | `~/CODE_BASE/dc_tech_website/` | [TODO.md](../../../dc_tech_website/TODO.md) | ⏳ Pending | username=did lookup done. Needs proxy header, public client, state relay. |
-| iyou_safe | `~/CODE_BASE/iyou_safe/` | [TODO.md](../../../iyou_safe/TODO.md) | ⏳ Pending | Exception guard done. Needs proxy header, public client, state relay. |
-| iyou_talk | `~/CODE_BASE/iyou_talk/` | [TODO.md](../../../iyou_talk/TODO.md) | ⏳ Pending | Needs full 4-rule alignment. |
-| iyou_clar | `~/CODE_BASE/iyou_clar/` | [TODO.md](../../../iyou_clar/TODO.md) | ⏳ Pending | Zero-secret backend. Needs proxy header, state relay, dirty-flag. |
-| iyou_play | `~/CODE_BASE/iyou_play/` | [TODO.md](../../../iyou_play/TODO.md) | — | Reference implementation. Standard mozilla_django_oidc defaults. |
+| iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | ✅ Hardened / Operational | Backend exception resolved. Ingress lifecycle hardened. |
+| iyou_ride | `~/CODE_BASE/iyou_ride/` | [TODO.md](../../../iyou_ride/TODO.md) | ✅ Hardened / Operational | SessionMiddleware at index 2. 4-rule alignment complete. |
+| dc_tech_website | `~/CODE_BASE/dc_tech_website/` | [TODO.md](../../../dc_tech_website/TODO.md) | ✅ Hardened / Operational | Proxy header, public client, state relay — all verified. |
+| iyou_safe | `~/CODE_BASE/iyou_safe/` | [TODO.md](../../../iyou_safe/TODO.md) | ✅ Hardened / Operational | Exception guard, proxy header, public client, state relay — all verified. |
+| iyou_talk | `~/CODE_BASE/iyou_talk/` | [TODO.md](../../../iyou_talk/TODO.md) | ✅ Hardened / Operational | 4-rule alignment complete. |
+| iyou_clar | `~/CODE_BASE/iyou_clar/` | [TODO.md](../../../iyou_clar/TODO.md) | ✅ Hardened / Operational | Zero-secret backend. Proxy header, state relay, dirty-flag — all verified. |
+| iyou_play | `~/CODE_BASE/iyou_play/` | [TODO.md](../../../iyou_play/TODO.md) | ✅ Hardened / Operational | Reference implementation. Standard mozilla_django_oidc defaults. |
 
 ### Supporting Projects (Not in Ecosystem Bar)
 

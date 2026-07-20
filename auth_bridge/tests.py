@@ -393,7 +393,10 @@ class PkceEnforcementTest(TestCase):
         self.client_obj.response_types.add(ResponseType.objects.get(value="code"))
 
         self.did = _make_did(pub_bytes)
-        self.user, _ = User.objects.get_or_create(username=self.did)
+        self.user, _ = User.objects.get_or_create(
+            custodial_did=self.did,
+            defaults={"email": f"test_{self.did[:20]}@iyou.me"},
+        )
 
     def _oidc_url(self, method="S256", code_challenge_value=None):
         code_verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"

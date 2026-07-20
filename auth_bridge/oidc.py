@@ -13,20 +13,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+
 def custom_userinfo_claims(claims, user):
-    claims['sub'] = user.username
-    claims['did'] = user.username
-    claims['preferred_username'] = user.username
-    claims['did_method'] = user.username.split(':')[1] if user.username.count(':') >= 2 else 'key'
+    claims['sub'] = user.custodial_did
+    claims['did'] = user.custodial_did
+    claims['preferred_username'] = user.custodial_did
+    claims['did_method'] = user.custodial_did.split(':')[1] if user.custodial_did.count(':') >= 2 else 'web'
+    claims['email'] = user.email
+    claims['account_tier'] = user.account_tier
     return claims
 
 
 def custom_idtoken_processing_hook(id_token, user, token, request):
-    print(f"DEBUG: Token issued for code — client={token.client.client_id} user_did={user.username}", flush=True)
-    id_token['did'] = user.username
-    id_token['did_method'] = user.username.split(':')[1] if user.username.count(':') >= 2 else 'key'
+    print(f"DEBUG: Token issued for code — client={token.client.client_id} user_did={user.custodial_did}", flush=True)
+    id_token['did'] = user.custodial_did
+    id_token['did_method'] = user.custodial_did.split(':')[1] if user.custodial_did.count(':') >= 2 else 'web'
     return id_token
 
 
 def custom_sub_generator(user):
-    return user.username
+    return user.custodial_did

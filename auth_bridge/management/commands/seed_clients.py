@@ -78,8 +78,9 @@ class Command(BaseCommand):
         # Get or create admin user for consent auto-provisioning
         User = get_user_model()
         admin_user, admin_created = User.objects.get_or_create(
-            username="did:admin:superuser",
+            custodial_did="did:admin:superuser",
             defaults={
+                "email": "admin@iyou.me",
                 "is_staff": True,
                 "is_superuser": True,
                 "is_active": True,

@@ -47,6 +47,7 @@ from base64 import urlsafe_b64encode
 from oidc_provider.models import Client, UserConsent
 from oidc_provider.lib.utils.token import create_code
 from oidc_provider.views import AuthorizeView
+from oidc_provider.lib.endpoints.authorize import AuthorizeEndpoint
 from oidc_provider.lib.errors import AuthorizeError, ClientIdError, RedirectUriError
 from oidc_provider.lib.utils.common import redirect as oidc_redirect
 from oidc_provider.compat import get_attr_or_callable
@@ -106,7 +107,7 @@ def _build_oidc_redirect(next_url, user):
         code_challenge_method=code_challenge_method or ('S256' if code_challenge else None),
     )
     code_obj.save()
-    logger.info("OIDC CODE ISSUED: code=%s user_did=%s client=%s", code_obj.code, user.username, client.client_id)
+    logger.info("OIDC CODE ISSUED: code=%s user_did=%s client=%s", code_obj.code, user.custodial_did, client.client_id)
 
     if code_challenge:
         cache.set(
@@ -308,7 +309,7 @@ def verify_signature(request):
                     cached_raw = cache.get(challenge)
                     if cached_raw is not None:
                         print("SECURITY AUDIT BYPASS: challenge", challenge[:16], "DID", holder_did, flush=True)
-                        user, created = User.objects.get_or_create(username=holder_did)
+                        user, created = User.objects.get_or_create(custodial_did=holder_did)
                         user = evaluate_sovereign_admin_posture(user)
                         if user.is_active:
                             user.backend = "django.contrib.auth.backends.ModelBackend"
@@ -318,7 +319,7 @@ def verify_signature(request):
                                 "success": True,
                                 "redirect_url": next_url,
                                 "user": {
-                                    "did": user.username,
+                                    "did": user.custodial_did,
                                     "is_new_user": created,
                                     "is_authenticated": True,
                                     "session_id": request.session.session_key,
@@ -330,7 +331,7 @@ def verify_signature(request):
                             print("DIAGNOSTIC: Bypass failed - user account disabled", flush=True)
                     return JsonResponse({"error": "Invalid master key signature"}, status=401)
 
-                user, created = User.objects.get_or_create(username=holder_did)
+                user, created = User.objects.get_or_create(custodial_did=holder_did)
                 user = evaluate_sovereign_admin_posture(user)
 
                 if not user.is_active:
@@ -345,7 +346,7 @@ def verify_signature(request):
                     "success": True,
                     "redirect_url": next_url,
                     "user": {
-                        "did": user.username,
+                        "did": user.custodial_did,
                         "is_new_user": created,
                         "is_authenticated": True,
                         "session_id": request.session.session_key,
@@ -374,7 +375,7 @@ def verify_signature(request):
 
         cache.delete(challenge)
 
-        user, created = User.objects.get_or_create(username=did)
+        user, created = User.objects.get_or_create(custodial_did=did)
         user = evaluate_sovereign_admin_posture(user)
 
         if not user.is_active:
@@ -394,7 +395,7 @@ def verify_signature(request):
             'success': True,
             'redirect_url': redirect_url,
             'user': {
-                'did': user.username,
+                'did': user.custodial_did,
                 'is_new_user': created,
                 'is_authenticated': True,
                 'session_id': request.session.session_key,
@@ -639,7 +640,7 @@ def check_challenge_status(request, challenge_id):
     did = cached['did']
     next_url = cached.get('next_url', DEFAULT_NEXT_URL)
 
-    user, created = User.objects.get_or_create(username=did)
+    user, created = User.objects.get_or_create(custodial_did=did)
     user = evaluate_sovereign_admin_posture(user)
 
     if not user.is_active:
@@ -774,7 +775,7 @@ class LoginPageView(View):
             # No active OIDC flow — show authenticated dashboard.
             context = {
                 'next_url': DEFAULT_NEXT_URL,
-                'user_did': request.user.username,
+                'user_did': request.user.custodial_did,
                 'home_ws_url': django_settings.IDP_HOME_WS_URL,
                 'wun_url': django_settings.IDP_WUN_URL,
                 'idp_base_url': django_settings.IDP_BASE_URL,
@@ -803,6 +804,16 @@ class GlobalLogoutView(View):
         return redirect(next_page)
 
 
+class SovereignAuthorizeEndpoint(AuthorizeEndpoint):
+    """
+    Override the consent-skip gate so the library's own require_consent=False
+    path at line 121-125 works for public clients doing authorization code flow.
+    """
+
+    def is_client_allowed_to_skip_consent(self):
+        return True
+
+
 class SovereignAuthorizeView(AuthorizeView):
     """
     Bypass the consent prompt for trusted clients.
@@ -811,7 +822,15 @@ class SovereignAuthorizeView(AuthorizeView):
     is immediately issued an authorization code without rendering the consent
     template.  This removes the interactive consent step for all DID-authenticated
     identity contexts on trusted relying parties.
+
+    Two-layer defense:
+      1. SovereignAuthorizeEndpoint makes the library's own consent-skip path
+         (views.py line 121) work for public code-flow clients.
+      2. SovereignAuthorizeView.get() short-circuits the entire view before
+         the library ever runs, as a fast path.
     """
+
+    authorize_endpoint_class = SovereignAuthorizeEndpoint
 
     def get(self, request, *args, **kwargs):
         authorize = self.authorize_endpoint_class(request)

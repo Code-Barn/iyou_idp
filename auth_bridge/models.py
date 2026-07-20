@@ -13,50 +13,81 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import uuid
+
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
-from django.utils import timezone
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
 
-class UserManager(BaseUserManager):
-    def create_user(self, did: str, **extra_fields):
-        if not did:
-            raise ValueError('The DID must be set')
-        user = self.model(username=did, **extra_fields)
+class SovereignUserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("An email address is required for user creation.")
+        email = self.normalize_email(email)
+
+        user_uuid = uuid.uuid4()
+        extra_fields.setdefault("custodial_did", f"did:web:iyou.me:user:{user_uuid}")
+        extra_fields.setdefault("account_tier", "managed_free")
+
+        user = self.model(id=user_uuid, email=email, **extra_fields)
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, did: str, **extra_fields):
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        return self.create_user(did, **extra_fields)
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("account_tier", "managed_premium")
+        return self.create_user(email, password, **extra_fields)
 
 
-class User(AbstractBaseUser):
-    # Use standard AutoField as PK, store DID in username field
-    id = models.AutoField(primary_key=True)
-    username = models.CharField(max_length=255, unique=True, help_text='DID string', default='did:placeholder')
+class User(AbstractBaseUser, PermissionsMixin):
+    ACCOUNT_TIERS = [
+        ("managed_free", "Managed Free (Ad-Supported)"),
+        ("managed_premium", "Managed Premium ($5/mo Subscription)"),
+        ("sovereign", "Fully Sovereign (Graduated via iyou_home)"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(unique=True, db_index=True)
+    custodial_did = models.CharField(max_length=255, unique=True, db_index=True)
+    account_tier = models.CharField(max_length=20, choices=ACCOUNT_TIERS, default="managed_free")
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    is_superuser = models.BooleanField(default=False)
-    date_joined = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-    USERNAME_FIELD = 'username'
+    objects = SovereignUserManager()
+
+    USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
-    objects = UserManager()
-
     def __str__(self):
-        return self.username
+        return f"{self.email} ({self.account_tier})"
 
-    def has_perm(self, perm, obj=None):
-        return self.is_superuser
+    @property
+    def date_joined(self):
+        return self.created_at
 
-    def has_module_perms(self, app_label):
-        return self.is_superuser
+
+class FederatedIdentity(models.Model):
+    PROVIDERS = [
+        ("github", "GitHub"),
+        ("google", "Google"),
+        ("apple", "Apple"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="federated_identities")
+    provider = models.CharField(max_length=15, choices=PROVIDERS)
+    provider_user_id = models.CharField(max_length=255, db_index=True)
+    linked_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [
-            models.Index(fields=['username']),
-            models.Index(fields=['is_active']),
-        ]
+        unique_together = ("provider", "provider_user_id")
+
+    def __str__(self):
+        return f"{self.provider.upper()} link -> {self.user.email}"

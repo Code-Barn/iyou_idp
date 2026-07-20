@@ -28,11 +28,11 @@ logger = logging.getLogger(__name__)
 def evaluate_sovereign_admin_posture(user):
     """
     Intercepts validated user objects and enforces passwordless root elevation
-    if the multibase string satisfies the environment master key constraints.
+    if the custodial DID satisfies the environment master key constraints.
     """
     target_admin_did = settings.ADMIN_DID
 
-    if user.username == target_admin_did:
+    if user.custodial_did == target_admin_did:
         if not user.is_staff or not user.is_superuser:
             user.is_staff = True
             user.is_superuser = True
@@ -40,7 +40,7 @@ def evaluate_sovereign_admin_posture(user):
             user.save(update_fields=["is_staff", "is_superuser", "password"])
             logger.info(
                 "ADMIN ELEVATION: DID %s promoted to superuser",
-                user.username,
+                user.custodial_did,
             )
     return user
 
@@ -53,7 +53,7 @@ class DIDAuthBackend(ModelBackend):
 
     def authenticate(self, request, username=None, password=None, **kwargs):
         """
-        Authenticate using DID (username field).
+        Authenticate using DID (custodial_did field).
         For admin interface, accept any password if user exists and is active.
         """
         User = get_user_model()
@@ -62,14 +62,9 @@ class DIDAuthBackend(ModelBackend):
             return None
 
         try:
-            # Get user by DID (stored in username field)
-            user = User.objects.get(username=username)
-
-            # For admin interface, we'll allow access if user is active
-            # In production, you might want to add additional checks here
+            user = User.objects.get(custodial_did=username)
             if user.is_active:
                 return user
-
         except User.DoesNotExist:
             return None
 

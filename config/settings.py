@@ -220,3 +220,46 @@ SITE_URL = IDP_BASE_URL
 OIDC_USERINFO = "auth_bridge.oidc.custom_userinfo_claims"
 OIDC_IDTOKEN_PROCESSING_HOOK = "auth_bridge.oidc.custom_idtoken_processing_hook"
 OIDC_IDTOKEN_SUB_GENERATOR = "auth_bridge.oidc.custom_sub_generator"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Tier 1 Managed Convenience — OAuth2 Provider Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+# Each provider is isolated to its own env-var namespace.  The centralised
+# OAUTH_PROVIDERS dict below is the single lookup table consumed by
+# views_oauth.py — the runtime never touches raw env vars directly.
+
+OAUTH_GOOGLE_CLIENT_ID = env("OAUTH_GOOGLE_CLIENT_ID", default="")
+OAUTH_GOOGLE_CLIENT_SECRET = env("OAUTH_GOOGLE_CLIENT_SECRET", default="")
+
+OAUTH_APPLE_CLIENT_ID = env("OAUTH_APPLE_CLIENT_ID", default="")
+OAUTH_APPLE_CLIENT_SECRET = env("OAUTH_APPLE_CLIENT_SECRET", default="")
+
+OAUTH_GITHUB_CLIENT_ID = env("OAUTH_GITHUB_CLIENT_ID", default="")
+OAUTH_GITHUB_CLIENT_SECRET = env("OAUTH_GITHUB_CLIENT_SECRET", default="")
+
+OAUTH_PROVIDERS = {
+    "google": {
+        "client_id": OAUTH_GOOGLE_CLIENT_ID,
+        "client_secret": OAUTH_GOOGLE_CLIENT_SECRET,
+        "authorization_endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_endpoint": "https://oauth2.googleapis.com/token",
+        "userinfo_endpoint": "https://www.googleapis.com/oauth2/v3/userinfo",
+        "scope": "openid email profile",
+    },
+    "github": {
+        "client_id": OAUTH_GITHUB_CLIENT_ID,
+        "client_secret": OAUTH_GITHUB_CLIENT_SECRET,
+        "authorization_endpoint": "https://github.com/login/oauth/authorize",
+        "token_endpoint": "https://github.com/login/oauth/access_token",
+        "userinfo_endpoint": "https://api.github.com/user",
+        "scope": "read:user user:email",
+    },
+    "apple": {
+        "client_id": OAUTH_APPLE_CLIENT_ID,
+        "client_secret": OAUTH_APPLE_CLIENT_SECRET,
+        "authorization_endpoint": "https://appleid.apple.com/auth/authorize",
+        "token_endpoint": "https://appleid.apple.com/auth/token",
+        "userinfo_endpoint": None,
+        "scope": "name email",
+    },
+}
