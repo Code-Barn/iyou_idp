@@ -7,14 +7,21 @@ W3C Decentralised Identifiers (DIDs) instead of passwords.  A Rust extension
 (`_crypto`) handles Ed25519 signature verification, backed by a Python
 `cryptography` primary path for defence-in-depth.
 
-The login portal implements a **3-tiered sovereign spectrum** that welcomes
+The identity vault supports **three authentication tiers** that welcome
 users of all technical levels while preserving the DID architecture:
 
-| Tier | Tab | Authentication Method |
-|------|-----|----------------------|
-| **3 — Full Sovereignty** | Full Sovereignty | Desktop WebSocket (`iyou-home`) + manual VP paste |
-| **2 — Community Self-Signing** | Community Self-Signing | OOB QR-code flow with mobile DID wallet (`iyou_mobile`) |
-| **1 — Managed Convenience** | Managed Convenience | OAuth providers (Google, Apple, GitHub) + email/password (scaffold) |
+| Tier | Tab | Authentication Method | Identity Model |
+|------|-----|----------------------|----------------|
+| **3 — Full Sovereignty** | Full Sovereignty | Desktop WebSocket (`iyou-home`) + manual VP paste | `did:key` (user-controlled) |
+| **2 — Community Self-Signing** | Community Self-Signing | OOB QR-code flow with mobile DID wallet (`iyou_mobile`) | `did:key` (user-controlled) |
+| **1 — Managed Convenience** | Managed Convenience | OAuth providers (Google, Apple, GitHub) | `did:web:iyou.me:user:{uuid}` (server-managed) |
+
+Tier 1 managed accounts use a **server-managed `did:web`** identity — no
+Ed25519 keypair or `did:key` string is generated.  The user's identity is
+anchored to their verified email via the `User` model's `custodial_did`
+field, with a `FederatedIdentity` link table recording each OAuth provider
+association.  A smart-merge pipeline (`pipeline.py`) resolves new logins
+against existing accounts to prevent duplicate registrations.
 
 The portal is served at the root URL (`/`) and at `/auth/login/` — both render
 the same tiered login card (no landing-page hero content).  After
@@ -82,20 +89,55 @@ provided, the default is the value of `IDP_WUN_URL`.
        └──────────────────────────────┘                              ┘
 ```
 
+### Level 1 — Managed Convenience (OAuth2 Inbound)
+
+```
+  Browser (IdP)               Django IdP               Provider (Google/Apple/GitHub)
+       │                          │                              │
+       ├── GET /auth/oauth/       │                              │
+       │   initiate/<provider>/   │                              │
+       │   (state in session)     │                              │
+       │──302────────────────────►│──302 auth endpoint──────────►│
+       │                          │                              │
+       │              User authenticates at provider             │
+       │◄─────────────302 callback (code + state)───────────────┤
+       │                          │                              │
+       ├── GET /auth/oauth/       │                              │
+       │   callback/<provider>/   │                              │
+       │──state validation────────│                              │
+       │──code exchange───────────│────POST token endpoint──────►│
+       │                          │◄────access_token + id_token──┤
+       │                          │                              │
+       │                          │──GET userinfo endpoint──────►│
+       │                          │◄────{sub, email, name}───────┤
+       │                          │                              │
+       │                          │──process_oauth_identity()────│
+       │                          │  (smart-merge pipeline)      │
+       │                          │  assign did:web:iyou.me:     │
+       │                          │    user:{uuid}               │
+       │                          │                              │
+       │◄──login() + 302 redirect─│                              │
+       │  (OIDC continuity or     │                              │
+       │   IDP_WUN_URL)           │                              │
+       └──────────────────────────┘                              ┘
+```
+
 ## Project Structure [L78-123]
 
 ```
 iyou_idp/
 ├── auth_bridge/                    # Django app — auth logic
 │   ├── management/commands/
-│   │   └── createsuperuser_did.py
+│   │   ├── createsuperuser_did.py  # Creates superuser with --email, --did
+│   │   └── seed_clients.py         # Auto-seeds OIDC satellite clients
 │   ├── templates/auth_bridge/
 │   │   ├── login.html              # Shell: tab nav + includes + shared JS
 │   │   ├── _tab_sovereign.html     # Tab 0: WebSocket + manual VP flow
 │   │   ├── _tab_community.html     # Tab 1: OOB QR-code flow
-│   │   ├── _tab_managed.html       # Tab 2: OAuth + email/password scaffold
+│   │   ├── _tab_managed.html       # Tab 2: OAuth providers (live)
 │   │   ├── _download_modal.html    # Desktop iYou Home download overlay
 │   │   ├── _mobile_download_modal.html  # Mobile iYou download overlay
+│   │   ├── authenticated_dashboard.html # Post-login profile interface
 │   │   └── admin/                  # Admin DID login templates
 │   ├── static/auth_bridge/
 │   │   ├── js/
@@ -103,17 +145,22 @@ iyou_idp/
 │   │   │   └── mobile_download_modal.js   # Mobile modal controller (IIFE)
 │   │   └── img/
 │   │       └── Tux.svg                    # Linux penguin icon
+│   ├── migrations/
+│   │   └── 0001_initial_with_multi_auth.py  # UUID PK, User, FederatedIdentity
 │   ├── __init__.py
 │   ├── admin.py
 │   ├── admin_views.py              # DID-based admin login views
-│   ├── backend.py                  # DIDAuthBackend
-│   ├── models.py                   # User (AbstractBaseUser)
-│   ├── oidc.py                     # OIDC userinfo/id-token hooks
-│   ├── tests.py                    # Integration tests
-│   ├── urls.py
-│   └── views.py                    # verify_signature, ChallengeView, LoginPageView,
-│                                   # mobile_verify_signature, check_challenge_status,
-│                                   # managed_login, _get_rust_verify_vp
+│   ├── apps.py                     # AppConfig with guarded seed_clients
+│   ├── backend.py                  # DIDAuthBackend + evaluate_sovereign_admin_posture
+│   ├── models.py                   # User (UUIDField PK) + FederatedIdentity
+│   ├── oidc.py                     # OIDC userinfo/id-token hooks (custodial_did)
+│   ├── pipeline.py                 # Smart-Merge: process_oauth_identity()
+│   ├── tests.py                    # Integration tests (13/13)
+│   ├── urls.py                     # Auth + OAuth routes
+│   ├── views.py                    # verify_signature, ChallengeView, LoginPageView,
+│   │                               # mobile_verify_signature, check_challenge_status,
+│   │                               # managed_login, _build_oidc_redirect
+│   └── views_oauth.py             # Tier 1 OAuth: OAuthInitiateView, OAuthCallbackView
 ├── config/
 │   ├── __init__.py
 │   ├── settings.py                 # IDP_* env vars, django-environ, production hardening
@@ -226,24 +273,54 @@ built or `src/` isn't reachable.  Re-run `maturin develop` or copy
 
 ### 1. User Model [L201-222]
 
-**`class UserManager`** [L115-126]
+**`class SovereignUserManager`** — extends `BaseUserManager`:
 
 ```python
-def create_user(self, did):       # Creates a user with DID as username
-def create_superuser(self, did):  # Creates staff+superuser
+def create_user(self, email, custodial_did=None, **extra_fields):
+    # Generates did:web:iyou.me:user:{uuid} if custodial_did not provided
+
+def create_superuser(self, email, custodial_did=None, **extra_fields):
+    # Sets is_staff=True, is_superuser=True
 ```
 
-**`class User`** [L129-158] — extends `AbstractBaseUser`:
-- `username` — stores the DID string (e.g. `did:key:z6Mk...`)
-- `is_active`, `is_staff`, `is_superuser`, `date_joined`
-- `USERNAME_FIELD = 'username'`
-- Indexed on `(username, is_active)` for fast DID lookups
+**`class User`** — extends `AbstractBaseUser` + `PermissionsMixin`:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | `UUIDField` (PK) | Auto-generated, non-editable |
+| `email` | `EmailField` (unique) | `USERNAME_FIELD` — used for lookup |
+| `custodial_did` | `CharField(255, unique)` | `did:web:iyou.me:user:{uuid}` — the canonical identity |
+| `account_tier` | `CharField` | `"sovereign"`, `"community"`, or `"managed_free"` |
+| `is_active` | `BooleanField` | Default `True` |
+| `is_staff` | `BooleanField` | For Django admin access |
+| `is_superuser` | `BooleanField` | For Django admin access |
+| `created_at` | `DateTimeField` | Auto-set on creation |
+| `updated_at` | `DateTimeField` | Auto-updated |
 
 ```python
-def __str__(self): return self.username
+def __str__(self): return self.custodial_did
 def has_perm(self, perm, obj=None): return self.is_superuser
 def has_module_perms(self, app_label): return self.is_superuser
+@property
+def date_joined(self): return self.created_at  # OIDC provider compatibility
 ```
+
+**`class FederatedIdentity`** — links OAuth provider accounts to users:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | `AutoField` (PK) | |
+| `user` | `ForeignKey(User)` | `on_delete=CASCADE` |
+| `provider` | `CharField(50)` | `"google"`, `"github"`, `"apple"` |
+| `provider_user_id` | `CharField(255)` | Provider's unique subject ID |
+| `created_at` | `DateTimeField` | Auto-set on creation |
+
+Unique constraint: `(provider, provider_user_id)` — prevents duplicate
+provider accounts.
+
+**`AUTH_USER_MODEL`** is set to `"auth_bridge.User"` in `config/settings.py`.
+All `ForeignKey` relationships must reference
+`settings.AUTH_USER_MODEL`, not `User` directly.
 
 ### 2. Challenge-Response Flow [L222-269]
 
@@ -374,12 +451,13 @@ uv run python manage.py createsuperuser_did
 ```
 
 Options:
-- `--did did:admin:myadmin` (default: `did:admin:superuser`)
+- `--email admin@iyou.me` (required — used as `USERNAME_FIELD`)
+- `--did did:web:iyou.me:user:admin` (default: auto-generated from UUID)
 - `--password <pass>` (or `DJANGO_SUPERUSER_PASSWORD` env var)
 - `--no-input` (skip interactive prompts, useful in scripts)
 
 If no password is set, the user can still log in via DID auth (the
-`DIDAuthBackend` ignores passwords for DID users).
+`DIDAuthBackend` ignores passwords for DID users) or via OAuth.
 
 **Automatic elevation via `ADMIN_DID`:** Set the `ADMIN_DID` environment
 variable to a `did:key:` multibase string — any user authenticating with
@@ -395,7 +473,7 @@ superuser model for the sovereign admin at `iyou.me/admin`.  See the
 ```python
 def authenticate(self, request, username=None, password=None, **kwargs):
     try:
-        user = User.objects.get(username=username, is_active=True)
+        user = User.objects.get(custodial_did=username, is_active=True)
         return user  # Password is ignored for DID auth
     except User.DoesNotExist:
         return None
@@ -404,17 +482,29 @@ def authenticate(self, request, username=None, password=None, **kwargs):
 This backend is listed first in `AUTHENTICATION_BACKENDS` in settings.py,
 followed by the standard `ModelBackend` (for admin password login).
 
+**`evaluate_sovereign_admin_posture(user)`** — called after every auth
+ingress (`verify_signature`, `check_challenge_status`, and
+`custom_admin_verify`).  Checks if the authenticated user's `custodial_did`
+matches the `ADMIN_DID` environment variable; on match, atomically elevates
+to `is_staff=True`, `is_superuser=True` with an unusable password.  This
+ensures the sovereign admin always has admin access regardless of how they
+authenticated (DID, OAuth, or mobile).
+
 ### 6. OIDC Provider [L327-339]
 
-**`def custom_userinfo_claims`** [L263-271] — adds `did`, `preferred_username`,
-and `did_method` to the standard OIDC userinfo endpoint.
+**`def custom_userinfo_claims`** [L263-271] — adds `did` (`custodial_did`),
+`preferred_username` (`custodial_did`), and `did_method` to the standard
+OIDC userinfo endpoint.
 
 **`def custom_id_token_claims`** [L274-281] — adds `did` and `did_method`
 claims to the ID token JWT.
 
-**`def custom_sub_generator`** — returns the DID (user.username) as the
+**`def custom_sub_generator`** — returns `user.custodial_did` as the
 `sub` claim, ensuring the user's DID is the stable identifier across
 sessions and clients.
+
+The OIDC provider expects `user.date_joined` — solved via a `@property`
+alias on the `User` model that returns `created_at`.
 
 ### 7. Post-Login Redirect Configuration
 
@@ -455,10 +545,34 @@ link appears after 500 ms.
 The dual-window flow applies to all three auth tiers:
 - **Tab 0 (Full Sovereignty):** `submitVerify()` success handler
 - **Tab 1 (Community Self-Signing):** `startCommunityPolling()` success handler
-- **Tab 2 (Managed Convenience):** future implementation
+- **Tab 2 (Managed Convenience):** `OAuthCallbackView._complete_login()` → 302 redirect
 
 To configure the satellite destination, set the `IDP_WUN_URL` environment
 variable (cluster-internal DNS or public domain).
+
+### Smart-Merge Pipeline (Anti-Sybil)
+
+The `process_oauth_identity()` function in `auth_bridge/pipeline.py`
+implements a **three-way account resolution** strategy that prevents
+duplicate registrations while preserving existing sovereign identities:
+
+| Condition | Action |
+|-----------|--------|
+| `FederatedIdentity` match exists | Return existing user (primary path) |
+| No federated match, email matches existing `User` | Link provider to existing account (email-anchored merge) |
+| No federated match, no email match | Create new user with `did:web:iyou.me:user:{uuid}` |
+
+The pipeline never overwrites an existing `custodial_did`.  When a user
+registers via GitHub and later logs in via Google with the same email, both
+provider identities are linked to the same `User` record.
+
+**Provider-specific profile extractors** in `views_oauth.py` handle the
+differences between OAuth providers:
+- **Google** — extracts `sub` and `email` from the JWT `id_token`
+- **GitHub** — uses the `/user/emails` API endpoint for the primary verified
+  email (the `/user` endpoint doesn't return email by default)
+- **Apple** — extracts `sub` and `email` from the JWT `id_token`; name is
+  parsed from the `name` claim object
 
 ### Authenticated Dashboard
 
@@ -526,12 +640,23 @@ persists the active tab across redirects.
 6. The browser opens the redirect URL in a new tab and
    redirects the IdP tab to `/` (dual-window behaviour).
 
-### Tab 2 — Managed Convenience (Scaffold)
+### Tab 2 — Managed Convenience (OAuth2)
 
-- Disabled OAuth buttons for Google, Apple, and GitHub (Coming Soon badge).
-- Live email/password form → `POST /auth/managed-login/`.  Currently returns
-  a Django messages flash message confirming receipt; future iterations will
-  hash the password and generate a server-side `did:web`.
+- **OAuth buttons** for Google, Apple, and GitHub — each redirects to
+  `GET /auth/oauth/initiate/<provider>/` which generates a state token,
+  stores it in the session, and redirects to the provider's authorization
+  endpoint.
+- On callback (`GET /auth/oauth/callback/<provider>/`), the state is
+  validated against the session, the authorization code is exchanged for
+  tokens via back-channel POST, the provider profile is extracted, and
+  the user is authenticated via the Smart-Merge pipeline.
+- After successful OAuth login, the OIDC continuity flow resumes — the
+  pending `next` URL (containing `/openid/authorize/` params) is used to
+  generate an auth code and redirect back to the satellite, **skipping the
+  consent page**.
+- **WebAuthn biometric** placeholder (Coming Soon) — a `# WEBAUTHN_HOOK`
+  marker at the session confirmation point allows future interception for
+  hardware key assertion before the session is established.
 - Disabled Passkey button (Coming Soon).
 
 ### Satellite-App Redirect Safety [L378-396]
@@ -612,6 +737,8 @@ The handshake has several protection layers:
 | GET | `/auth/challenge-status/<uuid>/` | Polling — returns `{solved, redirect_url}` when mobile has signed |
 | POST | `/auth/managed-login/` | Scaffold — accepts email+password, returns Django messages |
 | GET | `/auth/logout/` | Global logout — clears IdP session, redirects to WUN (or `?next=`) |
+| GET/POST | `/auth/oauth/initiate/<provider>/` | Tier 1 OAuth — generates state, redirects to provider |
+| GET/POST | `/auth/oauth/callback/<provider>/` | Tier 1 OAuth — validates state, exchanges code, authenticates |
 
 ### Admin DID Endpoints [L449-457]
 
@@ -669,6 +796,8 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/admin/did-login/          → custom_admin_login
 /auth/admin/did-verify/         → custom_admin_verify
 /auth/admin/did-dashboard/      → custom_admin_dashboard
+/auth/oauth/initiate/<provider>/ → OAuthInitiateView (Google/Apple/GitHub)
+/auth/oauth/callback/<provider>/ → OAuthCallbackView (Google/Apple/GitHub)
 /openid/authorize/              → OIDC Authorization Endpoint *
 /openid/token/                  → Token exchange
 /openid/userinfo/               → UserInfo
@@ -781,6 +910,7 @@ Key tests:
 - `test_authorize_returns_code_for_authenticated_user` — classic OIDC authorize flow
 - `test_verify_redirects_directly_to_client` — direct-callback: verify returns client URI with code
 - `test_jwks_endpoint_returns_valid_key` — `/openid/jwks/` exposes at least one RSA key
+- `test_build_oidc_redirect_*` — OIDC redirect helper with various next_url formats
 
 ### Debugging [L500-521]
 
@@ -836,6 +966,9 @@ Key tests:
 | QR code not appearing or scrambled | `qrcode` CDN not loaded or challenge fetch failed | Check network tab for CDN or `/auth/challenge/` errors |
 | `data.redirect_url` not redirecting | `data.success` falsy or `redirect_url` missing | Check `VERIFY RESPONSE FULL` in console |
 | Satellite app not opening in new tab | Browser popup blocker | `reserveAuthPopup()` must fire synchronously in click handler; check console for `"Popup blocked"` warning; the 500 ms fallback link appears below the spinner |
+| OAuth callback returns 403 | State mismatch or expired | Ensure cookies are enabled; state TTL is 300s; check session middleware |
+| OAuth callback returns 502 | Token exchange failed | Verify provider client ID/secret in env vars; check provider's token endpoint |
+| OAuth callback returns 400 (profile incomplete) | Provider returned missing email or ID | Check provider OAuth scopes; GitHub requires `user:email` scope |
 
 ### Error Response Format [L538-554]
 
@@ -869,6 +1002,9 @@ All JSON error responses follow this structure:
 - [ ] Set `DATABASE_URL` to a production PostgreSQL connection string
 - [ ] Configure a real Redis instance via `REDIS_URL`
 - [ ] Set `ADMIN_DID` to the sovereign master `did:key` URI for passwordless superuser elevation at `/admin/`
+- [ ] Set `OAUTH_GOOGLE_CLIENT_ID` and `OAUTH_GOOGLE_CLIENT_SECRET` (or leave empty to disable Google)
+- [ ] Set `OAUTH_APPLE_CLIENT_ID` and `OAUTH_APPLE_CLIENT_SECRET` (or leave empty to disable Apple)
+- [ ] Set `OAUTH_GITHUB_CLIENT_ID` and `OAUTH_GITHUB_CLIENT_SECRET` (or leave empty to disable GitHub)
 - [ ] Deploy with `docker build -t iyou-idp .` (Rust is compiled in the builder stage)
 - [ ] Set up the Traefik/nginx ingress proxy with HTTPS termination
 - [ ] The entrypoint uses Gunicorn on `:8000` — no additional WSGI server needed
@@ -906,6 +1042,12 @@ docker run -d --name iyou-idp \
   -e DATABASE_URL="postgres://user:pass@db:5432/iyou_idp" \
   -e REDIS_URL="redis://redis:6379/1" \
   -e ADMIN_DID="did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV" \
+  -e OAUTH_GOOGLE_CLIENT_ID="" \
+  -e OAUTH_GOOGLE_CLIENT_SECRET="" \
+  -e OAUTH_GITHUB_CLIENT_ID="" \
+  -e OAUTH_GITHUB_CLIENT_SECRET="" \
+  -e OAUTH_APPLE_CLIENT_ID="" \
+  -e OAUTH_APPLE_CLIENT_SECRET="" \
   iyou-idp:latest
 ```
 
@@ -925,6 +1067,12 @@ docker run -d --name iyou-idp \
 | `DATABASE_URL` | `str` | `sqlite:///db.sqlite3` | Database connection string (use PostgreSQL in production) |
 | `REDIS_URL` | `str` | `redis://iyou-redis-master.identity.svc.cluster.local:6379/1` | Redis connection for challenge-response caching |
 | `ADMIN_DID` | `str` | `did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV` | Sovereign master DID — authenticating as this DID auto-elevates to staff+superuser |
+| `OAUTH_GOOGLE_CLIENT_ID` | `str` | `""` | Google OAuth2 client ID (empty = provider disabled) |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | `str` | `""` | Google OAuth2 client secret |
+| `OAUTH_APPLE_CLIENT_ID` | `str` | `""` | Apple Sign In service ID |
+| `OAUTH_APPLE_CLIENT_SECRET` | `str` | `""` | Apple Sign In client secret (JWT) |
+| `OAUTH_GITHUB_CLIENT_ID` | `str` | `""` | GitHub OAuth App client ID |
+| `OAUTH_GITHUB_CLIENT_SECRET` | `str` | `""` | GitHub OAuth App client secret |
 
 When `IDP_DEBUG=False`, the following are automatically enabled:
 - `SECURE_PROXY_SSL_HEADER` — trusts `X-Forwarded-Proto: https` from Traefik/nginx
@@ -985,6 +1133,14 @@ curl -sI https://iyou.me/static/auth_bridge/js/download_modal.js | head -5
 - **Bypass audit trail**: every emergency-bypass acceptance logs the remote IP,
   the holder DID, the challenge prefix, and a timestamp — admins can detect
   and investigate abuse.
+- **OAuth state validation**: Tier 1 OAuth flows use `secrets.compare_digest()`
+  to validate the `state` parameter against the session-stored value, preventing
+  CSRF attacks on the callback endpoint.  State tokens are high-entropy
+  (`secrets.token_urlsafe(32)`) with a 300-second TTL.
+- **Smart-Merge anti-Sybil**: the `process_oauth_identity()` pipeline prevents
+  duplicate account creation by anchoring to verified email addresses.  A user
+  who registers via GitHub and later logs in via Google with the same email
+  gets both providers linked to a single `User` record.
 - WebSocket connection targets `IDP_HOME_WS_URL` (defaults to
   `wss://localhost:9001/`); override with `ws://localhost:9001` for local dev.
   In-cluster the companion service URL is set via environment variable.
@@ -1103,6 +1259,17 @@ If the Relying Party uses OIDC discovery, the `authorization_endpoint` in
 `http://127.0.0.1:8000/openid/.well-known/openid-configuration/` provides
 the canonical URL.
 
+**Symptom:** OAuth callback returns 403 "Invalid or expired OAuth state"
+
+The OAuth state parameter is stored in the session and must match the value
+returned by the provider.  Common causes:
+- Session cookie was not sent (browser blocking third-party cookies)
+- State expired (TTL is 300 seconds)
+- Session middleware is not in `MIDDLEWARE` list
+
+Check that `SESSION_ENGINE` is configured and `django.contrib.sessions` is
+in `INSTALLED_APPS`.
+
 ## Roadmap [L675-694]
 
 ### Short-term Goals [L677-685]
@@ -1111,10 +1278,14 @@ the canonical URL.
   Rust `verify_vp` secondary + emergency bypass safety net (2026-05-28)
 - ✅ **Submodule alignment** — `crates/rust-did` renamed to `crates/did_rust`,
   both copies pinned to same commit, alignment rule documented (2026-05-28)
+- ✅ **Multi-auth identity vault** — UUID PK, email-as-USERNAME_FIELD,
+  `custodial_did` field, `FederatedIdentity` link table, Smart-Merge pipeline
+  (2026-07-18)
+- ✅ **Tier 1 OAuth inbound** — Google/Apple/GitHub initiation + callback
+  views with state validation, back-channel token exchange, profile
+  extraction, and OIDC continuity (2026-07-18)
 - ⬜ Add OIDC `prompt=login` support to force re-authentication
 - ⬜ Add PKCE (S256) support in the direct-callback path
-- ⬜ Wire `managed_login` to hash the password and generate a server-side `did:web`
-- ⬜ Live OAuth provider integration (Google, Apple, GitHub) in Tab 2
 - ⬜ Live passkey (WebAuthn) support in Tab 2
 
 ### Long-term Goals [L685-694]

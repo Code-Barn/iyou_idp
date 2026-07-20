@@ -10,14 +10,14 @@ Reference Implementation to follow: `docs/ecosystem_shared/auth_pkce.py`
 Do NOT implement cleartext client secrets, do NOT use email addresses as database lookup anchors, and ensure all post-auth logic implements the `evaluate_sovereign_admin_posture` routine.
 
 ## 🔒 CRITICAL: Auth Flow Specification Sync Rule
-`AUTH_FLOW_SPECIFICATION.md` at the repo root is the **Single Source of Truth (SSOT)**. Any edit to this file **must** be propagated to both downstream copies in the same commit:
+`docs/AUTH_FLOW_SPECIFICATION.md` is the **Single Source of Truth (SSOT)**. Any edit to this file **must** be propagated to both downstream copies in the same commit:
 1. `docs/ecosystem_shared/AUTH_FLOW_SPECIFICATION.md` (local ecosystem mirror)
 2. `/Users/macuser/CODE_BASE/omni_social/docs/AUTH_FLOW_SPECIFICATION.md` (omni_social repo)
 
 Use `cp` to sync:
 ```bash
-cp AUTH_FLOW_SPECIFICATION.md docs/ecosystem_shared/AUTH_FLOW_SPECIFICATION.md
-cp AUTH_FLOW_SPECIFICATION.md /Users/macuser/CODE_BASE/omni_social/docs/AUTH_FLOW_SPECIFICATION.md
+cp docs/AUTH_FLOW_SPECIFICATION.md docs/ecosystem_shared/AUTH_FLOW_SPECIFICATION.md
+cp docs/AUTH_FLOW_SPECIFICATION.md /Users/macuser/CODE_BASE/omni_social/docs/AUTH_FLOW_SPECIFICATION.md
 ```
 
 ## Project
@@ -41,15 +41,20 @@ iyou_idp/
 │   ├── backend.py            # DIDAuthBackend + evaluate_sovereign_admin_posture
 │   ├── admin_views.py        # DID-based admin login views
 │   ├── views.py              # verify_signature, ChallengeView, LoginPageView, etc.
-│   ├── oidc.py               # OIDC userinfo/id-token hooks
-│   ├── models.py             # User (AbstractBaseUser, username=DID)
+│   ├── views_oauth.py        # Tier 1 OAuth: OAuthInitiateView, OAuthCallbackView
+│   ├── pipeline.py           # Smart-Merge: process_oauth_identity()
+│   ├── oidc.py               # OIDC userinfo/id-token hooks (custodial_did)
+│   ├── models.py             # User (UUIDField PK, custodial_did) + FederatedIdentity
 │   └── urls.py
 ├── config/
-│   └── settings.py           # IDP_* env vars, django-environ
+│   └── settings.py           # IDP_* env vars, OAUTH_* provider config
+├── docs/
+│   ├── IDP_DEVELOPER_GUIDE.md  # Full architecture docs
+│   ├── AUTH_FLOW_SPECIFICATION.md  # SSOT for auth flows
+│   └── ecosystem_shared/     # Shared specs (synced across repos)
 ├── src/iyou_idp/
 │   └── _crypto.abi3.so       # Compiled Rust crypto bridge
-├── crates/did_rust/          # Rust DID verification (git submodule — shared w/ iyou_home)
-└── IDP_DEVELOPER_GUIDE.md    # Full architecture docs
+└── crates/did_rust/          # Rust DID verification (git submodule — shared w/ iyou_home)
 ```
 
 ## Key architecture
@@ -59,11 +64,11 @@ iyou_idp/
 |------|------|--------|
 | 3 | Full Sovereignty | Desktop WebSocket (`iyou-home`) + manual VP paste |
 | 2 | Community Self-Signing | OOB QR-code flow with mobile DID wallet |
-| 1 | Managed Convenience | OAuth providers + email/password (scaffold) |
+| 1 | Managed Convenience | OAuth providers (Google, Apple, GitHub) — server-managed `did:web` |
 
 **Auth flow:** `POST /auth/challenge/` → user signs challenge → `POST /auth/verify/` with VP → three-tier verification (Python Ed25519 → Rust `verify_vp` → emergency bypass) → `login()` → OIDC redirect.
 
-**User model:** `username` stores the DID string (e.g. `did:key:z6Mk...`), `USERNAME_FIELD = 'username'`. `is_staff`/`is_superuser` control Django admin access.
+**User model:** `UUIDField` PK, `email` as `USERNAME_FIELD`, `custodial_did` stores `did:web:iyou.me:user:{uuid}`, `FederatedIdentity` links OAuth providers. `is_staff`/`is_superuser` control Django admin access.
 
 **Sovereign admin elevation:** Set `ADMIN_DID` env var to a `did:key:` multibase URI. `evaluate_sovereign_admin_posture()` runs after every auth ingress and auto-promotes the matching user to staff+superuser.
 
