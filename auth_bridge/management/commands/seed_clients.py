@@ -204,6 +204,20 @@ SATELLITES = [
             "http://127.0.0.1:8014/",
         ],
     },
+    {
+        "client_id": "iyou-walk-satellite-client",
+        "name": "Walk Navigation Engine",
+        "redirects": [
+            "https://walk.iyou.me/oidc/callback/",
+            "http://127.0.0.1:8015/oidc/callback/",
+            "http://localhost:8015/oidc/callback/",
+            LOCAL_DEV_FALLBACK,
+        ],
+        "post_logout_redirects": [
+            "https://walk.iyou.me/",
+            "http://127.0.0.1:8015/",
+        ],
+    },
 ]
 
 
