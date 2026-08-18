@@ -22,10 +22,9 @@ from django.utils import timezone
 
 
 class SovereignUserManager(BaseUserManager):
-    def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError("An email address is required for user creation.")
-        email = self.normalize_email(email)
+    def create_user(self, email=None, password=None, **extra_fields):
+        if email:
+            email = self.normalize_email(email)
 
         user_uuid = uuid.uuid4()
         extra_fields.setdefault("custodial_did", f"did:web:iyou.me:user:{user_uuid}")
@@ -40,6 +39,8 @@ class SovereignUserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("Superusers must have an email address.")
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("account_tier", "managed_premium")
@@ -54,7 +55,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True, db_index=True)
+    email = models.EmailField(unique=True, db_index=True, blank=True, null=True)
     custodial_did = models.CharField(max_length=255, unique=True, db_index=True)
     account_tier = models.CharField(max_length=20, choices=ACCOUNT_TIERS, default="managed_free")
 
