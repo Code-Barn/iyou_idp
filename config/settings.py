@@ -91,15 +91,37 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# Production: explicit CORS whitelist from environment.
-# For local dev, set IDP_CORS_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://127.0.0.1:8001
-CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = env.bool("IDP_CORS_ALLOW_ALL_ORIGINS", default=False)
 CORS_ALLOWED_ORIGINS = env.list("IDP_CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.iyou\.me$",
+    r"^http://127\.0\.0\.1:\d+$",
+]
 
-# Critical for the browser to allow OIDC redirect/handshake on insecure (HTTP) origins
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
-CSRF_TRUSTED_ORIGINS = env.list("IDP_CSRF_TRUSTED_ORIGINS", default=["http://iyou-idp.identity.svc.cluster.local:8000"])
+CSRF_TRUSTED_ORIGINS = env.list(
+    "IDP_CSRF_TRUSTED_ORIGINS",
+    default=[
+        "http://iyou-idp.identity.svc.cluster.local:8000",
+        "https://*.iyou.me",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8001",
+        "http://127.0.0.1:8002",
+        "http://127.0.0.1:8003",
+        "http://127.0.0.1:8004",
+        "http://127.0.0.1:8005",
+        "http://127.0.0.1:8006",
+        "http://127.0.0.1:8007",
+        "http://127.0.0.1:8008",
+        "http://127.0.0.1:8009",
+        "http://127.0.0.1:8010",
+        "http://127.0.0.1:8011",
+        "http://127.0.0.1:8012",
+        "http://127.0.0.1:8013",
+        "http://127.0.0.1:8014",
+    ],
+)
 
 ROOT_URLCONF = "config.urls"
 
