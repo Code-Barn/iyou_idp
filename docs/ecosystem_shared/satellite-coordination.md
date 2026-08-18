@@ -1,7 +1,7 @@
 # Satellite Coordination Index
 
 **Hub:** `omni_social`
-**Last synced:** 2026-07-14
+**Last synced:** 2026-08-14
 
 Each satellite repo has a `TODO.md` in its root, orchestrated from this central hub.
 Edit tasks here first, then propagate to the satellite repos via their agents.
@@ -10,7 +10,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ## TODO Registry
 
-### Ecosystem Bar Apps (11-App Absolute Roster)
+### Ecosystem Bar Apps (15-App Ecosystem Roster)
 
 | App | Repo | TODO.md | Auth Status | Key Items |
 |:---|:---|:---|:---|:---|
@@ -25,6 +25,9 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | iyou_talk | `~/CODE_BASE/iyou_talk/` | [TODO.md](../../../iyou_talk/TODO.md) | ✅ Hardened / Operational | 4-rule alignment complete. |
 | iyou_clar | `~/CODE_BASE/iyou_clar/` | [TODO.md](../../../iyou_clar/TODO.md) | ✅ Hardened / Operational | Zero-secret backend. Proxy header, state relay, dirty-flag — all verified. |
 | iyou_play | `~/CODE_BASE/iyou_play/` | [TODO.md](../../../iyou_play/TODO.md) | ✅ Hardened / Operational | Reference implementation. Standard mozilla_django_oidc defaults. |
+| iyou_blog | `~/CODE_BASE/iyou_blog/` | [TODO.md](../../../iyou_blog/TODO.md) | 🟡 Onboarding | Deep Django layout. CDN tailwind (Rule 7), secret present (Rule 2), generic OIDC backend (needs PKCE). |
+| iyou_draw | `~/CODE_BASE/iyou_draw/` | [TODO.md](../../../iyou_draw/TODO.md) | 🟡 Onboarding (target: PKCE Secretless) | Visual Creation Studio. Color: `fuchsia`. Client ID: `iyou-draw-satellite-client`. Dev port: 8011. |
+| iyou_life | `~/CODE_BASE/iyou_life/` | [TODO.md](../../../iyou_life/TODO.md) | 🟢 Operational (PKCE Secretless) | Life Stories & Legacy. Color: `sky`. Client ID: `iyou-life-satellite-client`. Dev port: 8013. Cookie namespaces: `life_sessionid`, `life_csrftoken`. |
 
 ### Supporting Projects (Not in Ecosystem Bar)
 
@@ -43,16 +46,16 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 | Ticket | Target Repo | Status | Notes |
 |:---|:---|:---|:---|
-| Rule 1 — Proxy Header | poly, name, hive, ride, dctech, safe, talk, clar | Open | Add `SECURE_PROXY_SSL_HEADER` to settings.py |
-| Rule 2 — Public Client | poly, name, hive, ride, dctech, safe, talk, clar | Open | Backend must inherit `auth.Backend`. Strip `OIDC_RP_CLIENT_SECRET`. |
-| Rule 3 — State Relay | poly, name, hive, ride, dctech, safe, talk, clar | Open | Callback must override `get_backend_kwargs()`, not `get()` |
-| Rule 4 — Profile Anchoring | poly, hive, ride, safe, talk, clar | Open | `get_username()` pinned to `sub` claim. No email fallback. |
-| Scope Alignment | poly, name, hive, ride, dctech, safe, talk, clar | Open | `OIDC_RP_SCOPES = "openid profile email"` — matches IDP default. Not `"openid"` alone. |
-| Privilege Evaluation | poly, name, hive, ride, safe, talk, clar | Open | `settings.ADMIN_DID` (not `os.environ.get`). Uses `save(update_fields=[...])`. |
-| Dirty-FFlag Pattern | poly, name, hive, ride, dctech, safe, talk, clar | Open | `user.save()` only when state changes |
-| Exception Guard | poly, name, hive, ride, dctech, talk, clar | Open | `try/except requests.RequestException` on HTTP calls |
-| Secret Stripping | poly, name, hive, ride, dctech, safe, talk, clar | Open | Remove `OIDC_RP_CLIENT_SECRET` from container manifests |
-| Rule 5 — Logout View | poly, name, hive, ride, dctech, safe, talk, clar | Open | Add `path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout")` to config/urls.py |
+| Rule 1 — Proxy Header | poly, name, hive, ride, dctech, safe, talk, clar, blog, draw | Open | Add `SECURE_PROXY_SSL_HEADER` to settings.py |
+| Rule 2 — Public Client | poly, name, hive, ride, dctech, safe, talk, clar, blog, draw | Open | Backend must inherit `auth.Backend`. Strip `OIDC_RP_CLIENT_SECRET`. |
+| Rule 3 — State Relay | poly, name, hive, ride, dctech, safe, talk, clar, blog, draw | Open | Callback must override `get_backend_kwargs()`, not `get()` |
+| Rule 4 — Profile Anchoring | poly, hive, ride, safe, talk, clar, blog, draw | Open | `get_username()` pinned to `sub` claim. No email fallback. |
+| Scope Alignment | poly, name, hive, ride, dctech, safe, talk, clar, blog, draw | Open | `OIDC_RP_SCOPES = "openid profile email"` — matches IDP default. Not `"openid"` alone. |
+| Privilege Evaluation | poly, name, hive, ride, safe, talk, clar, blog, draw | Open | `settings.ADMIN_DID` (not `os.environ.get`). Uses `save(update_fields=[...])`. |
+| Dirty-FFlag Pattern | poly, name, hive, ride, dctech, safe, talk, clar, blog, draw | Open | `user.save()` only when state changes |
+| Exception Guard | poly, name, hive, ride, dctech, talk, clar, blog, draw | Open | `try/except requests.RequestException` on HTTP calls |
+| Secret Stripping | poly, name, hive, ride, dctech, safe, talk, clar, blog, draw | Open | Remove `OIDC_RP_CLIENT_SECRET` from container manifests |
+| Rule 5 — Logout View | poly, name, hive, ride, dctech, safe, talk, clar, blog, draw | Open | Add `path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout")` to config/urls.py |
 | Rule 6 — No Loopbacks | all satellites | Open | No `ws://127.0.0.1:9001` or `http://127.0.0.1` in templates. Use `wss://home.iyou.me:9001`. |
 | Rule 7 — No Runtime CSS Compilers | all satellites | Open | Remove `cdn.tailwindcss.com` scripts. Use pre-compiled static CSS. |
 | Rule 8 — Local Asset Vendoring | all satellites | Open | Vendor converse.js, bootstrap, icon fonts locally. No hotlinked CDNs (unpkg, cdnjs). |
@@ -86,5 +89,5 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ## Sync Status
 
-- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 15 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `satellite-coordination.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
+- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 17 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `satellite-coordination.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
 - **Last sync:** 2026-07-16
