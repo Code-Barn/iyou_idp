@@ -21,7 +21,8 @@ from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from django.core.cache import cache
+from django.core.cache import cache as default_cache
+from django.core.cache.backends.locmem import LocMemCache
 from django.contrib.auth import login
 from django.contrib.auth import logout as django_logout
 from django.shortcuts import render, redirect
@@ -53,6 +54,61 @@ from oidc_provider.lib.utils.common import redirect as oidc_redirect
 from oidc_provider.compat import get_attr_or_callable
 
 logger = logging.getLogger(__name__)
+
+_locmem_fallback = LocMemCache("auth_bridge_locmem_fallback", {})
+
+
+class ResilientCache:
+    """
+    Cache wrapper that delegates to Django's configured default cache (e.g., Redis)
+    and gracefully falls back to an in-memory LocMemCache if Redis is unreachable
+    during local development (settings.DEBUG is True).
+    """
+
+    def __init__(self, primary_cache=default_cache, fallback_cache=None):
+        self._primary = primary_cache
+        self._fallback = fallback_cache or _locmem_fallback
+
+    def get(self, key, default=None):
+        try:
+            val = self._primary.get(key, default)
+            if val is not None:
+                return val
+            if getattr(django_settings, "DEBUG", False):
+                return self._fallback.get(key, default)
+            return default
+        except Exception as e:
+            if getattr(django_settings, "DEBUG", False):
+                logger.warning("Primary cache.get failed (%s); using in-memory fallback", e)
+                return self._fallback.get(key, default)
+            raise
+
+    def set(self, key, value, timeout=300):
+        try:
+            self._primary.set(key, value, timeout=timeout)
+            if getattr(django_settings, "DEBUG", False):
+                self._fallback.set(key, value, timeout=timeout)
+        except Exception as e:
+            if getattr(django_settings, "DEBUG", False):
+                logger.warning("Primary cache.set failed (%s); using in-memory fallback", e)
+                self._fallback.set(key, value, timeout=timeout)
+            else:
+                raise
+
+    def delete(self, key):
+        try:
+            self._primary.delete(key)
+            if getattr(django_settings, "DEBUG", False):
+                self._fallback.delete(key)
+        except Exception as e:
+            if getattr(django_settings, "DEBUG", False):
+                logger.warning("Primary cache.delete failed (%s); using in-memory fallback", e)
+                self._fallback.delete(key)
+            else:
+                raise
+
+
+cache = ResilientCache()
 
 # Where to send the user after authentication when no explicit next_url is given.
 DEFAULT_NEXT_URL = django_settings.IDP_WUN_URL

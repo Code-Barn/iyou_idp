@@ -1,7 +1,7 @@
 # Satellite Coordination Index
 
 **Hub:** `omni_social`
-**Last synced:** 2026-08-14
+**Last synced:** 2026-08-19
 
 Each satellite repo has a `TODO.md` in its root, orchestrated from this central hub.
 Edit tasks here first, then propagate to the satellite repos via their agents.
@@ -10,7 +10,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ## TODO Registry
 
-### Ecosystem Bar Apps (16-App Ecosystem Roster)
+### Ecosystem Bar Apps (19-App Ecosystem Roster)
 
 | App | Repo | TODO.md | Auth Status | Key Items |
 |:---|:---|:---|:---|:---|
@@ -26,10 +26,13 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | iyou_clar | `~/CODE_BASE/iyou_clar/` | [TODO.md](../../../iyou_clar/TODO.md) | ✅ Hardened / Operational | Zero-secret backend. Proxy header, state relay, dirty-flag — all verified. |
 | iyou_play | `~/CODE_BASE/iyou_play/` | [TODO.md](../../../iyou_play/TODO.md) | ✅ Hardened / Operational | Reference implementation. Standard mozilla_django_oidc defaults. |
 | iyou_blog | `~/CODE_BASE/iyou_blog/` | [TODO.md](../../../iyou_blog/TODO.md) | 🟡 Onboarding | Deep Django layout. CDN tailwind (Rule 7), secret present (Rule 2), generic OIDC backend (needs PKCE). |
+| iyou_help | `~/CODE_BASE/iyou_help/` | [TODO.md](../../../iyou_help/TODO.md) | ✅ Operational | Help & Support. Color: `red`. |
 | iyou_draw | `~/CODE_BASE/iyou_draw/` | [TODO.md](../../../iyou_draw/TODO.md) | 🟡 Onboarding (target: PKCE Secretless) | Visual Creation Studio. Color: `fuchsia`. Client ID: `iyou-draw-satellite-client`. Dev port: 8011. |
 | iyou_life | `~/CODE_BASE/iyou_life/` | [TODO.md](../../../iyou_life/TODO.md) | 🟢 Operational (PKCE Secretless) | Life Stories & Legacy. Color: `sky`. Client ID: `iyou-life-satellite-client`. Dev port: 8013. Cookie namespaces: `life_sessionid`, `life_csrftoken`. |
-| iyou_help | `~/CODE_BASE/iyou_help/` | [TODO.md](../../../iyou_help/TODO.md) | ✅ Operational | Help & Support. |
 | iyou_walk | `~/CODE_BASE/iyou_walk/` | [TODO.md](../../../iyou_walk/TODO.md) | 🟡 Onboarding | Pedestrian Mesh & Dog Walking Coordination. Color: `green`. Dev port: 8015. Domain: `walk.iyou.me`. |
+| iyou_stay | `~/CODE_BASE/iyou_stay/` | [TODO.md](../../../iyou_stay/TODO.md) | 🟡 Onboarding | Hospitality & Accommodation. Color: `yellow`. |
+| iyou_dev | `~/CODE_BASE/iyou_dev/` | [TODO.md](../../../iyou_dev/TODO.md) | 🟡 Onboarding | Developer Portal & API Docs. Color: `zinc`. |
+| iyou_spot | `~/CODE_BASE/iyou_spot/` | [TODO.md](../../../iyou_spot/TODO.md) | 🟡 Onboarding | Local Discovery & Recommendations. Color: `pink`. |
 
 ### Supporting Projects (Not in Ecosystem Bar)
 

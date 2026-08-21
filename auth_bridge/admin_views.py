@@ -20,7 +20,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_protect
-from django.core.cache import cache
+from auth_bridge.views import cache
 from django.http import JsonResponse
 from auth_bridge.models import User
 from auth_bridge.backend import evaluate_sovereign_admin_posture

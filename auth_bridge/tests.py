@@ -523,3 +523,83 @@ class PkceEnforcementTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         body = resp.json()
         self.assertEqual(body["error"], "invalid_grant")
+
+
+class SatelliteRosterTest(TestCase):
+    def test_eighteen_satellites_seeded(self):
+        from django.core.management import call_command
+        from oidc_provider.models import Client as OIDCClient
+
+        call_command("seed_clients")
+        self.assertEqual(OIDCClient.objects.count(), 18)
+
+        help_client = OIDCClient.objects.get(client_id="iyou-help-satellite-client")
+        self.assertEqual(help_client.name, "iYou Help (Mutual Aid)")
+        self.assertIn("https://help.iyou.me/oidc/callback/", help_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8012/oidc/callback/", help_client.redirect_uris)
+
+        stay_client = OIDCClient.objects.get(client_id="iyou-stay-satellite-client")
+        self.assertEqual(stay_client.name, "iYou Stay (Hospitality)")
+        self.assertIn("https://stay.iyou.me/oidc/callback/", stay_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8017/oidc/callback/", stay_client.redirect_uris)
+
+        spot_client = OIDCClient.objects.get(client_id="iyou-spot-satellite-client")
+        self.assertEqual(spot_client.name, "iYou Spot (Muster'd Ezine)")
+        self.assertIn("https://spot.iyou.me/oidc/callback/", spot_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8019/oidc/callback/", spot_client.redirect_uris)
+
+
+class CacheFallbackTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.private_key = ed25519.Ed25519PrivateKey.generate()
+        pub_bytes = self.private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        self.did = _make_did(pub_bytes)
+
+    def _master_vp(self, challenge: str) -> dict:
+        return _sign(
+            {
+                "@context": ["https://www.w3.org/2018/credentials/v1"],
+                "type": ["VerifiablePresentation"],
+                "holder": self.did,
+                "challenge": challenge,
+                "verifiableCredential": [],
+                "issuer": self.did,
+            },
+            self.private_key,
+        )
+
+    def test_challenge_and_verify_with_redis_failure(self):
+        """When default Redis cache raises ConnectionError, LocMemCache fallback enables login."""
+        from unittest.mock import patch
+        import redis
+        from auth_bridge.views import cache as views_cache
+
+        with self.settings(DEBUG=True):
+            with patch.object(views_cache._primary, "set", side_effect=redis.exceptions.ConnectionError("Redis down")):
+                with patch.object(views_cache._primary, "get", side_effect=redis.exceptions.ConnectionError("Redis down")):
+                    with patch.object(views_cache._primary, "delete", side_effect=redis.exceptions.ConnectionError("Redis down")):
+                        # 1. Challenge generation
+                        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+                        self.assertEqual(resp.status_code, 200)
+                        data = resp.json()
+                        self.assertTrue(data.get("stored"))
+                        challenge = data["challenge"]
+
+                        # 2. Verify signature
+                        vp = self._master_vp(challenge)
+                        verify_resp = self.client.post(
+                            reverse("auth_bridge:verify_signature"),
+                            data=json.dumps({
+                                "verifiable_presentation": vp,
+                                "challenge": challenge,
+                            }),
+                            content_type="application/json",
+                        )
+                        self.assertEqual(verify_resp.status_code, 200)
+                        verify_data = verify_resp.json()
+                        self.assertTrue(verify_data["success"])
+                        self.assertEqual(verify_data["user"]["did"], self.did)

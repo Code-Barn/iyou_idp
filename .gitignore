@@ -32,6 +32,10 @@ local_settings.py
 .DS_Store
 Thumbs.db
 
+# Redis / DB
+dump.rdb
+*.rdb
+
 # Environment
 .env
 .env.local
