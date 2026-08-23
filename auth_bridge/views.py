@@ -359,9 +359,22 @@ def verify_signature(request):
                         direct_valid = True
 
                 # -- Emergency bypass (challenge-nonce only, no signature check) --
+                # SEC-001: gated behind explicit ALLOW_EMERGENCY_BYPASS opt-in.
+                # Without it, a matching Redis nonce is never sufficient.
                 if not direct_valid:
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
+                    if not getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False):
+                        return JsonResponse(
+                            {"valid": False, "error": "Signature verification failed"},
+                            status=401,
+                        )
+                    logger.critical(
+                        "[SECURITY AUDIT] Emergency bypass used by IP: %s, DID: %s, Challenge: %s",
+                        remote_ip,
+                        holder_did,
+                        challenge,
+                    )
                     cached_raw = cache.get(challenge)
                     if cached_raw is not None:
                         print("SECURITY AUDIT BYPASS: challenge", challenge[:16], "DID", holder_did, flush=True)
@@ -629,9 +642,22 @@ def mobile_verify_signature(request):
                             pass
 
                 # -- Emergency bypass (challenge-nonce only, no signature check) --
+                # SEC-001: gated behind explicit ALLOW_EMERGENCY_BYPASS opt-in.
+                # Without it, a matching Redis nonce is never sufficient.
                 if not direct_valid:
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Mobile bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
+                    if not getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False):
+                        return JsonResponse(
+                            {"valid": False, "error": "Signature verification failed"},
+                            status=401,
+                        )
+                    logger.critical(
+                        "[SECURITY AUDIT] Emergency bypass used by IP: %s, DID: %s, Challenge: %s",
+                        remote_ip,
+                        holder_did,
+                        challenge,
+                    )
                     bypass_raw = cache.get(challenge)
                     if bypass_raw is not None:
                         print("SECURITY AUDIT BYPASS (MOBILE): challenge", challenge[:16], "DID", holder_did, flush=True)

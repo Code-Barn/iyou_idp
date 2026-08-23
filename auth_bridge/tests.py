@@ -525,6 +525,98 @@ class PkceEnforcementTest(TestCase):
         self.assertEqual(body["error"], "invalid_grant")
 
 
+class EmergencyBypassLockdownTest(TestCase):
+    """SEC-001: Tier 3 nonce fallback requires explicit ALLOW_EMERGENCY_BYPASS opt-in."""
+
+    def setUp(self):
+        self.client = Client()
+        self.private_key = ed25519.Ed25519PrivateKey.generate()
+        pub_bytes = self.private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        self.did = _make_did(pub_bytes)
+
+    def _tampered_master_vp(self, challenge: str) -> dict:
+        """Master VP whose signature fails cryptographic verification."""
+        vp = _sign(
+            {
+                "@context": ["https://www.w3.org/2018/credentials/v1"],
+                "type": ["VerifiablePresentation"],
+                "holder": self.did,
+                "challenge": challenge,
+                "verifiableCredential": [],
+                "issuer": self.did,
+            },
+            self.private_key,
+        )
+        vp["proof"]["signatureValue"] = "00" * 64
+        return vp
+
+    def _submit_tampered_vp(self, challenge: str):
+        return self.client.post(
+            reverse("auth_bridge:verify_signature"),
+            data=json.dumps({
+                "verifiable_presentation": self._tampered_master_vp(challenge),
+                "challenge": challenge,
+            }),
+            content_type="application/json",
+        )
+
+    def test_invalid_signature_rejected_401_when_bypass_disabled(self):
+        """Default posture: matching nonce + invalid signature must yield 401."""
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        challenge = resp.json()["challenge"]
+
+        resp = self._submit_tampered_vp(challenge)
+
+        self.assertEqual(resp.status_code, 401)
+        body = resp.json()
+        self.assertFalse(body["valid"])
+        self.assertEqual(body["error"], "Signature verification failed")
+        # No session may be created for an unverified signature.
+        user = User.objects.filter(custodial_did=self.did).first()
+        self.assertIsNone(user)
+
+    def test_bypass_succeeds_only_when_explicitly_enabled(self):
+        """Bypass path activates solely under mocked ALLOW_EMERGENCY_BYPASS=True."""
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        challenge = resp.json()["challenge"]
+
+        with self.settings(ALLOW_EMERGENCY_BYPASS=True):
+            with self.assertLogs("auth_bridge.views", level="CRITICAL") as captured:
+                resp = self._submit_tampered_vp(challenge)
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["user"]["did"], self.did)
+        self.assertTrue(body["user"]["is_authenticated"])
+        audit_entries = [o for o in captured.output if "[SECURITY AUDIT] Emergency bypass used" in o]
+        self.assertEqual(len(audit_entries), 1)
+        self.assertIn(self.did, audit_entries[0])
+        self.assertIn(challenge, audit_entries[0])
+
+    def test_mobile_invalid_signature_rejected_401_when_bypass_disabled(self):
+        """Mobile endpoint shares the lockdown: invalid signature → 401."""
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        challenge = resp.json()["challenge"]
+
+        resp = self.client.post(
+            reverse("auth_bridge:mobile_verify"),
+            data=json.dumps({
+                "verifiable_presentation": self._tampered_master_vp(challenge),
+                "challenge": challenge,
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(resp.status_code, 401)
+        body = resp.json()
+        self.assertFalse(body["valid"])
+        self.assertEqual(body["error"], "Signature verification failed")
+
+
 class SatelliteRosterTest(TestCase):
     def test_eighteen_satellites_seeded(self):
         from django.core.management import call_command

@@ -61,6 +61,10 @@ IDP_HOME_WS_URL = env("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/")
 # Master admin DID for automatic superuser elevation
 ADMIN_DID = env("ADMIN_DID", default="did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV")
 
+# SEC-001: Emergency Tier 3 bypass (challenge-nonce-only auth on failed signature
+# verification). Must be explicitly enabled; defaults to secure rejection.
+ALLOW_EMERGENCY_BYPASS = env.bool("ALLOW_EMERGENCY_BYPASS", default=False)
+
 ALLOWED_HOSTS = env.list("IDP_ALLOWED_HOSTS", default=["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"])
 
 
