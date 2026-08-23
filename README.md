@@ -65,3 +65,16 @@ Register an OIDC client in the Django admin with these values:
 | Response Types | `code` |
 | Require Consent | ☐ (unchecked) |
 | Reuse Consent | ☑ (checked) |
+
+---
+
+## did_rust Parity (SEC-003)
+
+`crates/did_rust` is a git submodule of the shared crypto library. Its pin must always match what `iyou_home` and `iyou_mobile` consume, otherwise VC serialization and OIDC handshakes silently diverge.
+
+```bash
+git submodule update --remote --merge crates/did_rust   # sync to did_rust main
+bash ../did_rust/scripts/check_did_submodules.sh        # verify parity (exit 0)
+```
+
+Invariants and troubleshooting: `../did_rust/docs/strategy/SECURITY_HARDENING.md`.
