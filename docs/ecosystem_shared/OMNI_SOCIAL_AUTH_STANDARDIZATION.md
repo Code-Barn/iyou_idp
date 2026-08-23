@@ -450,6 +450,8 @@ The iyou_ ecosystem uses a WebSocket-based signature broker (`home.iyou.me:9001`
 
 **Applies to:** All frontend JavaScript and HTML templates that initiate DID signature verification.
 
+**Cross-reference:** The full bridge wire contract — pre-gate queries (`get_profile`, `RESOLVE_PEER_ALIASES`), user-gated signing flows, and the `POLY` wire normalization register — is specified in **`PROJECT_ZERO_SPEC.md` §5**.
+
 ---
 
 ### Rule 7: Elimination of Runtime CSS Compilers

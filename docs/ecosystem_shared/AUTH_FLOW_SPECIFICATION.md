@@ -219,6 +219,11 @@ Returns standard OIDC claims plus custom DID claims (see Section 7).
 6. Server verifies VP → creates User → evaluates admin posture → login → builds OIDC code
 7. Returns `{redirect_url}` → JS navigates inline via `window.location.href`
 
+> **Persona note (Project Zero):** the signing key is always the **Level 1 Public Persona**
+> (`derivation_index = 1`, `profile_id: "primary"`). The Level 0 Anchor is air-gapped from
+> bridge signing and can never be targeted by external `sign` frames — see
+> `PROJECT_ZERO_SPEC.md` §3 and §5.1.
+
 ### 5.2 Tier 2 — QR Code OOB (Community Self-Signing)
 
 ```

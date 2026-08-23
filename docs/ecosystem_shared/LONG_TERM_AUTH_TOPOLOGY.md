@@ -1,7 +1,7 @@
 # Long-Term Authentication Topology
 
 **Hub:** `omni_social`
-**Last updated:** 2026-07-19
+**Last updated:** 2026-08-22
 
 ---
 
@@ -54,9 +54,11 @@ This document defines the long-term sovereign identity network architecture, uni
 │                         ▼                               │
 │  ┌───────────────────────────────────────────────────┐  │
 │  │  Rust Core (Backend)                              │  │
+│  │  - Project Zero vault hierarchy (L0 Anchor,       │  │
+│  │    L1 Public Persona, L2+ Burners)                │  │
+│  │  - Contact Enclave (contacts.json trust tiers)    │  │
 │  │  - Local key vault (OS keychain integration)      │  │
-│  │  - Loopback HTTP server (127.0.0.1:9001)          │  │
-│  │  - WebSocket push channel for session sync        │  │
+│  │  - WebSocket bridge + resolver (127.0.0.1:9001)   │  │
 │  │  - did_rust native library bindings               │  │
 │  └───────────────────────────────────────────────────┘  │
 │                         │                               │
@@ -77,6 +79,29 @@ This document defines the long-term sovereign identity network architecture, uni
 - Local session persistence with encrypted at-rest storage
 - Certificate pinning for `wss://home.iyou.me:9001` (SEC-006)
 - Offline-capable auth fallback when `iyou_idp` is unreachable (SEC-004)
+
+#### Project Zero Identity Derivation Hierarchy
+
+The enclave derives all personas deterministically from a single 32-byte root seed (`SHA-256(root_seed || LE(derivation_index))` for Ed25519; `SHA-256("secp256k1-nostr" || root_seed || LE(derivation_index))` for Nostr secp256k1):
+
+| Level | Index | profile_id | Role |
+|:---|:---|:---|:---|
+| **Level 0 — Anchor** | 0 | `"anchor"` | Immutable root, air-gapped from bridge signing and public pickers; private P2P trust circles |
+| **Level 1 — Public Persona** | 1 | `"primary"` | Default active signer for OIDC challenges, Nostr events, and bridge handshakes |
+| **Level 2+ — Burners** | 2..n | custom | Disposable contextual personas, freely created/deleted |
+
+The full tiered derivation model, trust tiers (`Level0` Inner Circle / `Level0_5` Trusted Alliance / `Level1` Peer), selective disclosure cards, and the port 9001 wire contract are specified canonically in **`PROJECT_ZERO_SPEC.md`**.
+
+#### Client Trust Lens Pattern
+
+Satellite apps consume the bridge as thin trust renderers:
+
+1. On feed render, collect unknown Nostr pubkeys / DIDs from DOM nodes.
+2. Send a single pre-gate `RESOLVE_PEER_ALIASES` frame (≤256 keys) to `wss://home.iyou.me:9001`.
+3. Project the minimal `{nickname, trust_level, badge}` response into local-only badges.
+4. Alias caches are in-memory only — never persisted client-side.
+
+Reference implementation: `iyou_wun/static/js/{trust_lens,bridge_client}.js`.
 
 ---
 
