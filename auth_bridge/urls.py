@@ -16,6 +16,12 @@
 from django.urls import path
 from .views import ChallengeView, verify_signature, LoginPageView, managed_login, mobile_verify_signature, check_challenge_status, GlobalLogoutView
 from .views_oauth import OAuthInitiateView, OAuthCallbackView
+from .views_passkeys import (
+    passkey_register_begin,
+    passkey_register_complete,
+    passkey_authenticate_begin,
+    passkey_authenticate_complete,
+)
 from .admin_views import custom_admin_login, custom_admin_verify, custom_admin_dashboard
 
 app_name = 'auth_bridge'
@@ -35,4 +41,9 @@ urlpatterns = [
     path('logout/', GlobalLogoutView.as_view(), name='global_logout'),
     path('oauth/initiate/<str:provider>/', OAuthInitiateView.as_view(), name='oauth_initiate'),
     path('oauth/callback/<str:provider>/', OAuthCallbackView.as_view(), name='oauth_callback'),
+
+    path('passkeys/register/begin/',     passkey_register_begin,     name='passkey_register_begin'),
+    path('passkeys/register/complete/',  passkey_register_complete,  name='passkey_register_complete'),
+    path('passkeys/authenticate/begin/', passkey_authenticate_begin, name='passkey_authenticate_begin'),
+    path('passkeys/authenticate/complete/', passkey_authenticate_complete, name='passkey_authenticate_complete'),
 ]

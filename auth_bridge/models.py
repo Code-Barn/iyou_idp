@@ -58,6 +58,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True, db_index=True, blank=True, null=True)
     custodial_did = models.CharField(max_length=255, unique=True, db_index=True)
     account_tier = models.CharField(max_length=20, choices=ACCOUNT_TIERS, default="managed_free")
+    is_sovereign = models.BooleanField(default=False)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -94,6 +95,24 @@ class FederatedIdentity(models.Model):
 
     def __str__(self):
         return f"{self.provider.upper()} link -> {self.user.email}"
+
+
+class PasskeyCredential(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="passkeys",
+    )
+    credential_id = models.BinaryField(unique=True)
+    public_key_cose = models.BinaryField()
+    sign_count = models.PositiveIntegerField(default=0)
+    transports = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Passkey({bytes(self.credential_id).hex()[:16]}… -> {self.user.custodial_did})"
 
 
 class SovereignInfrastructureLease(models.Model):

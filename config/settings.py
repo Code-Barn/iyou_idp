@@ -61,6 +61,11 @@ IDP_HOME_WS_URL = env("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/")
 # Master admin DID for automatic superuser elevation
 ADMIN_DID = env("ADMIN_DID", default="did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV")
 
+# HashiCorp Vault — custody of Ed25519 managed-identity key material
+IDP_VAULT_ADDR = env("IDP_VAULT_ADDR", default="http://127.0.0.1:8200")
+IDP_VAULT_TOKEN = env("IDP_VAULT_TOKEN", default="")
+IDP_VAULT_KV_MOUNT = env("IDP_VAULT_KV_MOUNT", default="secret")
+
 # SEC-001: Emergency Tier 3 bypass (challenge-nonce-only auth on failed signature
 # verification). Must be explicitly enabled; defaults to secure rejection.
 ALLOW_EMERGENCY_BYPASS = env.bool("ALLOW_EMERGENCY_BYPASS", default=False)

@@ -8,13 +8,16 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "base58>=2.1.1",
+    "cryptography>=47.0.0",
     "django>=5.2.13",
     "django-cors-headers>=4.9.0",
     "django-environ>=0.12.0",
     "django-oauth-toolkit>=3.2.0",
     "django-oidc-provider>=0.9.0",
     "django-redis>=5.2.0",
+    "fido2>=2.2.1",
     "gunicorn>=23.0.0",
+    "hvac>=2.4.0",
     "psycopg2-binary>=2.9.10",
     "redis>=5.0.0",
     "whitenoise>=6.9.0",

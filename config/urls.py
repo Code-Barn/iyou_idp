@@ -22,6 +22,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     # auth/ must come before openid/ to avoid any routing conflict
     path('auth/', include('auth_bridge.urls')),
+    # Identity Graduation protocol (export + confirm) under the canonical API prefix
+    path('api/v1/identity/', include('auth_bridge.urls_api')),
     # Intercept the token endpoint before the library's catch-all to enforce PKCE
     path('openid/token/', PkceTokenView.as_view(), name='pkce_token'),
     # Intercept the authorize endpoint to bypass consent for trusted clients

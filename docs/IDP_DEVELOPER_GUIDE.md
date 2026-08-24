@@ -146,7 +146,8 @@ iyou_idp/
 │   │   └── img/
 │   │       └── Tux.svg                    # Linux penguin icon
 │   ├── migrations/
-│   │   └── 0001_initial_with_multi_auth.py  # UUID PK, User, FederatedIdentity
+│   │   ├── 0001_initial_with_multi_auth.py  # UUID PK, User, FederatedIdentity
+│   │   └── 0004_user_is_sovereign_passkeycredential.py  # is_sovereign flag + PasskeyCredential
 │   ├── __init__.py
 │   ├── admin.py
 │   ├── admin_views.py              # DID-based admin login views
@@ -155,11 +156,19 @@ iyou_idp/
 │   ├── models.py                   # User (UUIDField PK) + FederatedIdentity
 │   ├── oidc.py                     # OIDC userinfo/id-token hooks (custodial_did)
 │   ├── pipeline.py                 # Smart-Merge: process_oauth_identity()
-│   ├── tests.py                    # Integration tests (13/13)
-│   ├── urls.py                     # Auth + OAuth routes
+│   ├── passkeys.py                 # WebAuthn engine: Fido2Server wrapper, option serialization
+│   ├── vault_client.py             # HashiCorp Vault KV v2 wrapper (identity key custody)
+│   ├── views_graduation.py         # Identity Graduation: graduate_export, graduate_confirm
+│   ├── views_passkeys.py           # Passkey ceremony endpoints (register/authenticate)
+│   ├── tests/                      # Test package
+│   │   ├── __init__.py             # Legacy integration tests
+│   │   ├── test_graduation.py      # Graduation protocol tests (14)
+│   │   └── test_passkeys.py        # Passkey ceremony tests (10)
+│   ├── urls.py                     # Auth + OAuth + passkey routes
+│   ├── urls_api.py                 # /api/v1/identity/ graduate routes
 │   ├── views.py                    # verify_signature, ChallengeView, LoginPageView,
 │   │                               # mobile_verify_signature, check_challenge_status,
-│   │                               # managed_login, _build_oidc_redirect
+│   │                               # managed_login, SovereignAuthorizeView, _build_oidc_redirect
 │   └── views_oauth.py             # Tier 1 OAuth: OAuthInitiateView, OAuthCallbackView
 ├── config/
 │   ├── __init__.py
@@ -291,6 +300,7 @@ def create_superuser(self, email, custodial_did=None, **extra_fields):
 | `email` | `EmailField` (unique) | `USERNAME_FIELD` — used for lookup |
 | `custodial_did` | `CharField(255, unique)` | `did:web:iyou.me:user:{uuid}` — the canonical identity |
 | `account_tier` | `CharField` | `"sovereign"`, `"community"`, or `"managed_free"` |
+| `is_sovereign` | `BooleanField` | Default `False` — flipped to `True` by the Identity Graduation protocol; blocks front-channel OIDC issuance |
 | `is_active` | `BooleanField` | Default `True` |
 | `is_staff` | `BooleanField` | For Django admin access |
 | `is_superuser` | `BooleanField` | For Django admin access |
@@ -317,6 +327,20 @@ def date_joined(self): return self.created_at  # OIDC provider compatibility
 
 Unique constraint: `(provider, provider_user_id)` — prevents duplicate
 provider accounts.
+
+**`class PasskeyCredential`** — WebAuthn credentials bound to a user for the
+passwordless Managed login factor:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | `UUIDField` (PK) | Auto-generated, non-editable |
+| `user` | `ForeignKey(User)` | `related_name="passkeys"`, `on_delete=CASCADE` |
+| `credential_id` | `BinaryField` (unique) | Raw WebAuthn credential ID — one row per authenticator |
+| `public_key_cose` | `BinaryField` | CBOR-encoded COSE public key from the attestation |
+| `sign_count` | `PositiveIntegerField` | Last assertion counter — powers clone detection |
+| `transports` | `JSONField` (list) | e.g. `["internal"]`, `"hybrid"`, `"usb"` |
+| `created_at` | `DateTimeField` | Auto-set on registration |
+| `last_used_at` | `DateTimeField` | Null until first successful assertion |
 
 **`AUTH_USER_MODEL`** is set to `"auth_bridge.User"` in `config/settings.py`.
 All `ForeignKey` relationships must reference
@@ -550,6 +574,148 @@ The dual-window flow applies to all three auth tiers:
 To configure the satellite destination, set the `IDP_WUN_URL` environment
 variable (cluster-internal DNS or public domain).
 
+### 8. Passkey Authentication (WebAuthn)
+
+Managed-tier identities authenticate with a **passkey as their primary
+login factor**. The ceremonies are implemented server-side with the Python
+`fido2` library (`auth_bridge/passkeys.py` engine + `views_passkeys.py`
+endpoints). Standard Django password authentication is never consulted on
+this path — the assertion itself is the credential, and on success the view
+calls `django.contrib.auth.login(request, user,
+backend="auth_bridge.backend.DIDAuthBackend")`, followed by
+`evaluate_sovereign_admin_posture(user)`.
+
+The Relying Party ID is derived from the hostname of `IDP_BASE_URL`; browser
+origins must satisfy `fido2.rpid.verify_rp_id()` against it (HTTPS, or
+`http://localhost` in dev).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/auth/passkeys/register/begin/` | Session | Returns `{ceremony_id, publicKey: {challenge, rp, user, pubKeyCredParams, excludeCredentials, authenticatorSelection}}` |
+| POST | `/auth/passkeys/register/complete/` | Session | Verifies attestation, persists `PasskeyCredential`; returns `{status: "registered", credential_id}` |
+| POST | `/auth/passkeys/authenticate/begin/` | Anonymous | Discoverable-credential flow (no allow-list); returns `{ceremony_id, publicKey: {challenge, rpId, userVerification}}` |
+| POST | `/auth/passkeys/authenticate/complete/` | Anonymous | Verifies assertion, logs the user in; returns `{status: "authenticated", did}` |
+
+**Ceremony state:** each begin response carries a `ceremony_id`; the fido2
+server state is cached under `passkey:reg:{id}` / `passkey:auth:{id}` with a
+300-second TTL and single-use semantics (deleted on completion). Complete
+calls must echo `ceremony_id` alongside the standard WebAuthn JSON response
+(`id`, `rawId`, `type`, `response{...}`).
+
+**Registration rules:**
+- Requires an authenticated session; registration binds the credential to
+  that account (`resident key` / discoverable credential required).
+- Duplicate `credential_id` → `409 {"error": "credential_already_registered"}`.
+- Invalid attestation (bad origin, RP hash, challenge, or format) →
+  `400 {"error": "invalid_attestation"}`.
+
+**Assertion rules (clone detection):**
+1. `rawId` is looked up in `PasskeyCredential` before verification — unknown
+   credentials are rejected with `400 {"error": "unknown_credential"}`.
+2. fido2 verifies client data type, origin, RP ID hash, challenge and the
+   ES256/EdDSA signature over `authenticatorData || SHA256(clientDataJSON)`.
+3. Signature counter regression — if both stored and received counters are
+   non-zero and `received <= stored`, the credential is treated as cloned:
+   `400 {"error": "cloned_credential_detected"}`.
+4. A returned `userHandle` must map to the credential owner's UUID, else
+   `400 {"error": "user_handle_mismatch"}`.
+5. On success `sign_count` and `last_used_at` are updated and the session is
+   established via the DID backend.
+
+### 9. Identity Graduation Protocol
+
+Identity Graduation transitions a Level 1 Managed account to Level 2/3
+Sovereign custody through a secure **export-and-purge** of the managed
+Ed25519 key material held in HashiCorp Vault. Implementation lives in
+`auth_bridge/views_graduation.py` with Vault access isolated behind
+`auth_bridge/vault_client.py`.
+
+**Vault layout (KV v2):** `secret/identity/{custodial_did}/ed25519` holding
+`private_key_pem`, `public_key_pem`, `did`. Mount point configurable via
+`IDP_VAULT_KV_MOUNT`.
+
+#### Step 1 — Sealed Export
+
+```
+POST /api/v1/identity/graduate/export/
+Body:  {"ephemeral_pubkey": "<hex-or-base64 X25519 public key>"}
+Resp:  {"server_ephemeral_pub": "<hex>", "nonce": "<hex>", "ciphertext": "<hex>"}
+```
+
+Requires an authenticated session and a valid CSRF token. The private key
+never crosses the transit boundary in plaintext:
+
+1. Server reads the Ed25519 private key from Vault.
+2. A fresh ephemeral X25519 keypair is generated per request.
+3. `ECDH(server_ephemeral_priv × client_ephemeral_pub)` → shared secret.
+4. `HKDF-SHA256(ikm=shared, salt=nonce, info="iyou-idp/graduation-export/v1")`
+   → 32-byte wrapping key.
+5. `AES-256-GCM(wrapping_key, nonce)` encrypts the 32-byte Ed25519 seed with
+   the custodial DID as AAD.
+
+iyou_home decrypts symmetrically: ECDH with its ephemeral secret against
+`server_ephemeral_pub`, HKDF with the same salt/info, AESGCM open using
+`did` as AAD.
+
+#### Step 2 — Signed Receipt Confirmation
+
+```
+POST /api/v1/identity/graduate/confirm/
+Body:  {"receipt": {"action": "graduate", "did": "did:web:iyou.me:user:{uuid}", "issued_at": <unix>},
+        "signature": "<hex 64-byte Ed25519 signature>"}
+Resp:  {"status": "graduated", "did": "...", "is_sovereign": true}
+```
+
+Verification pipeline (all failures return `400` and change nothing):
+1. Session user must be authenticated and not already sovereign.
+2. `receipt.did` must equal the session user's `custodial_did`.
+3. `receipt.action` must be `"graduate"`.
+4. `receipt.issued_at` must be within **600 seconds** of server time.
+5. The Ed25519 signature over the **canonical receipt**
+   (`json.dumps(receipt, sort_keys=True, separators=(",", ":"))`) must verify
+   against the **public key stored in Vault** — proving custody of the
+   exported key.
+
+On success everything happens inside one `transaction.atomic()` block:
+
+1. `user.is_sovereign = True`, `user.account_tier = "sovereign"` saved.
+2. `vault_client.delete_identity_key(did)` shreds all versions + metadata at
+   the Vault path.
+
+Because the Vault deletion executes **inside** the transaction, any Vault
+failure rolls the promotion back entirely (`502
+{"error": "vault_shred_failed"}`, `is_sovereign` stays `False`, managed key
+preserved).
+
+#### Post-Graduation Front-Channel Lockout
+
+`SovereignAuthorizeView.get()` checks `request.user.is_sovereign` **before**
+issuing any authorization code and returns:
+
+```json
+{"error": "access_denied", "error_description": "Graduated sovereign identities must authenticate directly with their own DID."}
+```
+
+Graduated DIDs therefore can no longer mint IdP front-channel OIDC sessions;
+satellites must verify the user's self-custodied DID directly. The OIDC
+`sub` claim contract is unchanged — it remains the canonical
+`custodial_did` via `custom_sub_generator`.
+
+#### Graduation Error Codes
+
+| Error | Status | Meaning |
+|-------|--------|---------|
+| `authentication_required` | 401 | No active session |
+| `already_sovereign` | 400 | User already graduated |
+| `malformed_json` / `malformed_payload` / `malformed_key_material` | 400 | Body structure or key encoding invalid |
+| `receipt_did_mismatch` | 400 | Receipt DID ≠ session DID |
+| `receipt_action_invalid` | 400 | Action ≠ `graduate` |
+| `receipt_timestamp_missing` / `receipt_expired` | 400 | Stale or missing `issued_at` |
+| `invalid_receipt_signature` | 400 | Signature fails verification |
+| `managed_key_not_found` | 404 | No Vault secret at the identity path |
+| `vault_unavailable` | 502 | Vault read failed |
+| `vault_shred_failed` | 502 | Shred failed — promotion rolled back |
+
 ### Smart-Merge Pipeline (Anti-Sybil)
 
 The `process_oauth_identity()` function in `auth_bridge/pipeline.py`
@@ -654,10 +820,11 @@ persists the active tab across redirects.
   pending `next` URL (containing `/openid/authorize/` params) is used to
   generate an auth code and redirect back to the satellite, **skipping the
   consent page**.
-- **WebAuthn biometric** placeholder (Coming Soon) — a `# WEBAUTHN_HOOK`
-  marker at the session confirmation point allows future interception for
-  hardware key assertion before the session is established.
-- Disabled Passkey button (Coming Soon).
+- **Passkeys (WebAuthn)** — the server-side ceremonies are now **live** (see
+  [§8 Passkey Authentication](#8-passkey-authentication-webauthn)):
+  registration binds a credential to the account, assertion completes a
+  fully passwordless login via `DIDAuthBackend`. Login-page button wiring
+  for Tab 2 remains tracked on the roadmap.
 
 ### Satellite-App Redirect Safety [L378-396]
 
@@ -739,6 +906,21 @@ The handshake has several protection layers:
 | GET | `/auth/logout/` | Global logout — clears IdP session, redirects to WUN (or `?next=`) |
 | GET/POST | `/auth/oauth/initiate/<provider>/` | Tier 1 OAuth — generates state, redirects to provider |
 | GET/POST | `/auth/oauth/callback/<provider>/` | Tier 1 OAuth — validates state, exchanges code, authenticates |
+| POST | `/auth/passkeys/register/begin/` | Passkey registration ceremony start (session required) |
+| POST | `/auth/passkeys/register/complete/` | Passkey attestation verification + credential persistence |
+| POST | `/auth/passkeys/authenticate/begin/` | Passkey assertion ceremony start (discoverable credentials) |
+| POST | `/auth/passkeys/authenticate/complete/` | Passkey assertion verification + passwordless login |
+
+### Identity Graduation Endpoints
+
+The export-and-shred protocol that graduates a Level 1 Managed identity to
+Sovereign custody. Full protocol specification in
+[§9 Identity Graduation Protocol](#9-identity-graduation-protocol).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/identity/graduate/export/` | Seals the managed Ed25519 private seed to a client ephemeral X25519 key (session + CSRF required) |
+| POST | `/api/v1/identity/graduate/confirm/` | Verifies Ed25519 receipt, atomically promotes `is_sovereign` and shreds the Vault key (session + CSRF required) |
 
 ### Admin DID Endpoints [L449-457]
 
@@ -798,6 +980,12 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/admin/did-dashboard/      → custom_admin_dashboard
 /auth/oauth/initiate/<provider>/ → OAuthInitiateView (Google/Apple/GitHub)
 /auth/oauth/callback/<provider>/ → OAuthCallbackView (Google/Apple/GitHub)
+/auth/passkeys/register/begin/     → passkey_register_begin
+/auth/passkeys/register/complete/  → passkey_register_complete
+/auth/passkeys/authenticate/begin/ → passkey_authenticate_begin
+/auth/passkeys/authenticate/complete/ → passkey_authenticate_complete
+/api/v1/identity/graduate/export/  → graduate_export
+/api/v1/identity/graduate/confirm/ → graduate_confirm
 /openid/authorize/              → OIDC Authorization Endpoint *
 /openid/token/                  → Token exchange
 /openid/userinfo/               → UserInfo
@@ -882,7 +1070,8 @@ placement strategy to avoid page-layout shift:
 
 ### Adding New Features [L469-477]
 
-1. Write a test first in `auth_bridge/tests.py`
+1. Write a test first in `auth_bridge/tests/` (package: legacy flows in
+   `__init__.py`, graduation in `test_graduation.py`, passkeys in `test_passkeys.py`)
 2. Implement the feature
 3. Run `uv run python manage.py test auth_bridge -v2`
 4. Run `uv run ruff check auth_bridge/`
@@ -900,10 +1089,19 @@ uv run python manage.py test auth_bridge.tests.ChallengeResponseCycleTest.test_f
 
 The test suite creates Ed25519 keys, builds signed Verifiable Credentials
 and Presentations, exercises the full challenge-response cycle, and
-verifies OIDC redirects (both classic and direct-callback).
+verifies OIDC redirects (both classic and direct-callback). The suite now
+also covers the passkey ceremonies (a software ES256 authenticator drives
+real fido2 verification end-to-end) and the Identity Graduation protocol
+(sealed export round-trip, transactional Vault rollback, malicious receipt
+rejection) — 42 tests total.
 
 Key tests:
 - `test_full_cycle_creates_session` — end-to-end: challenge → VP → verify → session
+- `test_full_graduation_loop` — export → unseal → signed receipt → `is_sovereign` + Vault shredded
+- `test_vault_shred_failure_rolls_back_sovereign_flip` — Vault outage mid-shred rolls back the promotion
+- `test_signature_by_foreign_key_rejected` — spoofed receipt changes nothing anywhere
+- `test_passwordless_login_via_discoverable_assertion` — usernameless passkey login establishes a session
+- `test_cloned_credential_counter_regression_detected` — sign-count regression rejected
 - `test_next_url_roundtrip` — non-OIDC next_url is echoed back as redirect_url
 - `test_missing_fields_returns_400` — empty body returns 400
 - `test_expired_challenge_returns_404` — expired/missing challenge returns 400
@@ -969,6 +1167,11 @@ Key tests:
 | OAuth callback returns 403 | State mismatch or expired | Ensure cookies are enabled; state TTL is 300s; check session middleware |
 | OAuth callback returns 502 | Token exchange failed | Verify provider client ID/secret in env vars; check provider's token endpoint |
 | OAuth callback returns 400 (profile incomplete) | Provider returned missing email or ID | Check provider OAuth scopes; GitHub requires `user:email` scope |
+| `managed_key_not_found` (404, graduation) | No Vault secret at `identity/{did}/ed25519` | Seed the key material into Vault before graduating |
+| `invalid_receipt_signature` (400, graduation) | Receipt signed by a key other than the exported one | Re-export the key and sign the receipt with the recovered identity |
+| `vault_shred_failed` (502, graduation) | Vault unreachable during shred — promotion rolled back | Restore Vault connectivity; retry confirm (DB state unchanged, key intact) |
+| `cloned_credential_detected` (400, passkey) | Assertion counter regressed vs stored value | Re-register the passkey; investigate possible credential duplication |
+| `unknown_or_expired_ceremony` (400, passkey) | Ceremony TTL (300s) exceeded or ceremony already consumed | Restart the begin/complete cycle |
 
 ### Error Response Format [L538-554]
 
@@ -983,8 +1186,10 @@ All JSON error responses follow this structure:
 |-------------|---------|
 | 400 | Bad request (missing fields, expired challenge, invalid VP structure) |
 | 401 | Verification failed (signature invalid) |
-| 403 | User account disabled |
+| 403 | User account disabled / sovereign front-channel lockout |
+| 404 | Managed key material not present in Vault (graduation export/confirm) |
 | 500 | Internal error (bridge import failure, unexpected exception) |
+| 502 | Vault unavailable or shred failed (graduation — DB rolled back) |
 | — | `stored: false` in challenge response | Redis/cache unavailable — challenge not persisted; retry or fall back to desktop WebSocket flow |
 
 ## Deployment [L554-619]
@@ -1002,6 +1207,7 @@ All JSON error responses follow this structure:
 - [ ] Set `DATABASE_URL` to a production PostgreSQL connection string
 - [ ] Configure a real Redis instance via `REDIS_URL`
 - [ ] Set `ADMIN_DID` to the sovereign master `did:key` URI for passwordless superuser elevation at `/admin/`
+- [ ] Set `IDP_VAULT_ADDR` and `IDP_VAULT_TOKEN` to the production Vault instance (identity graduation requires it)
 - [ ] Set `OAUTH_GOOGLE_CLIENT_ID` and `OAUTH_GOOGLE_CLIENT_SECRET` (or leave empty to disable Google)
 - [ ] Set `OAUTH_APPLE_CLIENT_ID` and `OAUTH_APPLE_CLIENT_SECRET` (or leave empty to disable Apple)
 - [ ] Set `OAUTH_GITHUB_CLIENT_ID` and `OAUTH_GITHUB_CLIENT_SECRET` (or leave empty to disable GitHub)
@@ -1067,6 +1273,9 @@ docker run -d --name iyou-idp \
 | `DATABASE_URL` | `str` | `sqlite:///db.sqlite3` | Database connection string (use PostgreSQL in production) |
 | `REDIS_URL` | `str` | `redis://iyou-redis-master.identity.svc.cluster.local:6379/1` | Redis connection for challenge-response caching |
 | `ADMIN_DID` | `str` | `did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV` | Sovereign master DID — authenticating as this DID auto-elevates to staff+superuser |
+| `IDP_VAULT_ADDR` | `str` | `http://127.0.0.1:8200` | HashiCorp Vault address for managed-identity key custody |
+| `IDP_VAULT_TOKEN` | `str` | `""` | Vault auth token (must hold KV v2 read/create/delete on the identity mount) |
+| `IDP_VAULT_KV_MOUNT` | `str` | `secret` | KV v2 mount holding identity key material at `identity/{custodial_did}/ed25519` |
 | `OAUTH_GOOGLE_CLIENT_ID` | `str` | `""` | Google OAuth2 client ID (empty = provider disabled) |
 | `OAUTH_GOOGLE_CLIENT_SECRET` | `str` | `""` | Google OAuth2 client secret |
 | `OAUTH_APPLE_CLIENT_ID` | `str` | `""` | Apple Sign In service ID |
@@ -1149,6 +1358,28 @@ curl -sI https://iyou.me/static/auth_bridge/js/download_modal.js | head -5
 - `@csrf_exempt` on `verify_signature` and `mobile_verify_signature` is safe
   because both endpoints have no session side-effects (auth is purely cryptographic)
 - The `next_url` is validated against the OIDC client's registered `redirect_uris` before code generation
+- **Passkey ceremonies are origin-bound** — fido2 verifies client data type,
+  origin, RP ID hash and challenge on every ceremony, so the `@csrf_exempt`
+  passkey endpoints cannot be replayed cross-site; assertion signatures cover
+  the challenge issued seconds earlier
+- **Passkey clone detection** — signature counters are enforced: a non-zero
+  assertion counter that does not advance past the stored value rejects the
+  credential as potentially cloned
+- **Graduation export is sealed end-to-end** — the managed private seed is
+  encrypted to a per-request ephemeral X25519 keypair (ECDH → HKDF-SHA256 →
+  AES-256-GCM, DID as AAD) and never transits in plaintext; the server keeps
+  no record of the wrapping key
+- **Graduation is all-or-nothing** — the sovereign promotion and the Vault
+  shred run inside a single database transaction; a Vault outage rolls back
+  the promotion instead of leaving a sovereign user with a still-custodied key
+- **Graduation endpoints are CSRF-enforced** (`csrf_protect`) because they
+  mutate state under an authenticated browser session — unlike the
+  side-effect-free crypto endpoints
+- **Receipts are single-purpose and fresh** — the Ed25519 receipt must be
+  signed by the exported key (verified against the Vault-stored public key)
+  within a 600-second window, and only an un-graduated user can confirm
+- **Sovereign lockout** — graduated DIDs are blocked from front-channel OIDC
+  code issuance at `SovereignAuthorizeView` before any token machinery runs
 
 ## Troubleshooting [L634-675]
 
@@ -1284,9 +1515,13 @@ in `INSTALLED_APPS`.
 - ✅ **Tier 1 OAuth inbound** — Google/Apple/GitHub initiation + callback
   views with state validation, back-channel token exchange, profile
   extraction, and OIDC continuity (2026-07-18)
+- ✅ **Passkey (WebAuthn) engine + Identity Graduation protocol** — server-side
+  passkey registration/assertion with clone detection; sealed export, signed
+  receipt confirmation and transactional Vault shredding; sovereign
+  front-channel lockout (2026-08-23)
 - ⬜ Add OIDC `prompt=login` support to force re-authentication
 - ⬜ Add PKCE (S256) support in the direct-callback path
-- ⬜ Live passkey (WebAuthn) support in Tab 2
+- ⬜ Wire the Tab 2 login page UI to the live passkey endpoints
 
 ### Long-term Goals [L685-694]
 

@@ -219,11 +219,6 @@ Returns standard OIDC claims plus custom DID claims (see Section 7).
 6. Server verifies VP → creates User → evaluates admin posture → login → builds OIDC code
 7. Returns `{redirect_url}` → JS navigates inline via `window.location.href`
 
-> **Persona note (Project Zero):** the signing key is always the **Level 1 Public Persona**
-> (`derivation_index = 1`, `profile_id: "primary"`). The Level 0 Anchor is air-gapped from
-> bridge signing and can never be targeted by external `sign` frames — see
-> `PROJECT_ZERO_SPEC.md` §3 and §5.1.
-
 ### 5.2 Tier 2 — QR Code OOB (Community Self-Signing)
 
 ```
@@ -274,6 +269,34 @@ Returns standard OIDC claims plus custom DID claims (see Section 7).
 
 Email/password login at `POST /auth/managed-login/`. Currently returns a
 "not yet wired" message. No backend logic implemented.
+
+### 5.4 Tier 1 — Passkey Authentication (WebAuthn)
+
+Managed users authenticate with a **passkey as their primary login factor**.
+Standard Django password authentication is never consulted on this path.
+Server-side ceremonies use the Python `fido2` library (`passkeys.py`,
+`views_passkeys.py`). The RP ID is derived from the hostname of
+`IDP_BASE_URL`.
+
+| Step | Endpoint | Auth | Action |
+|------|----------|------|--------|
+| 1 | `POST /auth/passkeys/register/begin/` | Session | Returns `{ceremony_id, publicKey}` creation options (discoverable credential required) |
+| 2 | Browser authenticator | — | Creates credential, returns attestation |
+| 3 | `POST /auth/passkeys/register/complete/` | Session | Verifies attestation, persists `PasskeyCredential`; duplicate `credential_id` → 409 |
+| 4 | `POST /auth/passkeys/authenticate/begin/` | Anonymous | Returns `{ceremony_id, publicKey}` request options with **no allow-list** (usernameless flow) |
+| 5 | Browser authenticator | — | Signs challenge, returns assertion |
+| 6 | `POST /auth/passkeys/authenticate/complete/` | Anonymous | Verifies assertion → `login(request, user, backend="auth_bridge.backend.DIDAuthBackend")` + sovereign posture evaluation |
+
+**Ceremony state:** fido2 server state is cached under
+`passkey:reg:{ceremony_id}` / `passkey:auth:{ceremony_id}` with a 300-second
+TTL and single-use semantics; complete calls must echo `ceremony_id`.
+
+**Assertion verification order:** credential lookup by `rawId` (unknown →
+400) → client data type/origin/RP-hash/challenge/signature via fido2 →
+signature-counter clone detection (`received <= stored`, both non-zero →
+`cloned_credential_detected`) → optional `userHandle` ownership check →
+session established. Passwords are bypassed entirely; on success the DID
+backend establishes the session exactly like Tier 2/3 flows.
 
 ---
 
@@ -333,6 +356,7 @@ DID verification
 ```python
 class User(AbstractBaseUser):
     username = CharField(max_length=255, unique=True)  # DID string
+    is_sovereign = BooleanField(default=False)         # True after Identity Graduation (§16)
     is_active = BooleanField(default=True)
     is_staff = BooleanField(default=False)
     is_superuser = BooleanField(default=False)
@@ -347,6 +371,7 @@ class User(AbstractBaseUser):
 - `password` field exists (inherited from `AbstractBaseUser`) but is **never used**
   for DID auth; set to unusable on admin elevation
 - `is_staff` / `is_superuser` are exclusively controlled by `ADMIN_DID` matching
+- `is_sovereign = True` blocks all front-channel OIDC code issuance for the DID
 - Users are created on first successful DID verification (`get_or_create`)
 
 ---
@@ -496,6 +521,12 @@ If `vp.verifiableCredential` is present:
 /auth/admin/did-verify/        → custom_admin_verify (POST)
 /auth/admin/did-dashboard/     → custom_admin_dashboard (GET)
 /auth/managed-login/           → managed_login (POST: scaffold)
+/auth/passkeys/register/begin/     → passkey_register_begin (POST)
+/auth/passkeys/register/complete/  → passkey_register_complete (POST)
+/auth/passkeys/authenticate/begin/ → passkey_authenticate_begin (POST)
+/auth/passkeys/authenticate/complete/ → passkey_authenticate_complete (POST)
+/api/v1/identity/graduate/export/  → graduate_export (POST: sealed key export)
+/api/v1/identity/graduate/confirm/ → graduate_confirm (POST: receipt + atomic shred)
 /auth/logout/                  → GlobalLogoutView (GET)
 /openid/authorize/             → django-oidc-provider (browser redirect)
 /openid/token/                 → PkceTokenView (custom PKCE gate → library)
@@ -575,6 +606,9 @@ At `/oidc/callback/`:
 | `DATABASE_URL` | PostgreSQL connection | `postgres://...` |
 | `REDIS_URL` | Redis connection (challenges) | `redis://...` |
 | `ADMIN_DID` | Sovereign admin DID | `did:key:z6Mk...` |
+| `IDP_VAULT_ADDR` | HashiCorp Vault address (identity key custody) | `http://127.0.0.1:8200` |
+| `IDP_VAULT_TOKEN` | Vault auth token (KV v2 read/create/delete) | `(token string)` |
+| `IDP_VAULT_KV_MOUNT` | KV v2 mount for identity key material | `secret` |
 
 ---
 
@@ -590,3 +624,76 @@ At `/oidc/callback/`:
 8. **Single admin DID** — Only `ADMIN_DID` env var holder gets superuser
 9. **Unusable passwords** — `set_unusable_password()` on elevation, no password auth
 10. **Emergency bypass logged** — `SECURITY AUDIT BYPASS` entries in stdout for monitoring
+11. **Passkey origin binding** — every WebAuthn ceremony verifies client data
+    type, origin, RP ID hash and challenge; signature counters reject cloned
+    authenticators (`received <= stored`, both non-zero)
+12. **Sealed graduation export** — the managed Ed25519 seed is encrypted to a
+    per-request ephemeral X25519 keypair (ECDH → HKDF-SHA256 → AES-256-GCM,
+    DID as AAD) and never transits in plaintext
+13. **Atomic export-and-shred** — the sovereign promotion and Vault key shred
+    run inside one database transaction; a Vault failure rolls back the
+    promotion, and graduated DIDs are blocked from front-channel OIDC issuance
+
+---
+
+## 16. Identity Graduation Protocol
+
+Transitions a Level 1 Managed identity to Level 2/3 Sovereign custody via a
+secure **export-and-purge** of the managed Ed25519 key material held in
+HashiCorp Vault (`secret/identity/{custodial_did}/ed25519`, KV v2).
+
+### 16.1 Sealed Export
+
+```
+POST /api/v1/identity/graduate/export/
+Body:  {"ephemeral_pubkey": "<hex-or-base64 X25519 public key>"}
+Resp:  {"server_ephemeral_pub": "<hex>", "nonce": "<hex>", "ciphertext": "<hex>"}
+```
+
+- Requires an authenticated session and a valid CSRF token
+  (`csrf_protect` — these endpoints mutate state under a live session).
+- Server generates a fresh ephemeral X25519 keypair per request.
+- Key derivation: `ECDH(server_ephemeral_priv × client_ephemeral_pub)` →
+  `HKDF-SHA256(salt=nonce, info="iyou-idp/graduation-export/v1")` → 32-byte
+  AES-256-GCM wrapping key.
+- Plaintext is the raw 32-byte Ed25519 seed; the custodial DID is bound as
+  AEAD associated data.
+- The client (iyou_home) decrypts symmetrically using its ephemeral secret.
+
+### 16.2 Signed Receipt Confirmation
+
+```
+POST /api/v1/identity/graduate/confirm/
+Body:  {"receipt": {"action": "graduate", "did": "did:web:iyou.me:user:{uuid}", "issued_at": <unix>},
+        "signature": "<hex 64-byte Ed25519 signature>"}
+```
+
+Verification pipeline (any failure → 400, no state change):
+1. Session user authenticated and not already sovereign
+2. `receipt.did == session user.custodial_did`
+3. `receipt.action == "graduate"`
+4. `receipt.issued_at` within **600 seconds** of server time
+5. Ed25519 signature over canonical JSON
+   (`json.dumps(receipt, sort_keys=True, separators=(",", ":"))`) verifies
+   against the public key stored in Vault — proving custody of the exported key
+
+On success, inside one `transaction.atomic()` block:
+1. `user.is_sovereign = True` and `user.account_tier = "sovereign"` saved
+2. `delete_identity_key(did)` shreds all versions + metadata in Vault
+
+The Vault deletion executes **inside** the transaction: any Vault failure
+rolls back the promotion entirely (`502 vault_shred_failed`,
+`is_sovereign` stays `False`, managed key preserved).
+
+### 16.3 Post-Graduation Front-Channel Lockout
+
+`SovereignAuthorizeView.get()` checks `request.user.is_sovereign` before any
+code issuance and returns:
+
+```json
+{"error": "access_denied", "error_description": "Graduated sovereign identities must authenticate directly with their own DID."}
+```
+
+Graduated DIDs can no longer mint IdP OIDC sessions; satellites must verify
+the self-custodied DID directly. The `sub` claim remains the canonical
+`custodial_did` (`custom_sub_generator`).

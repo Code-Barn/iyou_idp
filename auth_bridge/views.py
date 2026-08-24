@@ -915,6 +915,13 @@ class SovereignAuthorizeView(AuthorizeView):
     authorize_endpoint_class = SovereignAuthorizeEndpoint
 
     def get(self, request, *args, **kwargs):
+        if getattr(request.user, "is_authenticated", False) and request.user.is_sovereign:
+            logger.warning(
+                "SOVEREIGN GATE: blocking OIDC front-channel issuance for graduated DID %s",
+                request.user.custodial_did,
+            )
+            return JsonResponse({'error': 'access_denied', 'error_description': 'Graduated sovereign identities must authenticate directly with their own DID.'}, status=403)
+
         authorize = self.authorize_endpoint_class(request)
 
         try:
