@@ -29,7 +29,7 @@ from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlencode
 
 from django.contrib import messages
 from django.conf import settings as django_settings
@@ -387,11 +387,13 @@ def verify_signature(request):
                             response_data = {
                                 "success": True,
                                 "redirect_url": next_url,
+                                "show_legal_disclaimer": user.show_legal_disclaimer,
                                 "user": {
                                     "did": user.custodial_did,
                                     "is_new_user": created,
                                     "is_authenticated": True,
                                     "session_id": request.session.session_key,
+                                    "show_legal_disclaimer": user.show_legal_disclaimer,
                                 },
                             }
                             print("VERIFY RESPONSE (BYPASS):", json.dumps(response_data), flush=True)
@@ -414,11 +416,13 @@ def verify_signature(request):
                 response_data = {
                     "success": True,
                     "redirect_url": next_url,
+                    "show_legal_disclaimer": user.show_legal_disclaimer,
                     "user": {
                         "did": user.custodial_did,
                         "is_new_user": created,
                         "is_authenticated": True,
                         "session_id": request.session.session_key,
+                        "show_legal_disclaimer": user.show_legal_disclaimer,
                     },
                 }
                 print("VERIFY RESPONSE:", json.dumps(response_data), flush=True)
@@ -463,11 +467,13 @@ def verify_signature(request):
         response_data = {
             'success': True,
             'redirect_url': redirect_url,
+            'show_legal_disclaimer': user.show_legal_disclaimer,
             'user': {
                 'did': user.custodial_did,
                 'is_new_user': created,
                 'is_authenticated': True,
                 'session_id': request.session.session_key,
+                'show_legal_disclaimer': user.show_legal_disclaimer,
             }
         }
         print("VERIFY RESPONSE:", json.dumps(response_data), flush=True)
@@ -743,6 +749,7 @@ def check_challenge_status(request, challenge_id):
     return JsonResponse({
         'solved': True,
         'redirect_url': redirect_url,
+        'show_legal_disclaimer': user.show_legal_disclaimer,
     })
 
 
@@ -873,6 +880,61 @@ class LoginPageView(View):
             'idp_base_url': django_settings.IDP_BASE_URL,
         }
         return render(request, 'auth_bridge/login.html', context)
+
+
+class LegalDisclaimerView(View):
+    """
+    Render the post-login Legal Disclaimer Gate.
+    """
+
+    def get(self, request):
+        if not request.user.is_authenticated:
+            next_url = request.GET.get('next', '')
+            login_url = reverse('auth_bridge:login')
+            if next_url:
+                login_url = f"{login_url}?{urlencode({'next': next_url})}"
+            return redirect(login_url)
+
+        next_url = request.GET.get('next') or DEFAULT_NEXT_URL
+        context = {
+            'next_url': next_url,
+            'user_did': getattr(request.user, 'custodial_did', ''),
+            'show_legal_disclaimer': getattr(request.user, 'show_legal_disclaimer', True),
+            'wun_url': django_settings.IDP_WUN_URL,
+            'idp_base_url': django_settings.IDP_BASE_URL,
+        }
+        return render(request, 'auth_bridge/legal_disclaimer.html', context)
+
+
+@require_POST
+@csrf_exempt
+def acknowledge_legal_disclaimer(request):
+    """
+    Record user acknowledgment of the Sovereign Network Access & Legal Notice.
+    Persists the 'show_legal_disclaimer' preference on the User model and in session.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'authentication_required'}, status=401)
+
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        data = request.POST
+
+    show_on_next = data.get('show_on_next', data.get('show_legal_disclaimer', True))
+    if isinstance(show_on_next, str):
+        show_on_next = show_on_next.lower() in ('true', '1', 'yes', 'on')
+
+    request.user.show_legal_disclaimer = bool(show_on_next)
+    request.user.disclaimer_acknowledged_at = timezone.now()
+    request.user.save(update_fields=['show_legal_disclaimer', 'disclaimer_acknowledged_at'])
+    request.session['show_legal_disclaimer'] = request.user.show_legal_disclaimer
+
+    return JsonResponse({
+        'success': True,
+        'show_legal_disclaimer': request.user.show_legal_disclaimer,
+        'disclaimer_acknowledged_at': request.user.disclaimer_acknowledged_at.isoformat(),
+    })
 
 
 class GlobalLogoutView(View):

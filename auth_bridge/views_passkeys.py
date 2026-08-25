@@ -216,4 +216,8 @@ def passkey_authenticate_complete(request: HttpRequest) -> HttpResponse:
     user = evaluate_sovereign_admin_posture(row.user)
     login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
     logger.info("PASSKEY LOGIN: did=%s via passkey", user.custodial_did)
-    return JsonResponse({"status": "authenticated", "did": user.custodial_did})
+    return JsonResponse({
+        "status": "authenticated",
+        "did": user.custodial_did,
+        "show_legal_disclaimer": user.show_legal_disclaimer,
+    })

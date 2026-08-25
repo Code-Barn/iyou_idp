@@ -113,18 +113,21 @@ DID verification, the server:
    {
      "success": true,
      "redirect_url": "https://{subdomain}.iyou.me/oidc/callback/?code=...&state=...",
+     "show_legal_disclaimer": true,
      "user": {
        "did": "did:key:z6Mk...",
        "is_new_user": false,
        "is_authenticated": true,
-       "session_id": "..."
+       "session_id": "...",
+       "show_legal_disclaimer": true
      }
    }
    ```
 
-6. The browser JS navigates the current window **inline** to `redirect_url`
-   via `window.location.href` — no new tab is opened. The satellite app
-   receives the authorization code at its callback URL in the same tab.
+6. **Legal Disclaimer Gate:**
+   - If `show_legal_disclaimer` is `true`, a blocking modal overlay ("Sovereign Network Access & Legal Notice") is presented establishing user cryptographic liability, node operator neutrality, and zero-tolerance content policies.
+   - The user acknowledges the notice and can optionally uncheck "Show this legal disclaimer on next login" to persist a bypass on future logins.
+   - Upon acknowledgment, the browser JS navigates the current window (`_self`) inline to `redirect_url` via `window.location.href`. If `show_legal_disclaimer` was already `false`, the redirect executes immediately. No new tab is opened; the satellite app receives the authorization code at its callback URL in the same tab.
 
 ### 4.3 Token Exchange (Satellite Server → IDP)
 

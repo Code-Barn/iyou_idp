@@ -301,6 +301,8 @@ def create_superuser(self, email, custodial_did=None, **extra_fields):
 | `custodial_did` | `CharField(255, unique)` | `did:web:iyou.me:user:{uuid}` — the canonical identity |
 | `account_tier` | `CharField` | `"sovereign"`, `"community"`, or `"managed_free"` |
 | `is_sovereign` | `BooleanField` | Default `False` — flipped to `True` by the Identity Graduation protocol; blocks front-channel OIDC issuance |
+| `show_legal_disclaimer` | `BooleanField` | Default `True` — controls Legal Disclaimer Gate presentation on login |
+| `disclaimer_acknowledged_at` | `DateTimeField` | Timestamp of explicit disclaimer acknowledgment (audit trail) |
 | `is_active` | `BooleanField` | Default `True` |
 | `is_staff` | `BooleanField` | For Django admin access |
 | `is_superuser` | `BooleanField` | For Django admin access |
@@ -573,6 +575,15 @@ The dual-window flow applies to all three auth tiers:
 
 To configure the satellite destination, set the `IDP_WUN_URL` environment
 variable (cluster-internal DNS or public domain).
+
+#### Legal Disclaimer Gate
+
+Every user authenticating through the identity provider passes through a legal disclaimer gate ("Sovereign Network Access & Legal Notice") prior to final redirection:
+
+- **Overlay UI & Blocking:** Displayed as a modal dialog (`_legal_disclaimer_modal.html` and `legal_disclaimer.js`) or full-page view (`LegalDisclaimerView` at `/auth/legal-disclaimer/`), blocking interactions with background content until acknowledged.
+- **Notice Contents:** Four explicit disclosure cards: Cryptographic Keyholder Liability, Neutral Conduit & Protocol Interface, Node Operator Policies (zero-tolerance CSAM & violence policy), and Open Source Ecosystem (GPLv3 / "as is").
+- **Preference Persistence:** Includes a `"Show this legal disclaimer on next login"` checkbox checked by default (`true`). If unchecked and acknowledged, a POST to `/auth/legal-disclaimer/acknowledge/` sets `user.show_legal_disclaimer = False` and records `user.disclaimer_acknowledged_at` as an audit timestamp.
+- **Routing Integrity:** Preserves the destination URL (including all OIDC `state`, `code`, and PKCE verifier exchanges) and performs navigation inline in the current window (`_self`). Fallbacks default to `IDP_WUN_URL`.
 
 ### 8. Passkey Authentication (WebAuthn)
 

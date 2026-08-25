@@ -49,6 +49,7 @@ import requests
 from django.conf import settings
 from django.contrib.auth import login
 from django.http import HttpResponseRedirect, JsonResponse
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
@@ -377,7 +378,14 @@ class OAuthCallbackView(View):
             from .views import _build_oidc_redirect
             oidc_redirect = _build_oidc_redirect(pending_next, user)
             if oidc_redirect is not None:
-                return HttpResponseRedirect(oidc_redirect)
-            return HttpResponseRedirect(pending_next)
+                target_url = oidc_redirect
+            else:
+                target_url = pending_next
+        else:
+            target_url = settings.IDP_WUN_URL
 
-        return HttpResponseRedirect(settings.IDP_WUN_URL)
+        if getattr(user, "show_legal_disclaimer", True):
+            disclaimer_url = f"{reverse('auth_bridge:legal_disclaimer')}?{urlencode({'next': target_url})}"
+            return HttpResponseRedirect(disclaimer_url)
+
+        return HttpResponseRedirect(target_url)

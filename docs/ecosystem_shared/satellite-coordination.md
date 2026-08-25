@@ -1,7 +1,7 @@
 # Satellite Coordination Index
 
 **Hub:** `omni_social`
-**Last synced:** 2026-08-19
+**Last synced:** 2026-08-24
 
 Each satellite repo has a `TODO.md` in its root, orchestrated from this central hub.
 Edit tasks here first, then propagate to the satellite repos via their agents.
@@ -83,6 +83,13 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | SEC-005 | iyou_home | Open | Polling → Push migration (WebSocket/SSE). |
 | SEC-006 | iyou_home | Open | DNS hijack mitigation — cert pinning for wss://home.iyou.me:9001. |
 
+### Protocol Integrity & Post-Mortem Governance
+
+| Specification / Plan | Path | Status | Core Focus |
+|:---|:---|:---|:---|
+| **Protocol Integrity & Post-Mortem Governance** | [`PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`](strategy/PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md) | Canonical Living Spec | Long-term North Star for existential risk mitigation, Perpetual Purpose Trust legal shielding, client-side invariant verification engine, Merkle vote root domain separation, temporal drift guards ($\pm 900\text{s}$), dead-man key decay, and hydra relay federation. |
+| **Immediate Integrity Execution Plan** | [`IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`](strategy/IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md) | Active Execution Blueprint | Tactical sprint rollout: Phase 1 near-term zero-cost engineering (Invariant Alert hook specs `INVARIANT_ALERT_PUSH`, read-only database guards, fail-closed bridge checks), Phase 2 entity ring-fencing & Purpose Trust charter drafting, Phase 3 automated key decay & community witnesses. |
+
 ---
 
 ## Protocol
@@ -94,5 +101,5 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ## Sync Status
 
-- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 17 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `satellite-coordination.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
-- **Last sync:** 2026-07-16
+- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 21 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `PROJECT_ZERO_SPEC.md`, `satellite-coordination.md`, `LONG_TERM_AUTH_TOPOLOGY.md`, `PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`, `IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
+- **Last sync:** 2026-08-24

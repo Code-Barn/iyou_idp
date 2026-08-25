@@ -356,6 +356,7 @@ BADGE_CONFIG = {
 | `sign_credential` | User-gated | C→S | W3C VC issuance |
 | `POLY_CREDENTIAL_REQUEST` → `POLY_CREDENTIAL_PRESENTATION` | User-gated | C→S / S→C | Credential sharing handshake |
 | `OMNI_SIGN_REQUEST` | Headless | C→S | Governance vote envelope (Kind 1112) |
+| `INVARIANT_ALERT_PUSH` | Server Push | S→C | Broadcasts Amber/Crimson invariant violations to satellite HUDs |
 | `error` | Any | S→C | Uniform error frame |
 
 ## Appendix B: TrustLevel Enum Values

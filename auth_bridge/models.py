@@ -59,6 +59,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     custodial_did = models.CharField(max_length=255, unique=True, db_index=True)
     account_tier = models.CharField(max_length=20, choices=ACCOUNT_TIERS, default="managed_free")
     is_sovereign = models.BooleanField(default=False)
+    show_legal_disclaimer = models.BooleanField(default=True)
+    disclaimer_acknowledged_at = models.DateTimeField(null=True, blank=True)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

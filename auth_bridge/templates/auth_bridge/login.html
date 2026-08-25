@@ -130,12 +130,14 @@
         <input type="hidden" name="next" id="redirectNext">
     </form>
 
-    <!-- Download Modals -->
+    <!-- Modals -->
     {% include 'auth_bridge/_download_modal.html' %}
     {% include 'auth_bridge/_mobile_download_modal.html' %}
+    {% include 'auth_bridge/_legal_disclaimer_modal.html' %}
 
     <script src="{% static 'auth_bridge/js/download_modal.js' %}"></script>
     <script src="{% static 'auth_bridge/js/mobile_download_modal.js' %}"></script>
+    <script src="{% static 'auth_bridge/js/legal_disclaimer.js' %}"></script>
     <script>
         console.log("LOGIN UI VERSION: 3.0.0 - HANDSHAKE START");
 
@@ -172,9 +174,13 @@
         let currentNextUrl = '{{ next_url|escapejs }}';
         let iyouSocket = null;
 
-        // Navigate the current window to the satellite redirect URL.
-        function onAuthSuccess(redirectUrl) {
-            window.location.href = redirectUrl;
+        // Navigate the current window to the satellite redirect URL (passing through legal disclaimer gate if required).
+        function onAuthSuccess(redirectUrl, shouldShowDisclaimer) {
+            if (shouldShowDisclaimer !== false && typeof window.triggerLegalDisclaimerGate === 'function') {
+                window.triggerLegalDisclaimerGate(redirectUrl);
+            } else {
+                window.location.href = redirectUrl;
+            }
         }
 
         // Initialize
@@ -507,8 +513,9 @@
                         manualLink.classList.remove('hidden');
                     }, 500);
 
-                    // Launch satellite in new tab, stay on IdP profile
-                    onAuthSuccess(data.redirect_url);
+                    // Navigate to destination (via disclaimer gate if required)
+                    const shouldShowDisclaimer = (data.show_legal_disclaimer !== false) && (!data.user || data.user.show_legal_disclaimer !== false);
+                    onAuthSuccess(data.redirect_url, shouldShowDisclaimer);
                     return { success: true };
                 } else {
                     console.error('Login failed:', data.error);
@@ -682,7 +689,8 @@
                             clearInterval(communityPollId);
                             communityPollId = null;
                             document.getElementById('community-status').textContent = 'Verified! Redirecting…';
-                            window.location.href = data.redirect_url;
+                            const shouldShowDisclaimer = (data.show_legal_disclaimer !== false);
+                            onAuthSuccess(data.redirect_url, shouldShowDisclaimer);
                         }
                     })
                     .catch(() => { /* keep polling until TTL expires */ });

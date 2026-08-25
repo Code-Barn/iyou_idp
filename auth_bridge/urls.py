@@ -14,7 +14,17 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from django.urls import path
-from .views import ChallengeView, verify_signature, LoginPageView, managed_login, mobile_verify_signature, check_challenge_status, GlobalLogoutView
+from .views import (
+    ChallengeView,
+    verify_signature,
+    LoginPageView,
+    managed_login,
+    mobile_verify_signature,
+    check_challenge_status,
+    GlobalLogoutView,
+    LegalDisclaimerView,
+    acknowledge_legal_disclaimer,
+)
 from .views_oauth import OAuthInitiateView, OAuthCallbackView
 from .views_passkeys import (
     passkey_register_begin,
@@ -31,6 +41,9 @@ urlpatterns = [
     path('verify/', verify_signature, name='verify_signature'),
     path('challenge/', ChallengeView.as_view(), name='challenge'),
     path('login/', LoginPageView.as_view(), name='login'),
+    path('legal-disclaimer/', LegalDisclaimerView.as_view(), name='legal_disclaimer'),
+    path('legal-disclaimer/acknowledge/', acknowledge_legal_disclaimer, name='legal_disclaimer_acknowledge'),
+    path('disclaimer/acknowledge/', acknowledge_legal_disclaimer, name='disclaimer_acknowledge'),
 
     path('admin/did-login/', custom_admin_login, name='admin_did_login'),
     path('admin/did-verify/', custom_admin_verify, name='admin_did_verify'),
