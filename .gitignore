@@ -20,6 +20,14 @@ src/iyou_idp/_crypto*.so
 # Django
 db.sqlite3
 local_settings.py
+staticfiles/
+static_root/
+
+# Linter & Tests
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # IDE
 .idea/
