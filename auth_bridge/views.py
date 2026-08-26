@@ -16,7 +16,7 @@
 """
 Views for authentication challenges and OIDC flows.
 """
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseRedirect
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -756,24 +756,52 @@ def check_challenge_status(request, challenge_id):
 @require_POST
 def managed_login(request):
     """
-    Scaffold view for Level 1 (Managed Convenience) email/password login.
+    Tier 1 Managed Convenience — JIT email/password authentication.
 
-    Future: will hash the password, call did_rust to generate a server-side
-    did:web, create/get a User, and log them in.
+    - If the email does not exist, create a new User with account_tier='managed_free'
+      and a custodial did:web, set the password, and log them in.
+    - If the email exists, verify password and log in.
+    - Resume OIDC flow via _build_oidc_redirect if applicable.
     """
-    email = request.POST.get('email', '').strip()
+    email = request.POST.get('email', '').strip().lower()
     password = request.POST.get('password', '').strip()
+    next_url = request.POST.get('next', '') or request.GET.get('next', '') or DEFAULT_NEXT_URL
 
     if not email or not password:
         messages.error(request, 'Email and password are required.')
-    else:
-        messages.info(
-            request,
-            f'Managed auth scaffolding — backend not yet wired. '
-            f'Received email={email}'
-        )
+        return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
 
-    return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
+    try:
+        user = User.objects.get(email__iexact=email)
+        # Existing user — verify password
+        if not user.check_password(password):
+            messages.error(request, 'Invalid email or password.')
+            return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
+        if not user.is_active:
+            messages.error(request, 'Account is disabled.')
+            return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
+    except User.DoesNotExist:
+        # JIT create new user
+        custodial_did = f"did:web:iyou.me:user:{uuid.uuid4()}"
+        user = User(
+            email=email,
+            username=email,
+            account_tier='managed_free',
+            custodial_did=custodial_did,
+        )
+        user.set_password(password)
+        user.save()
+        logger.info("JIT USER CREATED: email=%s did=%s", email, custodial_did)
+
+    # Authenticate and log in
+    login(request, user, backend='auth_bridge.backend.DIDAuthBackend')
+
+    # Build OIDC redirect if applicable
+    redirect_url = _build_oidc_redirect(next_url, user)
+    if redirect_url is None:
+        redirect_url = next_url
+
+    return HttpResponseRedirect(redirect_url)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -845,8 +873,8 @@ class LoginPageView(View):
         in progress (OIDC params exist in ``?next=``), redirect to the
         ``next`` URL so the OIDC provider can issue a code directly.
         If no OIDC flow is in progress, render a dashboard that acknowledges
-        the user's sovereign identity with download links for iYou Home and
-        iYou Mobile, plus a logout button.
+        the user's sovereign identity with download links for iyou_home and
+        iyou_mobile, plus a logout button.
 
         Unauthenticated visitors always see the login card.
         """

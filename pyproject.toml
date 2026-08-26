@@ -1,7 +1,7 @@
 [project]
 name = "iyou-idp"
 version = "0.1.0"
-description = "iYou Identity Provider"
+description = "iyou Identity Provider"
 authors = [
     { name = "dcbyers13", email = "dcbyers13@iyou.me" }
 ]

@@ -220,7 +220,7 @@ SATELLITES = [
     },
     {
         "client_id": "iyou-help-satellite-client",
-        "name": "iYou Help (Mutual Aid)",
+        "name": "iyou_help (Mutual Aid)",
         "redirects": [
             "https://help.iyou.me/oidc/callback/",
             "http://127.0.0.1:8012/oidc/callback/",
@@ -235,7 +235,7 @@ SATELLITES = [
     },
     {
         "client_id": "iyou-stay-satellite-client",
-        "name": "iYou Stay (Hospitality)",
+        "name": "iyou_stay (Hospitality)",
         "redirects": [
             "https://stay.iyou.me/oidc/callback/",
             "http://127.0.0.1:8017/oidc/callback/",
@@ -248,7 +248,7 @@ SATELLITES = [
     },
     {
         "client_id": "iyou-spot-satellite-client",
-        "name": "iYou Spot (Muster'd Ezine)",
+        "name": "iyou_spot (Muster'd Ezine)",
         "redirects": [
             "https://spot.iyou.me/oidc/callback/",
             "http://127.0.0.1:8019/oidc/callback/",

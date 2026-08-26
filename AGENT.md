@@ -1,4 +1,4 @@
-# iYou Identity Provider — Agent Guide
+# iyou_idp — Agent Guide
 
 ## 🔒 CRITICAL: OpenID Connect & Ingress Invariants
 All authentication and user provisioning logic in this repository MUST conform strictly to the canonical ecosystem specifications located at:

@@ -14,9 +14,20 @@
             backdrop-filter: blur(10px);
             background: rgba(255, 255, 255, 0.95);
         }
+        .logo-stamp {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 120px;
+            height: 120px;
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 0;
+        }
     </style>
 </head>
 <body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+    <img src="{% static 'auth_bridge/img/logo_square.png' %}" alt="" class="logo-stamp" aria-hidden="true">
     <div class="dashboard-card rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
         <!-- Shield icon -->
         <div class="mb-4 text-indigo-600">
@@ -30,16 +41,16 @@
         <p class="text-xs text-gray-500 font-mono truncate mb-6">{{ user_did }}</p>
 
         <p class="text-sm text-gray-600 mb-6">
-            You are authenticated. Access your iYou ecosystem below.
+            You are authenticated. Access the iyou_ ecosystem below.
         </p>
 
-        <!-- Desktop iYou Home — navigate inline -->
+        <!-- Desktop iyou_home — navigate inline -->
         <a href="{{ next_url }}" target="_self"
            class="inline-flex items-center justify-center gap-2 w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-colors mb-3">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
-            Enter iYou Home (Desktop)
+            Enter iyou_home (Desktop)
         </a>
 
         <!-- Mobile signer -->
@@ -48,7 +59,7 @@
                 <rect x="5" y="2" width="14" height="20" rx="2"/>
                 <line x1="12" y1="18" x2="12" y2="18"/>
             </svg>
-            Get iYou Mobile
+            Get iyou_mobile
         </button>
 
         <!-- Divider -->

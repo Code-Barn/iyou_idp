@@ -51,7 +51,7 @@ def relying_party_id() -> str:
 
 def build_server() -> Fido2Server:
     server = Fido2Server(
-        PublicKeyCredentialRpEntity(id=relying_party_id(), name="iYou Identity Provider")
+        PublicKeyCredentialRpEntity(id=relying_party_id(), name="iyou Identity Provider")
     )
     server.timeout = 120000
     return server

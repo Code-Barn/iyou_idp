@@ -1,4 +1,4 @@
-# iYou IDP
+# iyou_idp
 
 Decentralised Identity Provider — OIDC bridge with DID authentication.
 

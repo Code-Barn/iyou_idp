@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Sovereign Login</title>
+    <link rel="icon" type="image/png" href="{% static 'auth_bridge/img/logo_square.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'auth_bridge/img/logo_square.png' %}">
+    <meta name="theme-color" content="#4c1d95">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="iyou">
+    <link rel="manifest" href="{% static 'auth_bridge/manifest.json' %}">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
     <style>
@@ -45,9 +52,21 @@
         .animate-fade-in {
             animation: fadeIn 0.2s ease-out;
         }
+
+        .logo-stamp {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 120px;
+            height: 120px;
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 0;
+        }
     </style>
 </head>
 <body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+    <img src="{% static 'auth_bridge/img/logo_square.png' %}" alt="" class="logo-stamp" aria-hidden="true">
     <div class="login-card rounded-2xl shadow-2xl p-8 max-w-md w-full">
         <!-- Header -->
         <div class="text-center mb-8">
@@ -99,30 +118,6 @@
         <div id="tab-pane-2" class="tab-pane hidden">
             {% include 'auth_bridge/_tab_managed.html' %}
         </div>
-    </div>
-
-    <!-- Download CTAs (outside card, visible on Tab 1 & 2 only) -->
-    <div id="global-download-ctas" class="mt-6 text-center space-y-2 hidden">
-        <div class="flex gap-3 justify-center">
-            <button id="download-modal-btn"
-                    class="inline-flex items-center gap-2 px-5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-full text-sm font-medium transition-colors backdrop-blur-sm border border-white/20">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                    <path d="M2 17l10 5 10-5"/>
-                    <path d="M2 12l10 5 10-5"/>
-                </svg>
-                Get iYou Home
-            </button>
-            <button id="mobile-download-modal-btn"
-                    class="inline-flex items-center gap-2 px-5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-full text-sm font-medium transition-colors backdrop-blur-sm border border-white/20">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
-                    <line x1="12" y1="18" x2="12" y2="18"/>
-                </svg>
-                Get iYou Mobile
-            </button>
-        </div>
-        <p class="text-xs text-white/50">Desktop &middot; iOS &middot; Android</p>
     </div>
 
     <!-- Hidden form for OIDC redirect -->
@@ -208,7 +203,7 @@
 
             window.csrfToken = getCookie('idp_csrftoken');
 
-            // Attempt native-connect handshake with iYou Home
+            // Attempt native-connect handshake with iyou_home
             tryConnectIYouHome();
         }
 
@@ -285,7 +280,7 @@
                         cancelBtn.classList.add('hidden');
                         iyouBtn.classList.add('hidden');
                         showManualFallback(
-                            'Could not connect to iYou Home. Please paste your signature manually.'
+                            'Could not connect to iyou_home. Please paste your signature manually.'
                         );
                     }
                 }, 2000);
@@ -315,7 +310,7 @@
                     if (iyouSocket === socket) {
                         if (window._signTimeout) clearTimeout(window._signTimeout);
                         showManualFallback(
-                            'Connection to iYou Home was lost. Please paste your signature manually.'
+                            'Connection to iyou_home was lost. Please paste your signature manually.'
                         );
                     }
                     iyouSocket = null;
@@ -328,7 +323,7 @@
                 showManualFallback(
                     err.name === 'SecurityError'
                         ? 'Local link blocked by browser security. Please paste manually.'
-                        : 'Could not connect to iYou Home. Please paste your signature manually.'
+                        : 'Could not connect to iyou_home. Please paste your signature manually.'
                 );
                 console.error("Critical error allocating socket:", err);
             }
@@ -341,7 +336,7 @@
             const iyouBtn = document.getElementById('iyouHomeBtn');
             iyouBtn.classList.add('hidden');
             iyouBtn.disabled = false;
-            iyouBtn.textContent = '🔐 Sign with iYou Home';
+            iyouBtn.textContent = '🔐 Sign with iyou_home';
             const subtitle = document.getElementById('step2-subtitle');
             subtitle.textContent = message || 'Use your DID wallet or paste a mock signature below.';
             document.getElementById('signingLoading').classList.add('hidden');
@@ -350,15 +345,15 @@
         function onIYouHomeConnected() {
             document.getElementById('manualSection').classList.add('hidden');
             document.getElementById('step2-subtitle').textContent =
-                'Sign the challenge using your iYou Home desktop app.';
+                'Sign the challenge using your iyou_home desktop app.';
             const btn = document.getElementById('iyouHomeBtn');
-            btn.textContent = '🔐 Sign with iYou Home';
+            btn.textContent = '🔐 Sign with iyou_home';
             btn.disabled = false;
             btn.classList.remove('hidden');
             btn.addEventListener('click', signWithIYouHome);
         }
 
-        // Step 2: Sign via iYou Home native socket
+        // Step 2: Sign via iyou_home native socket
         function signWithIYouHome() {
             const btn = document.getElementById('iyouHomeBtn');
             btn.disabled = true;
@@ -375,7 +370,7 @@
             const nudgeTimer = setTimeout(() => {
                 if (!signatureReceived) {
                     subtitle.textContent =
-                        'Handshake sent. Please check your iYou Home app.';
+                        'Handshake sent. Please check your iyou_home app.';
                 }
             }, 1500);
 
@@ -383,7 +378,7 @@
                 if (iyouSocket) iyouSocket.close();
                 boredLink.classList.add('hidden');
                 showManualFallback(
-                    'iYou Home did not respond in time. Please paste your signature manually.'
+                    'iyou_home did not respond in time. Please paste your signature manually.'
                 );
             }, 60000);
 
@@ -399,7 +394,7 @@
             if (iyouSocket && iyouSocket.readyState === WebSocket.OPEN) {
                 sendSignChallenge();
             } else {
-                subtitle.textContent = 'Waiting for iYou Home connection...';
+                subtitle.textContent = 'Waiting for iyou_home connection...';
                 let attempts = 0;
                 const maxAttempts = 25;
                 const poll = setInterval(() => {
@@ -414,7 +409,7 @@
                         window._signTimeout = null;
                         boredLink.classList.add('hidden');
                         showManualFallback(
-                            'Connection to iYou Home timed out. Please paste your signature manually.'
+                            'Connection to iyou_home timed out. Please paste your signature manually.'
                         );
                     }
                 }, 200);
@@ -521,7 +516,7 @@
                     console.error('Login failed:', data.error);
                     const btn = document.getElementById('iyouHomeBtn');
                     btn.disabled = false;
-                    btn.textContent = '🔐 Sign with iYou Home';
+                    btn.textContent = '🔐 Sign with iyou_home';
                     return { success: false, error: data.error };
                 }
             })
@@ -530,7 +525,7 @@
                 showError('Error: Verification Failed (Check CSRF) — ' + error.message);
                 const btn = document.getElementById('iyouHomeBtn');
                 btn.disabled = false;
-                btn.textContent = '🔐 Sign with iYou Home';
+                btn.textContent = '🔐 Sign with iyou_home';
                 throw error;
             });
         }
@@ -720,12 +715,6 @@
                 tabPanes.forEach(p => p.classList.add('hidden'));
                 tabPanes[idx].classList.remove('hidden');
 
-                // Toggle global download CTAs — hide on Tab 0 (has inline buttons), show on 1 & 2
-                var globalCtas = document.getElementById('global-download-ctas');
-                if (globalCtas) {
-                    globalCtas.classList.toggle('hidden', idx === 0);
-                }
-
                 // Community tab lifecycle
                 if (idx === 1) {
                     initCommunityTab();
@@ -744,6 +733,110 @@
         // Initialize the app
         init();
         initTabs();
+
+        // ─── WebAuthn Passkey Authentication (Tab 2) ────────────────────
+        (function initPasskeyAuth() {
+            const passkeyBtn = document.getElementById('passkey-auth-btn');
+            if (!passkeyBtn) return;
+
+            function base64urlToUint8Array(base64url) {
+                const padding = '='.repeat((4 - base64url.length % 4) % 4);
+                const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                return bytes;
+            }
+
+            passkeyBtn.addEventListener('click', async () => {
+                passkeyBtn.disabled = true;
+                passkeyBtn.textContent = '⏳ Verifying...';
+
+                try {
+                    // Step 1: Begin authentication ceremony
+                    const beginResp = await fetch("{% url 'auth_bridge:passkey_authenticate_begin' %}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': window.csrfToken,
+                        },
+                    });
+
+                    if (!beginResp.ok) throw new Error('Failed to start passkey ceremony');
+                    const beginData = await beginResp.json();
+
+                    // Step 2: Convert options for navigator.credentials.get
+                    const publicKeyOptions = beginData.options.publicKey;
+                    if (publicKeyOptions.allowCredentials) {
+                        publicKeyOptions.allowCredentials = publicKeyOptions.allowCredentials.map(cred => ({
+                            ...cred,
+                            id: base64urlToUint8Array(cred.id),
+                        }));
+                    }
+                    publicKeyOptions.challenge = base64urlToUint8Array(publicKeyOptions.challenge);
+
+                    // Step 3: Invoke browser WebAuthn prompt
+                    const assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
+
+                    // Step 4: Format assertion for server
+                    const assertionResponse = {
+                        credential: {
+                            id: assertion.id,
+                            rawId: Array.from(new Uint8Array(assertion.rawId)),
+                        },
+                        response: {
+                            authenticatorData: Array.from(new Uint8Array(assertion.response.authenticatorData)),
+                            clientDataJSON: Array.from(new Uint8Array(assertion.response.clientDataJSON)),
+                            signature: Array.from(new Uint8Array(assertion.response.signature)),
+                            userHandle: assertion.response.userHandle
+                                ? Array.from(new Uint8Array(assertion.response.userHandle))
+                                : null,
+                        },
+                        type: assertion.type,
+                        ceremony_id: beginData.ceremony_id,
+                    };
+
+                    // Step 5: Complete authentication
+                    const completeResp = await fetch("{% url 'auth_bridge:passkey_authenticate_complete' %}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': window.csrfToken,
+                        },
+                        body: JSON.stringify(assertionResponse),
+                    });
+
+                    const completeData = await completeResp.json();
+
+                    if (completeResp.ok && completeData.status === 'authenticated') {
+                        // Navigate to redirect URL or default
+                        window.location.href = completeData.redirect_url || '{{ wun_url|escapejs }}';
+                    } else {
+                        throw new Error(completeData.error || 'Passkey authentication failed');
+                    }
+                } catch (err) {
+                    console.error('Passkey auth error:', err);
+                    passkeyBtn.textContent = '🔑 Sign in with Passkey';
+                    passkeyBtn.disabled = false;
+                    // Graceful fallback — show the email form with a message
+                    if (err.name === 'NotAllowedError') {
+                        alert('Passkey authentication was cancelled. Please use email sign-in.');
+                    } else if (err.name === 'SecurityError') {
+                        alert('Passkey authentication requires HTTPS.');
+                    }
+                }
+            });
+        })();
+    </script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register("{% static 'auth_bridge/js/sw.js' %}")
+            .catch((err) => console.debug('SW registration skipped:', err));
+        });
+      }
     </script>
 </body>
 </html>

@@ -626,17 +626,17 @@ class SatelliteRosterTest(TestCase):
         self.assertEqual(OIDCClient.objects.count(), 18)
 
         help_client = OIDCClient.objects.get(client_id="iyou-help-satellite-client")
-        self.assertEqual(help_client.name, "iYou Help (Mutual Aid)")
+        self.assertEqual(help_client.name, "iyou_help (Mutual Aid)")
         self.assertIn("https://help.iyou.me/oidc/callback/", help_client.redirect_uris)
         self.assertIn("http://127.0.0.1:8012/oidc/callback/", help_client.redirect_uris)
 
         stay_client = OIDCClient.objects.get(client_id="iyou-stay-satellite-client")
-        self.assertEqual(stay_client.name, "iYou Stay (Hospitality)")
+        self.assertEqual(stay_client.name, "iyou_stay (Hospitality)")
         self.assertIn("https://stay.iyou.me/oidc/callback/", stay_client.redirect_uris)
         self.assertIn("http://127.0.0.1:8017/oidc/callback/", stay_client.redirect_uris)
 
         spot_client = OIDCClient.objects.get(client_id="iyou-spot-satellite-client")
-        self.assertEqual(spot_client.name, "iYou Spot (Muster'd Ezine)")
+        self.assertEqual(spot_client.name, "iyou_spot (Muster'd Ezine)")
         self.assertIn("https://spot.iyou.me/oidc/callback/", spot_client.redirect_uris)
         self.assertIn("http://127.0.0.1:8019/oidc/callback/", spot_client.redirect_uris)
 

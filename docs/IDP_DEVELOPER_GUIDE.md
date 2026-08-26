@@ -2,7 +2,7 @@
 
 ## Overview [L3-22]
 
-The iYou IdP is a Django-based OIDC provider that authenticates users via
+The iyou_idp is a Django-based OIDC provider that authenticates users via
 W3C Decentralised Identifiers (DIDs) instead of passwords.  A Rust extension
 (`_crypto`) handles Ed25519 signature verification, backed by a Python
 `cryptography` primary path for defence-in-depth.
@@ -35,7 +35,7 @@ provided, the default is the value of `IDP_WUN_URL`.
 ### Level 3 — Desktop WebSocket Flow (Full Sovereignty)
 
 ```
-  Browser tab 1 (IdP)          Django IdP (port 8000)         iYou Home (port 9001)
+  Browser tab 1 (IdP)          Django IdP (port 8000)         iyou_home (port 9001)
        │                              │                              │
        ├── GET / or /auth/login/ ────►│                              │
        │◄── login page (HTML+JS) ─────┤                              │
@@ -135,8 +135,8 @@ iyou_idp/
 │   │   ├── _tab_sovereign.html     # Tab 0: WebSocket + manual VP flow
 │   │   ├── _tab_community.html     # Tab 1: OOB QR-code flow
 │   │   ├── _tab_managed.html       # Tab 2: OAuth providers (live)
-│   │   ├── _download_modal.html    # Desktop iYou Home download overlay
-│   │   ├── _mobile_download_modal.html  # Mobile iYou download overlay
+│   │   ├── _download_modal.html    # Desktop iyou_home download overlay
+│   │   ├── _mobile_download_modal.html  # Mobile iyou download overlay
 │   │   ├── authenticated_dashboard.html # Post-login profile interface
 │   │   └── admin/                  # Admin DID login templates
 │   ├── static/auth_bridge/
@@ -255,7 +255,7 @@ The entrypoint runs `migrate` automatically and spawns Gunicorn on `:8000`.
 
 **Intel Mac dual-stack binding:**  On Intel Macs the IPv6 loopback
 (`[::1]:9001`) can cause a 60-second stall before falling back to IPv4.
-Configure iYou Home to bind to `[::]:9001` (dual-stack) so the browser's
+Configure iyou_home to bind to `[::]:9001` (dual-stack) so the browser's
 IPv6-localhost preference resolves immediately:
 
 ```rust
@@ -758,10 +758,10 @@ without an active OIDC flow, `LoginPageView.get()` renders
 `authenticated_dashboard.html` instead of the login page.  The dashboard:
 
 - Displays the user's DID.
-- Provides an **"Enter iYou Home"** button linking to `IDP_WUN_URL` with
+- Provides an **"Enter iyou_home"** button linking to `IDP_WUN_URL` with
   `target="_blank" rel="noopener noreferrer"` so the satellite app opens
   in a new tab while the dashboard stays visible.
-- Shows a disabled **iYou Mobile** placeholder.
+- Shows a disabled **iyou_mobile** placeholder.
 - Offers a **Sign Out** link pointing to `/auth/logout/`.
 
 If the `?next=` parameter IS present and contains OIDC authorization params
@@ -855,25 +855,25 @@ Instead of the slower:
 verify → (200) consent page → user clicks Allow → (302) client callback
 ```
 
-### iYou Home Desktop Companion [L396-434]
+### iyou_home Desktop Companion [L396-434]
 
 The "Full Sovereignty" tab attempts a WebSocket connection to
 `IDP_HOME_WS_URL` (default `wss://localhost:9001/`)
 for native signing.  In local development override with `ws://localhost:9001`.
 The wire protocol is a simple JSON request/response exchange:
 
-**Request** (browser → iYou Home):
+**Request** (browser → iyou_home):
 ```json
 {"type": "sign", "challenge": "<uuid>"}
 ```
 
-**Response** (iYou Home → browser):
+**Response** (iyou_home → browser):
 ```json
 {"type": "signature", "vp": {"@context": ["..."], "type": ["VerifiablePresentation"], "holder": "did:key:...", "proof": {...}}}
 ```
 
 The `vp` value is the signed Verifiable Presentation, which the browser
-relays to `POST /auth/verify/`.  If iYou Home sends the VP as an escaped
+relays to `POST /auth/verify/`.  If iyou_home sends the VP as an escaped
 JSON string (rather than a nested object), the Django view handles it via an
 `isinstance(vp_json, str)` guard that calls `json.loads()` a second time.
 
