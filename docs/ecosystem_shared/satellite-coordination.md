@@ -1,7 +1,7 @@
 # Satellite Coordination Index
 
 **Hub:** `omni_social`
-**Last synced:** 2026-08-24
+**Last synced:** 2026-08-30
 
 Each satellite repo has a `TODO.md` in its root, orchestrated from this central hub.
 Edit tasks here first, then propagate to the satellite repos via their agents.
@@ -83,10 +83,12 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | SEC-005 | iyou_home | Open | Polling → Push migration (WebSocket/SSE). |
 | SEC-006 | iyou_home | Open | DNS hijack mitigation — cert pinning for wss://home.iyou.me:9001. |
 
-### Protocol Integrity & Post-Mortem Governance
+### Protocol Integrity & Governance Specifications
 
 | Specification / Plan | Path | Status | Core Focus |
 |:---|:---|:---|:---|
+| **Omni-Social Peer Federation Spec** | [`OMNI_SOCIAL_PEER_FEDERATION_SPEC.md`](OMNI_SOCIAL_PEER_FEDERATION_SPEC.md) | Canonical Living Spec | Open federation standard: DID key derivation, secretless PKCE, Nostr wire registry (kinds 0, 1, 1063, 1111, 1112, 30023, 10002), Blossom BUD-01 3-tier storage failover, and autonomous peer hub deployment (`hub.community.org`). |
+| **Developer Translation Manual** | [`DEVELOPER_TRANSLATION_MANUAL.md`](DEVELOPER_TRANSLATION_MANUAL.md) | Canonical Living Manual | Comprehensive developer guide: UI layout hierarchy (Layer 0, Layer 1, Layer 2), Local Signature Bridge wire contract (port 9001: `OMNI_SIGN_REQUEST`, `RESOLVE_PEER_ALIASES`, `SYNC_TO_HOME_REQUEST`), XMPP JID sanitization rules (`{nostr_pubkey_hex}@{domain}`), and 8-step satellite onboarding. |
 | **Protocol Integrity & Post-Mortem Governance** | [`PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`](strategy/PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md) | Canonical Living Spec | Long-term North Star for existential risk mitigation, Perpetual Purpose Trust legal shielding, client-side invariant verification engine, Merkle vote root domain separation, temporal drift guards ($\pm 900\text{s}$), dead-man key decay, and hydra relay federation. |
 | **Immediate Integrity Execution Plan** | [`IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`](strategy/IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md) | Active Execution Blueprint | Tactical sprint rollout: Phase 1 near-term zero-cost engineering (Invariant Alert hook specs `INVARIANT_ALERT_PUSH`, read-only database guards, fail-closed bridge checks), Phase 2 entity ring-fencing & Purpose Trust charter drafting, Phase 3 automated key decay & community witnesses. |
 
@@ -101,5 +103,5 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ## Sync Status
 
-- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 21 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `PROJECT_ZERO_SPEC.md`, `satellite-coordination.md`, `LONG_TERM_AUTH_TOPOLOGY.md`, `PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`, `IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
-- **Last sync:** 2026-08-24
+- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 21 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `PROJECT_ZERO_SPEC.md`, `OMNI_SOCIAL_PEER_FEDERATION_SPEC.md`, `DEVELOPER_TRANSLATION_MANUAL.md`, `satellite-coordination.md`, `LONG_TERM_AUTH_TOPOLOGY.md`, `PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`, `IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
+- **Last sync:** 2026-08-30
