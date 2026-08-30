@@ -20,6 +20,8 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 
+from apps.core.dids import managed_user_did
+
 
 class SovereignUserManager(BaseUserManager):
     def create_user(self, email=None, password=None, **extra_fields):
@@ -27,7 +29,7 @@ class SovereignUserManager(BaseUserManager):
             email = self.normalize_email(email)
 
         user_uuid = uuid.uuid4()
-        extra_fields.setdefault("custodial_did", f"did:web:iyou.me:user:{user_uuid}")
+        extra_fields.setdefault("custodial_did", managed_user_did())
         extra_fields.setdefault("account_tier", "managed_free")
 
         user = self.model(id=user_uuid, email=email, **extra_fields)

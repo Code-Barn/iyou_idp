@@ -36,6 +36,7 @@ from django.conf import settings as django_settings
 
 from .models import User
 from .backend import evaluate_sovereign_admin_posture
+from apps.core.dids import managed_user_did
 import uuid
 import json
 import hashlib
@@ -782,7 +783,7 @@ def managed_login(request):
             return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
     except User.DoesNotExist:
         # JIT create new user
-        custodial_did = f"did:web:iyou.me:user:{uuid.uuid4()}"
+        custodial_did = managed_user_did()
         user = User(
             email=email,
             username=email,

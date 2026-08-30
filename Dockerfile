@@ -71,6 +71,7 @@ COPY --from=builder /app/staticfiles /app/staticfiles
 # Copy application source (needed for Django app discovery)
 COPY --from=builder /app/config /app/config
 COPY --from=builder /app/auth_bridge /app/auth_bridge
+COPY --from=builder /app/apps /app/apps
 COPY --from=builder /app/manage.py /app/manage.py
 COPY --from=builder /app/pyproject.toml /app/pyproject.toml
 

@@ -58,6 +58,11 @@ IDP_WUN_URL = env("IDP_WUN_URL", default="http://127.0.0.1:8001")
 IDP_HOME_URL = env("IDP_HOME_URL", default="http://iyou-home.user.svc.cluster.local:9000")
 IDP_HOME_WS_URL = env("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/")
 
+# Tier-1 managed-identity did:web namespace. Peer instances override this with
+# their own authority (e.g. did:web:hub.community.org) so managed users are
+# minted under the operator's domain rather than iyou.me.
+IDP_WEB_DID_NAMESPACE = env("IDP_WEB_DID_NAMESPACE", default="did:web:iyou.me")
+
 # Master admin DID for automatic superuser elevation
 ADMIN_DID = env("ADMIN_DID", default="did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV")
 
@@ -86,6 +91,7 @@ INSTALLED_APPS = [
     "oauth2_provider",
     "oidc_provider",
     "auth_bridge",
+    "apps.core",
 ]
 
 MIDDLEWARE = [

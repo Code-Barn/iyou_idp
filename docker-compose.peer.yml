@@ -1,0 +1,96 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# iyou_idp — Autonomous Peer Node Stack (PostgreSQL + Redis + IdP)
+#
+# Usage:
+#   cp .env.peer.example .env.peer    # then edit every value (domain, secrets)
+#   docker compose -f docker-compose.peer.yml up -d --build
+#
+# First-boot provisioning (run after `up -d`):
+#   docker compose -f docker-compose.peer.yml run --rm --entrypoint python idp manage.py creatersakey
+#   docker compose -f docker-compose.peer.yml run --rm --entrypoint python idp manage.py createsuperuser_did
+#   # register YOUR secretless public OIDC clients via Django admin (see docs/DEPLOY_PEER_NODE.md)
+#
+# Secretless PKCE: OIDC clients are public (client_type=public, empty
+# client_secret); /openid/token/ enforces PKCE S256 on every code exchange.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: iyou-idp-peer
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-iyou_idp}
+      POSTGRES_USER: ${POSTGRES_USER:-iyou_idp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.peer}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iyou_idp} -d ${POSTGRES_DB:-iyou_idp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  idp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # ── Customizable domain routing ────────────────────────────────
+      IDP_BASE_URL: ${IDP_BASE_URL:-https://hub.community.org}
+      IDP_WEB_DID_NAMESPACE: ${IDP_WEB_DID_NAMESPACE:-did:web:hub.community.org}
+      IDP_ALLOWED_HOSTS: ${IDP_ALLOWED_HOSTS:-hub.community.org}
+      IDP_CSRF_TRUSTED_ORIGINS: ${IDP_CSRF_TRUSTED_ORIGINS:-https://hub.community.org}
+      IDP_CORS_ALLOWED_ORIGINS: ${IDP_CORS_ALLOWED_ORIGINS:-https://hub.community.org,https://app.hub.community.org}
+      # ── Django ─────────────────────────────────────────────────────
+      IDP_DEBUG: ${IDP_DEBUG:-False}
+      IDP_SECRET_KEY: ${IDP_SECRET_KEY:?set IDP_SECRET_KEY in .env.peer}
+      ALLOW_EMERGENCY_BYPASS: ${ALLOW_EMERGENCY_BYPASS:-False}
+      # ── Satellites & companion ─────────────────────────────────────
+      IDP_WUN_URL: ${IDP_WUN_URL:-https://app.hub.community.org}
+      IDP_HOME_URL: ${IDP_HOME_URL:-http://127.0.0.1:9000}
+      IDP_HOME_WS_URL: ${IDP_HOME_WS_URL:-wss://home.hub.community.org:9001/}
+      # ── Data services (compose fills the URLs for you) ─────────────
+      DATABASE_URL: postgres://${POSTGRES_USER:-iyou_idp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-iyou_idp}
+      REDIS_URL: redis://redis:6379/1
+      # ── Sovereign admin elevation ──────────────────────────────────
+      ADMIN_DID: ${ADMIN_DID:-did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV}
+      # ── Optional Tier-1 OAuth providers ────────────────────────────
+      OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:-}
+      OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:-}
+      OAUTH_GITHUB_CLIENT_ID: ${OAUTH_GITHUB_CLIENT_ID:-}
+      OAUTH_GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET:-}
+      OAUTH_APPLE_CLIENT_ID: ${OAUTH_APPLE_CLIENT_ID:-}
+      OAUTH_APPLE_CLIENT_SECRET: ${OAUTH_APPLE_CLIENT_SECRET:-}
+    ports:
+      - "${IDP_HTTP_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/auth/challenge/')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
