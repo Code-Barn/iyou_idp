@@ -63,7 +63,7 @@ class ResilientCache:
     """
     Cache wrapper that delegates to Django's configured default cache (e.g., Redis)
     and gracefully falls back to an in-memory LocMemCache if Redis is unreachable
-    during local development (settings.DEBUG is True).
+    or stalls, ensuring challenge generation and verification never fail with 500.
     """
 
     def __init__(self, primary_cache=default_cache, fallback_cache=None):
@@ -75,44 +75,49 @@ class ResilientCache:
             val = self._primary.get(key, default)
             if val is not None:
                 return val
-            if getattr(django_settings, "DEBUG", False):
-                return self._fallback.get(key, default)
-            return default
+            return self._fallback.get(key, default)
         except Exception as e:
-            if getattr(django_settings, "DEBUG", False):
-                logger.warning("Primary cache.get failed (%s); using in-memory fallback", e)
-                return self._fallback.get(key, default)
-            raise
+            logger.warning("Primary cache.get failed (%s); using in-memory fallback", e)
+            return self._fallback.get(key, default)
 
     def set(self, key, value, timeout=300):
         try:
             self._primary.set(key, value, timeout=timeout)
-            if getattr(django_settings, "DEBUG", False):
-                self._fallback.set(key, value, timeout=timeout)
+            self._fallback.set(key, value, timeout=timeout)
         except Exception as e:
-            if getattr(django_settings, "DEBUG", False):
-                logger.warning("Primary cache.set failed (%s); using in-memory fallback", e)
-                self._fallback.set(key, value, timeout=timeout)
-            else:
-                raise
+            logger.warning("Primary cache.set failed (%s); using in-memory fallback", e)
+            self._fallback.set(key, value, timeout=timeout)
 
     def delete(self, key):
         try:
             self._primary.delete(key)
-            if getattr(django_settings, "DEBUG", False):
-                self._fallback.delete(key)
         except Exception as e:
-            if getattr(django_settings, "DEBUG", False):
-                logger.warning("Primary cache.delete failed (%s); using in-memory fallback", e)
-                self._fallback.delete(key)
-            else:
-                raise
+            logger.warning("Primary cache.delete failed (%s); using in-memory fallback", e)
+        finally:
+            self._fallback.delete(key)
 
 
 cache = ResilientCache()
 
 # Where to send the user after authentication when no explicit next_url is given.
 DEFAULT_NEXT_URL = django_settings.IDP_WUN_URL
+
+
+def _is_safe_public_redirect(uri: str) -> bool:
+    """
+    Validate that redirect URI is safe for public browser consumption and
+    never emits internal Kubernetes service URLs (e.g. .svc.cluster.local).
+    """
+    if not uri:
+        return False
+    try:
+        parsed = urlparse(uri)
+        hostname = (parsed.hostname or "").lower()
+        if ".svc.cluster.local" in hostname or hostname.endswith(".cluster.local"):
+            return False
+        return True
+    except Exception:
+        return False
 
 
 def _build_oidc_redirect(next_url, user):
@@ -143,6 +148,10 @@ def _build_oidc_redirect(next_url, user):
         return None
 
     if redirect_uri not in client.redirect_uris:
+        return None
+
+    if not _is_safe_public_redirect(redirect_uri):
+        logger.warning("Rejected internal cluster redirect URI: %s", redirect_uri)
         return None
 
     scope_list = ' '.join(params.get('scope', ['openid'])).split()
@@ -286,15 +295,22 @@ def verify_signature(request):
             if not signature_value:
                 return JsonResponse({"error": "VP proof missing signatureValue"}, status=401)
 
-            # Challenge nonce check
+            # Challenge nonce check - strictly match caller's challenge without allowing empty nonce
             proof_challenge = proof.get("challenge")
+            vp_challenge = vp_json.get("challenge")
             if proof_challenge and proof_challenge != challenge:
                 return JsonResponse({"error": "Challenge nonce mismatch"}, status=401)
+            if vp_challenge and vp_challenge != challenge:
+                return JsonResponse({"error": "Challenge nonce mismatch"}, status=401)
+            if not proof_challenge and not vp_challenge:
+                return JsonResponse({"error": "Challenge nonce missing in VP"}, status=401)
 
             # Root Authentication Flow: no inner credential → master key proof
             if not vp_json.get("verifiableCredential"):
-                holder_did = vp_json.get("holder")
-                challenge_str = vp_json.get("challenge")
+                holder_did = vp_json.get("holder", "").strip()
+                if not holder_did:
+                    return JsonResponse({"error": "No DID found in verifiable presentation"}, status=400)
+                challenge_str = vp_json.get("challenge", "")
                 proof_block = vp_json.get("proof", {})
                 raw_sig_str = proof_block.get("proofValue") or proof_block.get("signatureValue", "")
                 direct_valid = False
@@ -360,12 +376,20 @@ def verify_signature(request):
                         direct_valid = True
 
                 # -- Emergency bypass (challenge-nonce only, no signature check) --
-                # SEC-001: gated behind explicit ALLOW_EMERGENCY_BYPASS opt-in.
-                # Without it, a matching Redis nonce is never sufficient.
+                # SEC-001: strictly gated behind settings.DEBUG is True and
+                # settings.ENABLE_DEV_AUTH_BYPASS / ALLOW_EMERGENCY_BYPASS opt-in.
+                # In production (DEBUG=False), unsigned nonce auth is strictly impossible.
                 if not direct_valid:
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
-                    if not getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False):
+                    dev_bypass_enabled = (
+                        getattr(django_settings, "DEBUG", False) is True
+                        and (
+                            getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True
+                            or getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False) is True
+                        )
+                    )
+                    if not dev_bypass_enabled:
                         return JsonResponse(
                             {"valid": False, "error": "Signature verification failed"},
                             status=401,
@@ -379,15 +403,16 @@ def verify_signature(request):
                     cached_raw = cache.get(challenge)
                     if cached_raw is not None:
                         print("SECURITY AUDIT BYPASS: challenge", challenge[:16], "DID", holder_did, flush=True)
-                        user, created = User.objects.get_or_create(custodial_did=holder_did)
+                        user, created = User.objects.get_or_create(custodial_did=holder_did, defaults={"email": None})
                         user = evaluate_sovereign_admin_posture(user)
                         if user.is_active:
                             user.backend = "django.contrib.auth.backends.ModelBackend"
                             login(request, user)
                             cache.delete(challenge)
+                            redirect_url = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
                             response_data = {
                                 "success": True,
-                                "redirect_url": next_url,
+                                "redirect_url": redirect_url,
                                 "show_legal_disclaimer": user.show_legal_disclaimer,
                                 "user": {
                                     "did": user.custodial_did,
@@ -403,7 +428,7 @@ def verify_signature(request):
                             print("DIAGNOSTIC: Bypass failed - user account disabled", flush=True)
                     return JsonResponse({"error": "Invalid master key signature"}, status=401)
 
-                user, created = User.objects.get_or_create(custodial_did=holder_did)
+                user, created = User.objects.get_or_create(custodial_did=holder_did, defaults={"email": None})
                 user = evaluate_sovereign_admin_posture(user)
 
                 if not user.is_active:
@@ -414,9 +439,11 @@ def verify_signature(request):
 
                 cache.delete(challenge)
 
+                redirect_url = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
+
                 response_data = {
                     "success": True,
-                    "redirect_url": next_url,
+                    "redirect_url": redirect_url,
                     "show_legal_disclaimer": user.show_legal_disclaimer,
                     "user": {
                         "did": user.custodial_did,
@@ -441,7 +468,7 @@ def verify_signature(request):
                 'error': result.get('error', 'Verification failed')
             }, status=401)
 
-        did = vp_json.get('holder', '')
+        did = vp_json.get('holder', '').strip()
         if not did:
             return JsonResponse({
                 'error': 'No DID found in verifiable presentation'
@@ -449,7 +476,7 @@ def verify_signature(request):
 
         cache.delete(challenge)
 
-        user, created = User.objects.get_or_create(custodial_did=did)
+        user, created = User.objects.get_or_create(custodial_did=did, defaults={"email": None})
         user = evaluate_sovereign_admin_posture(user)
 
         if not user.is_active:
@@ -463,7 +490,7 @@ def verify_signature(request):
         # Bypass the OIDC consent page: generate an auth code right here
         redirect_url = _build_oidc_redirect(next_url, user)
         if redirect_url is None:
-            redirect_url = next_url
+            redirect_url = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
 
         response_data = {
             'success': True,
@@ -592,23 +619,27 @@ def mobile_verify_signature(request):
             if not signature_value:
                 return JsonResponse({"error": "VP proof missing signatureValue"}, status=401)
 
-            # Challenge nonce check
+            # Challenge nonce check - strictly match caller's challenge without allowing empty nonce
             proof_challenge = proof.get("challenge")
+            vp_challenge = vp_json.get("challenge")
             if proof_challenge and proof_challenge != challenge:
                 return JsonResponse({"error": "Challenge nonce mismatch"}, status=401)
+            if vp_challenge and vp_challenge != challenge:
+                return JsonResponse({"error": "Challenge nonce mismatch"}, status=401)
+            if not proof_challenge and not vp_challenge:
+                return JsonResponse({"error": "Challenge nonce missing in VP"}, status=401)
 
             # Root Authentication Flow: no inner credential → master key proof
             if not vp_json.get("verifiableCredential"):
-                did = vp_json.get("holder")
-                proof_block = vp_json.get("proof", {})
-
-                # -- Primary: Python Ed25519 verification against canonical VP payload --
-                holder_did = vp_json.get("holder")
-                challenge_str = vp_json.get("challenge")
+                holder_did = vp_json.get("holder", "").strip()
+                if not holder_did:
+                    return JsonResponse({"error": "No DID found in verifiable presentation"}, status=400)
+                challenge_str = vp_json.get("challenge", "")
                 proof_block = vp_json.get("proof", {})
                 raw_sig_str = proof_block.get("proofValue") or proof_block.get("signatureValue", "")
                 direct_valid = False
 
+                # -- Primary: Python Ed25519 verification against canonical VP payload --
                 pub_key = _pubkey_from_did(holder_did)
                 if pub_key and raw_sig_str:
                     try:
@@ -649,12 +680,20 @@ def mobile_verify_signature(request):
                             pass
 
                 # -- Emergency bypass (challenge-nonce only, no signature check) --
-                # SEC-001: gated behind explicit ALLOW_EMERGENCY_BYPASS opt-in.
-                # Without it, a matching Redis nonce is never sufficient.
+                # SEC-001: strictly gated behind settings.DEBUG is True and
+                # settings.ENABLE_DEV_AUTH_BYPASS / ALLOW_EMERGENCY_BYPASS opt-in.
+                # In production (DEBUG=False), unsigned nonce auth is strictly impossible.
                 if not direct_valid:
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Mobile bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
-                    if not getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False):
+                    dev_bypass_enabled = (
+                        getattr(django_settings, "DEBUG", False) is True
+                        and (
+                            getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True
+                            or getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False) is True
+                        )
+                    )
+                    if not dev_bypass_enabled:
                         return JsonResponse(
                             {"valid": False, "error": "Signature verification failed"},
                             status=401,
@@ -692,7 +731,7 @@ def mobile_verify_signature(request):
                 status=401,
             )
 
-        did = vp_json.get('holder', '')
+        did = vp_json.get('holder', '').strip()
         if not did:
             return JsonResponse({'error': 'No DID found in verifiable presentation'}, status=400)
 
@@ -729,7 +768,7 @@ def check_challenge_status(request, challenge_id):
     did = cached['did']
     next_url = cached.get('next_url', DEFAULT_NEXT_URL)
 
-    user, created = User.objects.get_or_create(custodial_did=did)
+    user, created = User.objects.get_or_create(custodial_did=did, defaults={"email": None})
     user = evaluate_sovereign_admin_posture(user)
 
     if not user.is_active:
@@ -743,7 +782,7 @@ def check_challenge_status(request, challenge_id):
 
     redirect_url = _build_oidc_redirect(next_url, user)
     if redirect_url is None:
-        redirect_url = next_url
+        redirect_url = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
 
     cache.delete(challenge_id)
 
@@ -1018,10 +1057,13 @@ class SovereignAuthorizeView(AuthorizeView):
         try:
             authorize.validate_params()
 
+            prompt_param = authorize.params.get("prompt", "") if isinstance(authorize.params, dict) else getattr(authorize.params, "prompt", "")
+            has_consent_prompt = "consent" in prompt_param if isinstance(prompt_param, (list, tuple, str)) else False
+
             if (
                 get_attr_or_callable(request.user, "is_authenticated")
                 and not authorize.client.require_consent
-                and "consent" not in authorize.params["prompt"]
+                and not has_consent_prompt
             ):
                 return oidc_redirect(authorize.create_response_uri())
 

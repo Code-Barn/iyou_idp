@@ -1,4 +1,16 @@
-# Stage 1: Builder — compile native Rust crypto + Python dependencies
+# Stage 1: Node.js Assets — compile Tailwind CSS
+FROM node:20-alpine AS assets
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tailwind.config.js ./
+COPY static/css/input.css ./static/css/input.css
+COPY apps/ ./apps/
+COPY templates/ ./templates/
+RUN npm run build:css
+
+# Stage 2: Builder — compile native Rust crypto + Python dependencies
 FROM python:3.12-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
@@ -44,6 +56,9 @@ RUN mkdir -p /app/_crypto_dist && \
 
 # Copy the remaining project source (manage.py, config, templates, static, etc.)
 COPY . .
+
+# Copy compiled Tailwind CSS from assets stage before collectstatic
+COPY --from=assets /app/static/css/output.css /app/static/css/output.css
 
 # Harvest all static assets at build time
 ENV DJANGO_SETTINGS_MODULE=config.settings

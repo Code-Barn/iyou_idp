@@ -22,7 +22,7 @@ import base58
 from base64 import urlsafe_b64encode
 from django.test import TestCase, Client
 from django.urls import reverse
-from django.core.cache import cache
+from auth_bridge.views import cache
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from cryptography.hazmat.primitives import serialization
 from auth_bridge.models import User

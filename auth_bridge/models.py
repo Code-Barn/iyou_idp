@@ -25,8 +25,10 @@ from apps.core.dids import managed_user_did
 
 class SovereignUserManager(BaseUserManager):
     def create_user(self, email=None, password=None, **extra_fields):
-        if email:
-            email = self.normalize_email(email)
+        if email and isinstance(email, str) and email.strip():
+            email = self.normalize_email(email.strip())
+        else:
+            email = None
 
         user_uuid = uuid.uuid4()
         extra_fields.setdefault("custodial_did", managed_user_did())
@@ -73,6 +75,16 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
+
+    def clean(self):
+        super().clean()
+        if self.email == "" or (isinstance(self.email, str) and not self.email.strip()):
+            self.email = None
+
+    def save(self, *args, **kwargs):
+        if self.email == "" or (isinstance(self.email, str) and not self.email.strip()):
+            self.email = None
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.email} ({self.account_tier})"

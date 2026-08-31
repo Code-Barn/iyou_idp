@@ -72,8 +72,10 @@ IDP_VAULT_TOKEN = env("IDP_VAULT_TOKEN", default="")
 IDP_VAULT_KV_MOUNT = env("IDP_VAULT_KV_MOUNT", default="secret")
 
 # SEC-001: Emergency Tier 3 bypass (challenge-nonce-only auth on failed signature
-# verification). Must be explicitly enabled; defaults to secure rejection.
+# verification). Strictly requires DEBUG=True and ENABLE_DEV_AUTH_BYPASS=True;
+# defaults to secure rejection in all production environments.
 ALLOW_EMERGENCY_BYPASS = env.bool("ALLOW_EMERGENCY_BYPASS", default=False)
+ENABLE_DEV_AUTH_BYPASS = env.bool("ENABLE_DEV_AUTH_BYPASS", default=False)
 
 ALLOWED_HOSTS = env.list("IDP_ALLOWED_HOSTS", default=["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"])
 
@@ -251,8 +253,9 @@ SESSION_COOKIE_NAME = "idp_sessionid"
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_NAME = "idp_csrftoken"
 
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 if not DEBUG:
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 else:

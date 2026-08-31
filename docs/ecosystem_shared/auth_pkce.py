@@ -49,16 +49,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import secrets
-import time
 from base64 import urlsafe_b64encode
 from urllib.parse import urlencode
 
 import requests
 from django.contrib import auth
 from django.http import HttpResponseRedirect
-from django.shortcuts import resolve_url
 from django.urls import reverse
 from mozilla_django_oidc.utils import (
     absolutify,
