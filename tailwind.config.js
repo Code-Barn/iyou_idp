@@ -5,7 +5,8 @@ module.exports = {
     './templates/**/*.html',
     './auth_bridge/templates/**/*.html',
     './apps/**/templates/**/*.html',
-    './static/**/*.js'
+    './static/**/*.js',
+    './auth_bridge/static/**/*.js'
   ],
   theme: {
     extend: {

@@ -8,6 +8,8 @@ COPY tailwind.config.js ./
 COPY static/css/input.css ./static/css/input.css
 COPY apps/ ./apps/
 COPY templates/ ./templates/
+COPY auth_bridge/templates/ ./auth_bridge/templates/
+COPY auth_bridge/static/ ./auth_bridge/static/
 RUN npm run build:css
 
 # Stage 2: Builder — compile native Rust crypto + Python dependencies
@@ -54,15 +56,18 @@ RUN mkdir -p /app/_crypto_dist && \
     cp $(find /app/.venv/lib -name '_crypto*.so' -print -quit) /app/_crypto_dist/ && \
     echo "Located _crypto at:" && ls -la /app/_crypto_dist/
 
-# Copy the remaining project source (manage.py, config, templates, static, etc.)
+# Copy source files including templates and static
 COPY . .
+
+# Ensure static directory exists
+RUN mkdir -p /app/static/css
 
 # Copy compiled Tailwind CSS from assets stage before collectstatic
 COPY --from=assets /app/static/css/output.css /app/static/css/output.css
 
-# Harvest all static assets at build time
+# Run collectstatic with compiled output.css
 ENV DJANGO_SETTINGS_MODULE=config.settings
-RUN uv run python manage.py collectstatic --noinput
+RUN /app/.venv/bin/python manage.py collectstatic --noinput --clear
 
 # Stage 2: Slim runtime — production image
 FROM python:3.12-slim
