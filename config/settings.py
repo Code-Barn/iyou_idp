@@ -74,7 +74,7 @@ IDP_VAULT_KV_MOUNT = env("IDP_VAULT_KV_MOUNT", default="secret")
 # SEC-001: Emergency Tier 3 bypass (challenge-nonce-only auth on failed signature
 # verification). Strictly requires DEBUG=True and ENABLE_DEV_AUTH_BYPASS=True;
 # defaults to secure rejection in all production environments.
-ALLOW_EMERGENCY_BYPASS = env.bool("ALLOW_EMERGENCY_BYPASS", default=False)
+ALLOW_EMERGENCY_BYPASS = env.bool("ALLOW_EMERGENCY_BYPASS", default=False)  # Legacy, deprecated
 ENABLE_DEV_AUTH_BYPASS = env.bool("ENABLE_DEV_AUTH_BYPASS", default=False)
 
 ALLOWED_HOSTS = env.list("IDP_ALLOWED_HOSTS", default=["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"])
