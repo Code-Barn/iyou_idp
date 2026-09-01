@@ -1,16 +1,19 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [
-    "./templates/**/*.html",
-    "./auth_bridge/templates/**/*.html",
-    "./oidc_provider/templates/**/*.html",
-    "./apps/**/templates/**/*.html",
-    "./auth_bridge/static/**/*.js",
-    "./static/**/*.js",
-  ],
   darkMode: 'class',
+  content: [
+    './templates/**/*.html',
+    './auth_bridge/templates/**/*.html',
+    './apps/**/templates/**/*.html',
+    './static/**/*.js'
+  ],
   theme: {
-    extend: {},
+    extend: {
+      screens: { 'xs': '360px' },
+      colors: {
+        onyx: { 950: '#0B0F19', 900: '#131826', 800: '#1E2538' }
+      }
+    }
   },
-  plugins: [],
-};
+  plugins: []
+}
