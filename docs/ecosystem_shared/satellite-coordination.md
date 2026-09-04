@@ -1,7 +1,7 @@
 # Satellite Coordination Index
 
 **Hub:** `omni_social`
-**Last synced:** 2026-08-30
+**Last synced:** 2026-09-02
 
 Each satellite repo has a `TODO.md` in its root, orchestrated from this central hub.
 Edit tasks here first, then propagate to the satellite repos via their agents.
@@ -91,6 +91,44 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | **Developer Translation Manual** | [`DEVELOPER_TRANSLATION_MANUAL.md`](DEVELOPER_TRANSLATION_MANUAL.md) | Canonical Living Manual | Comprehensive developer guide: UI layout hierarchy (Layer 0, Layer 1, Layer 2), Local Signature Bridge wire contract (port 9001: `OMNI_SIGN_REQUEST`, `RESOLVE_PEER_ALIASES`, `SYNC_TO_HOME_REQUEST`), XMPP JID sanitization rules (`{nostr_pubkey_hex}@{domain}`), and 8-step satellite onboarding. |
 | **Protocol Integrity & Post-Mortem Governance** | [`PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`](strategy/PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md) | Canonical Living Spec | Long-term North Star for existential risk mitigation, Perpetual Purpose Trust legal shielding, client-side invariant verification engine, Merkle vote root domain separation, temporal drift guards ($\pm 900\text{s}$), dead-man key decay, and hydra relay federation. |
 | **Immediate Integrity Execution Plan** | [`IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`](strategy/IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md) | Active Execution Blueprint | Tactical sprint rollout: Phase 1 near-term zero-cost engineering (Invariant Alert hook specs `INVARIANT_ALERT_PUSH`, read-only database guards, fail-closed bridge checks), Phase 2 entity ring-fencing & Purpose Trust charter drafting, Phase 3 automated key decay & community witnesses. |
+| **Dependent Identity & Graduation Spec** | [`DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`](specs/DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md) | Canonical Living Spec | Parent-stewarded minors: client-side Web-of-Trust graph distance replaces intrusive cloud age verification; `iyou_home` enclave child subkey derivation (`m/iyou/dependent/<index>`); zero-PII `DependentTokenSlot` age-bracket VCs signed by parent DID; 5-year Trust Ladder (Stages 1–3); Sovereign Graduation zero-loss key export; automated restorative intervention (`iyou_safe` → `iyou_talk` COGS/POGS routing). |
+
+---
+
+## Dependent Identity & Graduation — Phase Milestones (Satellite Backlogs)
+
+Roadmap for `OMNI-DEP-GRAD-SPEC-V1` (`docs/specs/DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`). Each satellite implements its slice of the dependent identity / sovereign graduation lifecycle. Full checklist in `OMNI_SOCIAL_DEVELOPER_GUIDE.md` §7a.
+
+### Phase A — Enclave Key Derivation & Zero-PII Attestation (foundation)
+
+| Ticket | Target Repo | Status | Notes |
+|:---|:---|:---|:---|
+| DEP-101 — Child subkey derivation | iyou_home | Open | Deterministic path `m/iyou/dependent/<index>` (Ed25519, LE32 index). Leaf-keypair-only isolation. |
+| DEP-102 — Parent revocation & delegation | iyou_home | Open | `kind:9112` RevocationTicket + NIP-26 DelegationToken management in the parent vault. |
+| DEP-103 — Dependent OIDC client registration | iyou_idp | Open | Register child DID as dependent OIDC client; expose `dep.*` claims. |
+| DEP-104 — `dep.*` claim namespace issuance | iyou_idp | Open | `DependentTokenSlot`: `bracket`, `wot_distance`, `parent_did`, `attestation_vc`, `issued_at`, `expires_at`, `revoked`. Reject expired/revoked. |
+| DEP-105 — Age-bracket VC issuance | iyou_idp | Open | W3C VC signed by parent DID (no cleartext DoB). Validate parent signature during token exchange. |
+
+### Phase B — Trust Ladder Stages 1–2 (guided → autonomous)
+
+| Ticket | Target Repo | Status | Notes |
+|:---|:---|:---|:---|
+| DEP-201 — Stage 1 U14 safe-relay | iyou_safe | Open | Route outbound dependent messages through `iyou_safe` content screening (restorative, not punitive). |
+| DEP-202 — Inbound DM WoT filter | iyou_wun | Open | WoT distance ≤ 1 (U14) / ≤ 2 (U14-U18). Block 3rd-degree and beyond by default. |
+| DEP-203 — Circle feed defaults | iyou_wun | Open | Restrict feed to approved contacts for younger brackets. Enable Stage 2 peer-circle formation at U14-U18. |
+| DEP-204 — L2 burner persona derivation | iyou_home | Open | Allow dependent to derive L2 burners under `m/iyou/dependent/<index>/l2/<context_id>`; parent revocation per-burner. |
+| DEP-205 — Parent-visible connection audit log | iyou_wun | Open | Encrypted audit of new peer connections (DID + timestamp only, never content) delivered to parent. |
+
+### Phase C — Sovereign Graduation & Restorative Intervention
+
+| Ticket | Target Repo | Status | Notes |
+|:---|:---|:---|:---|
+| DEP-301 — Friction flag taxonomy | iyou_safe | Open | `FRIC-001` → `FRIC-005` surfaced as `kind:9112` events. No silent algorithmic shadowbanning. |
+| DEP-302 — COGS/POGS restorative routing | iyou_talk | Open | Map `iyou_safe` friction flags to COGS (licensed) / POGS (peer) support. Age-appropriate routing: U14 → COGS only. |
+| DEP-303 — Parent transparency tiers | iyou_safe | Open | Full friction reports for U14; severity-weighted summaries for U14-U18. |
+| DEP-304 — Graduation key export ceremony | iyou_home | Open | Zero-loss export of L1 primary + L2 burners to standalone child `iyou_home`. New root seed, non-derived. |
+| DEP-305 — DID republish + controller flip | iyou_home | Open | Publish updated DID doc: `controller` parent → self, `alsoKnownAs` cleared. Emit immutable graduation audit record. |
+| DEP-306 — Age-gated competition categories | iyou_play | Open | Read `dep.bracket` to assign age-appropriate team formation and competition brackets. |
 
 ---
 
@@ -103,5 +141,5 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ## Sync Status
 
-- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 21 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `PROJECT_ZERO_SPEC.md`, `OMNI_SOCIAL_PEER_FEDERATION_SPEC.md`, `DEVELOPER_TRANSLATION_MANUAL.md`, `satellite-coordination.md`, `LONG_TERM_AUTH_TOPOLOGY.md`, `PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`, `IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
-- **Last sync:** 2026-08-30
+- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 21 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `PROJECT_ZERO_SPEC.md`, `OMNI_SOCIAL_PEER_FEDERATION_SPEC.md`, `DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`, `DEVELOPER_TRANSLATION_MANUAL.md`, `satellite-coordination.md`, `LONG_TERM_AUTH_TOPOLOGY.md`, `PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`, `IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
+- **Last sync:** 2026-09-02

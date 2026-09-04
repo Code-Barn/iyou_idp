@@ -383,8 +383,11 @@ def verify_signature(request):
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
                     dev_bypass_enabled = (
-                        getattr(django_settings, "DEBUG", False) is True
-                        and getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True
+                        (
+                            getattr(django_settings, "DEBUG", False) is True
+                            and getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True
+                        )
+                        or getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False) is True
                     )
                     if not dev_bypass_enabled:
                         return JsonResponse(
@@ -684,8 +687,11 @@ def mobile_verify_signature(request):
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Mobile bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
                     dev_bypass_enabled = (
-                        getattr(django_settings, "DEBUG", False) is True
-                        and getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True
+                        (
+                            getattr(django_settings, "DEBUG", False) is True
+                            and getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True
+                        )
+                        or getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False) is True
                     )
                     if not dev_bypass_enabled:
                         return JsonResponse(
