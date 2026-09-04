@@ -151,3 +151,37 @@ class SovereignInfrastructureLease(models.Model):
 
     def __str__(self):
         return f"Lease({self.user.email}) active={self.is_active}"
+
+
+class IssuedCredential(models.Model):
+    """
+    Issued Zero-PII Age-Bracket Verifiable Credential registry (DEP-104).
+    Tracks issued credentials, subject leaf DIDs, and parent revocation state
+    (including kind:9112 RevocationTickets).
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject_did = models.CharField(max_length=255, db_index=True)
+    issuer_did = models.CharField(max_length=255, db_index=True)
+    bracket = models.CharField(max_length=32, default="U14")
+    wot_distance = models.PositiveIntegerField(default=1)
+    raw_vc = models.JSONField(default=dict)
+    issued_at = models.BigIntegerField(null=True, blank=True)
+    expires_at = models.BigIntegerField(null=True, blank=True)
+    revoked = models.BooleanField(default=False, db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revocation_ticket = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Issued Credential"
+        verbose_name_plural = "Issued Credentials"
+
+    def __str__(self):
+        return f"IssuedCredential({self.subject_did} [{self.bracket}] revoked={self.revoked})"
+
+    @property
+    def is_expired(self) -> bool:
+        if self.expires_at is not None:
+            return self.expires_at <= int(timezone.now().timestamp())
+        return False

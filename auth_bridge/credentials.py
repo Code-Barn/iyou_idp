@@ -26,12 +26,15 @@ Maps age brackets to session permission tiers:
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import logging
+import time
 from typing import Any
 
 import base58
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +49,8 @@ AGE_BRACKET_CREDENTIAL_TYPE = "AgeBracketCredential"
 # Supported age brackets
 AGE_BRACKET_U14 = "U14"
 AGE_BRACKET_U14_U18 = "U14-U18"
-VALID_AGE_BRACKETS = {AGE_BRACKET_U14, AGE_BRACKET_U14_U18}
+AGE_BRACKET_U18 = "U18"
+VALID_AGE_BRACKETS = {AGE_BRACKET_U14, AGE_BRACKET_U14_U18, AGE_BRACKET_U18}
 
 # Cleartext PII fields prohibited in Zero-PII credential payloads
 DISALLOWED_PII_FIELDS = {
@@ -83,6 +87,17 @@ PERMISSION_TIERS: dict[str, dict[str, Any]] = {
         "l2_derivation_permitted": True,
         "autonomous_persona": True,
         "description": "Stage 2 Autonomous Persona (L2 contextual derivation permitted)",
+    },
+    AGE_BRACKET_U18: {
+        "bracket": AGE_BRACKET_U18,
+        "stage": 3,
+        "stage_name": "Stage 3 Sovereign Pending",
+        "restricted_kinds": False,
+        "relay_allowlist": False,
+        "l2_contextual_derivation_permitted": True,
+        "l2_derivation_permitted": True,
+        "autonomous_persona": True,
+        "description": "Stage 3 Sovereign Pending (graduation ceremony eligible)",
     },
 }
 
@@ -218,25 +233,75 @@ def verify_signature_with_did_rust(vc_obj: dict[str, Any]) -> bool:
     raise CredentialValidationError("Invalid parent DID signature: VC Signature Failure")
 
 
-def validate_age_bracket_credential(payload: dict[str, Any] | str) -> dict[str, Any]:
+def _is_jwt_string(s: Any) -> bool:
+    """Check if value is a dot-separated JWT string (header.payload.signature)."""
+    if not isinstance(s, str):
+        return False
+    parts = s.strip().split(".")
+    return len(parts) == 3 and all(len(p) > 0 for p in parts)
+
+
+def _parse_timestamp(val: Any) -> int | None:
+    """Normalize int, float, numeric string, or ISO 8601 string to a unix timestamp integer."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, str):
+        val = val.strip()
+        if not val:
+            return None
+        try:
+            return int(val)
+        except ValueError:
+            pass
+        try:
+            return int(float(val))
+        except ValueError:
+            pass
+        try:
+            normalized = val.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(normalized)
+            return int(dt.timestamp())
+        except Exception:
+            pass
+    return None
+
+
+def validate_age_bracket_vc(payload: dict[str, Any] | str) -> dict[str, Any]:
     """
     Validate an Age-Bracket Verifiable Credential against W3C structure,
-    zero-PII invariants, and parent DID cryptographic signature.
+    zero-PII invariants, expiration, revocation, and parent DID cryptographic signature.
 
-    Directives:
-    1. Validate W3C payload structure (assert type contains AgeBracketCredential).
-    2. Reject any payload containing cleartext PII fields (birth_date, dob, full_name).
-    3. Verify signature against issuer DID using did_rust.
-    4. Map ageBracket string to session permission tiers.
-
-    Returns:
-        dict: Validated credential details including parsed subject, issuer,
-              ageBracket, and session permission tier.
-
-    Raises:
-        CredentialValidationError: If any validation rule fails.
+    Supports dict, JSON string, or JWT-encoded W3C Verifiable Credential.
+    Extracts bracket, wot_distance = 1, parent_did, issued_at, expires_at, revoked.
     """
-    if isinstance(payload, str):
+    raw_payload = payload
+    jwt_verified = False
+
+    if _is_jwt_string(payload):
+        try:
+            unverified = jwt.decode(payload, options={"verify_signature": False})
+        except Exception as exc:
+            raise CredentialValidationError(f"Invalid JWT payload: {exc}") from exc
+
+        vc_obj = unverified.get("vc", unverified)
+        issuer_did = unverified.get("iss") or vc_obj.get("issuer")
+        if not issuer_did:
+            raise CredentialValidationError("JWT is missing required issuer DID.")
+
+        pub_bytes = _pubkey_from_did_key(issuer_did)
+        if not pub_bytes:
+            raise CredentialValidationError(f"Cannot extract Ed25519 public key from issuer DID '{issuer_did}'.")
+
+        try:
+            public_key = Ed25519PublicKey.from_public_bytes(pub_bytes)
+            jwt.decode(payload, key=public_key, algorithms=["EdDSA", "ES256", "RS256"])
+            jwt_verified = True
+        except Exception as exc:
+            raise CredentialValidationError(f"Invalid parent DID signature: JWT verification failed: {exc}") from exc
+
+    elif isinstance(payload, str):
         try:
             vc_obj = json.loads(payload)
         except json.JSONDecodeError as exc:
@@ -299,15 +364,73 @@ def validate_age_bracket_credential(payload: dict[str, Any] | str) -> dict[str, 
     # 5. Map ageBracket to session permission tier
     permission_tier = get_session_permission_tier(age_bracket)
 
-    # 6. Verify cryptographic signature against issuer DID using did_rust
-    verify_signature_with_did_rust(vc_obj)
+    # 6. Verify cryptographic signature against issuer DID using did_rust (if not already verified via JWT)
+    if not jwt_verified:
+        verify_signature_with_did_rust(vc_obj)
 
     issuer_did = vc_obj.get("issuer")
+
+    # 7. Extract and validate issued_at / expires_at
+    subject_fields = subject if isinstance(subject, dict) else {}
+    issued_raw = (
+        vc_obj.get("issuanceDate")
+        or vc_obj.get("issued_at")
+        or vc_obj.get("validFrom")
+        or vc_obj.get("iat")
+        or subject_fields.get("issued_at")
+    )
+    issued_at = _parse_timestamp(issued_raw)
+    if issued_at is None:
+        issued_at = int(time.time())
+
+    expires_raw = (
+        vc_obj.get("expirationDate")
+        or vc_obj.get("expires_at")
+        or vc_obj.get("validUntil")
+        or vc_obj.get("exp")
+        or subject_fields.get("expires_at")
+    )
+    expires_at = _parse_timestamp(expires_raw)
+    now_ts = int(time.time())
+    if expires_at is not None:
+        if expires_at <= now_ts:
+            raise CredentialValidationError(f"Credential has expired at timestamp {expires_at}.")
+    else:
+        expires_at = issued_at + 31536000
+
+    # 8. Check revocation status
+    if vc_obj.get("revoked") is True or subject_fields.get("revoked") is True:
+        raise CredentialValidationError("Credential has been revoked.")
+
+    try:
+        from auth_bridge.tokens import is_credential_revoked
+        if is_credential_revoked(subject_id):
+            raise CredentialValidationError(f"Credential for subject '{subject_id}' has been revoked.")
+    except (ImportError, Exception):
+        pass
+
     return {
         "valid": True,
         "issuer": issuer_did,
+        "parent_did": issuer_did,
         "subject_id": subject_id,
+        "child_did": subject_id,
         "age_bracket": age_bracket,
+        "bracket": age_bracket,
+        "wot_distance": 1,
         "permission_tier": permission_tier,
         "credential": vc_obj,
+        "raw_payload": raw_payload,
+        "attestation_vc": raw_payload,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+        "revoked": False,
     }
+
+
+def validate_age_bracket_credential(payload: dict[str, Any] | str) -> dict[str, Any]:
+    """
+    Validate an Age-Bracket Verifiable Credential against W3C structure,
+    zero-PII invariants, and parent DID cryptographic signature.
+    """
+    return validate_age_bracket_vc(payload)

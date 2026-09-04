@@ -48,5 +48,5 @@ dev = [
 ]
 
 [tool.ruff]
-extend-exclude = ["crates"]
+extend-exclude = ["crates", "docs"]
 

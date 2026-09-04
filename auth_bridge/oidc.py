@@ -14,6 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from auth_bridge.models import SovereignInfrastructureLease
+from auth_bridge.tokens import inject_dependent_claims
 
 
 def custom_userinfo_claims(claims, user):
@@ -58,6 +59,7 @@ def custom_idtoken_processing_hook(id_token, user, token, request):
     except SovereignInfrastructureLease.DoesNotExist:
         id_token['iyou_infra'] = {'accelerated': False}
 
+    id_token = inject_dependent_claims(id_token, user, token=token, request=request)
     return id_token
 
 

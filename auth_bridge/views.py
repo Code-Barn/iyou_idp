@@ -897,7 +897,35 @@ class PkceTokenView(View):
                 cache.delete(pkce_key)
 
         from oidc_provider.views import TokenView as LibraryTokenView
-        return LibraryTokenView.as_view()(request, *args, **kwargs)
+        try:
+            return LibraryTokenView.as_view()(request, *args, **kwargs)
+        except Exception as exc:
+            from auth_bridge.credentials import CredentialValidationError
+            from oidc_provider.lib.errors import TokenError, UserAuthError
+
+            if isinstance(exc, UserAuthError):
+                return JsonResponse(
+                    {"error": exc.error, "error_description": exc.description},
+                    status=403,
+                    reason=exc.error,
+                )
+            if isinstance(exc, TokenError):
+                return JsonResponse(
+                    {"error": exc.error, "error_description": exc.description},
+                    status=400,
+                )
+            if isinstance(exc, CredentialValidationError):
+                if "revok" in str(exc).lower():
+                    return JsonResponse(
+                        {"error": "DependentSessionRevoked", "error_description": str(exc)},
+                        status=403,
+                        reason="DependentSessionRevoked",
+                    )
+                return JsonResponse(
+                    {"error": "invalid_grant", "error_description": str(exc)},
+                    status=400,
+                )
+            raise
 
 
 class LoginPageView(View):
