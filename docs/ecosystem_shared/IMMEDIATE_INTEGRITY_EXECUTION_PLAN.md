@@ -180,7 +180,7 @@ Phase 2 secures the protocol against corporate, jurisdictional, and legal captur
    - Satellite endpoints (19 apps): `wun.iyou.me`, `poly.iyou.me`, `name.iyou.me`, `hive.iyou.me`, `ride.iyou.me`, `dctech.iyou.me`, `safe.iyou.me`, `talk.iyou.me`, `clar.iyou.me`, `play.iyou.me`, `blog.iyou.me`, `help.iyou.me`, `draw.iyou.me`, `life.iyou.me`, `walk.iyou.me`, `stay.iyou.me`, `dev.iyou.me`, `spot.iyou.me`, `shop.iyou.me`.
 2. **Canonical Code Repositories:**
    - Coordination Hub: `omni_social`
-   - Cryptographic Core: `did_rust`, `iyou_name_rust`
+   - Cryptographic Core: `did_rust`
    - Enclaves: `iyou_home`, `iyou_mobile`
    - Satellites: All 19 Django satellite codebases
    - Infrastructure: `k3s_vm`

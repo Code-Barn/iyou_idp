@@ -41,7 +41,6 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | iyou_home | Tauri/TypeScript | [TODO.md](../../../iyou_home/TODO.md) | Local desktop enclave. SEC-002/003/004/005/006. |
 | did_rust | Rust crate | [TODO.md](../../../did_rust/TODO.md) | Core DID library. SEC-003 alignment enforcement. Shared by idp + home. |
 | iyou_mobile | Tauri/React | [TODO.md](../../../iyou_mobile/TODO.md) | Mobile counterpart. Barcode scanner, deep-link, secure storage. |
-| iyou_name_rust | Rust + PyO3 | [TODO.md](../../../iyou_name_rust/TODO.md) | `iyou_chart_kernel` — family tree chart engine. Python bridge. |
 
 ---
 

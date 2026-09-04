@@ -98,6 +98,82 @@ When a dependent authenticates to any satellite via OIDC PKCE:
 3. The satellite retrieves the age-bracket VC from the `dependent_claim` OIDC claim (see Section 3).
 4. The satellite applies trust-ladder policies (Section 4) based on the age bracket — never based on a cleartext date of birth.
 
+### 2.4 Option B — `vault.dependents` Custodial Schema (`iyou_home`)
+
+The canonical local-enclave representation of a stewarded dependent is the
+decoupled **`vault.dependents`** array inside `VaultStore`. It is deliberately
+kept **separate from the parent's `profiles`** so that dependent keypairs can
+never be resolved through root-seed persona paths, and so the WebSocket bridge
+(`wss://home.iyou.me:9001`) remains fail-closed against dependent profiles.
+
+```
+VaultStore {
+  root_seed_base58:      <parent 32-byte master seed, hardware-sealed>
+  profiles[ ]:           <parent personas: anchor, primary, L2 burners>
+  sovereign_identities[ ]: <graduated imports, sealed under WebAuthn PRF KEK>
+  dependents[ ]:         <DependentProfile — decoupled, index-allocated list>
+}
+```
+
+#### 2.4.1 `DependentProfile` Schema
+
+| Field | Type | Description |
+|:---|:---|:---|
+| `dependent_id` | string | Stable handle, e.g. `dep_<slug>_<did_tail8>` |
+| `name` | string | Dependent's display name |
+| `birth_year` | u16 | 4-digit year (used for custody-stage age gate only — never as an OIDC claim) |
+| `custody_stage` | u8 | `1` = Guided Delegation, `2` = Autonomous, `3` = Sovereign Pending |
+| `dependent_index` | u32 | Decoupled monotonic index — `max(dependents[].dependent_index) + 1`, starting at `0` |
+| `did` | string | Child `did:key` derived at `m/iyou/dependent/<dependent_index>` |
+| `nostr_pubkey_hex` | string | Companion secp256k1 Nostr pubkey (domain-separated `secp256k1-nostr/dependent/`) |
+| `guardian_did` | string | Parent's canonical `did:key` |
+| `allowed_relays` | string[] | Relay allow-list (default `wss://relay.iyou.me`, `wss://safe.iyou.me`) |
+| `attestation_vc` | object \| null | W3C `AgeBracketCredential` (see Section 3.2), signed by `guardian_did` |
+| `revoked` | bool | If `true`, the dependent can no longer be exported or graduated |
+| `created_at` | u64 | Unix timestamp of creation |
+| `graduated_at` | u64 \| null | Unix timestamp of graduation (set when `custody_stage == 3`) |
+
+**Key invariant — decoupled monotonic allocation:** each new dependent takes
+`index = max(existing dependents[].dependent_index) + 1` (starting at `0`).
+Because deletion leaves the maximum untouched, a recycled `index` is never
+re-issued, so the derived DID at a given index remains cryptographically
+immutable and non-replayable after a dependent is removed.
+
+#### 2.4.2 Leaf-Only Export Bundle (`DependentProvisioningBundle`)
+
+When a dependent is provisioned onto their own `iyou_home`/`iyou_mobile`
+instance, or at graduation, the parent exports a **leaf-only** provisioning
+bundle. It carries the dependent's own key material and **never** the parent's
+root seed or any parent persona private key.
+
+| Field | Type | Description |
+|:---|:---|:---|
+| `bundle_version` | string | `"1.0"` |
+| `dependent_id` | string | Stable dependent handle |
+| `petname` | string | Dependent's display name |
+| `did` | string | Child `did:key` (derived leaf DID) |
+| `ed25519_private_key_b58` | string | **Leaf** Ed25519 seed (base58, 32 bytes) — the only private key in the bundle |
+| `nostr_private_key_hex` | string | Companion Nostr secp256k1 secret (hex) |
+| `nostr_pubkey_hex` | string | Companion Nostr pubkey |
+| `guardian_did` | string | Parent `did:key` |
+| `custody_stage` | u8 | `1`, `2`, or `3` |
+| `allowed_relays` | string[] | Relay allow-list |
+| `attestation_vc` | object | Signed `AgeBracketCredential` (or `SovereignGraduationCredential`) |
+| `exported_at` | u64 | Unix timestamp of export |
+
+**Export-time security invariants:**
+
+1. **Leaf-only:** the bundle MUST contain only the dependent's derived leaf
+   keypair and its companion Nostr secret. All other private material is absent.
+2. **No root-seed leak:** the exporter MUST post-serialize check that the bundle
+   JSON does not contain `root_seed_base58` nor any parent profile signing key.
+   Any match aborts the export with a security error.
+3. **Revocation gate:** a `revoked` dependent MUST NOT be exported or graduated.
+4. **Age gate:** graduation is refused while the current year is less than
+   `birth_year + 18`.
+5. **DID self-validation:** on import, the leaf key is recomputed and MUST equal
+   the bundle `did`; a mismatch aborts bootstrap.
+
 ---
 
 ## 3. Zero-PII Attestation Tokens
@@ -305,6 +381,70 @@ After graduation, the former dependent:
 - Is indistinguishable from any other adult participant in the federation
 - MAY optionally maintain a voluntary social connection to the parent's DID (WoT link), but this is a peer relationship, not a stewardship hierarchy
 
+#### 4.3.4 Import-Not-Rederive Sovereign Bootstrapping (`import_graduated_dependent`)
+
+Sovereign graduation MUST bootstrap the child's standalone instance by
+**importing** the exported leaf bundle — never by re-deriving the child's keys
+from a new seed. Re-derivation would change the child's DID and invalidate every
+historical signature; import preserves continuous cryptographic identity.
+
+```
+Bootstrap sequence (child's standalone iyou_home):
+
+ 1. RECEIVE BUNDLE
+    Child provides the leaf-only DependentProvisioningBundle (bundle_version 1.0)
+    exported by the parent's graduation ceremony (§2.4.2).
+
+ 2. VALIDATE LEAF KEY
+    Reconstruct the Ed25519 leaf from ed25519_private_key_b58 (32 bytes).
+    Recompute the did:key and assert it equals bundle.did.
+    MISMATCH → abort bootstrap; the bundle is unusable.
+
+ 3. NEW INDEPENDENT ROOT SEED
+    Generate a fresh, cryptographically random 32-byte root seed.
+    This seed is NOT derived from the parent's and shares no lineage with it.
+    A new L0 Anchor keypair is derived at index 0 under this new root.
+
+ 4. INGEST LEAF AS L1 PRIMARY (import — not re-hash, not re-derive)
+    The bundle's leaf Ed25519 seed and companion Nostr secret are written
+    directly into the L1 Primary persona slot:
+      Profile {
+        profile_id: "primary",
+        did:           <bundle.did — UNCHANGED>,
+        nostr_pubkey:  <bundle.nostr_pubkey_hex — UNCHANGED>,
+        imported_seed_b58:  <bundle.ed25519_private_key_b58>,
+        imported_nostr_sk_hex: <bundle.nostr_private_key_hex>,
+      }
+    Because the leaf is stored verbatim (not re-keyed from the new root), the
+    child's DID and Nostr pubkey are byte-for-byte identical to their stewarded
+    identity — historical signatures, WoT links, Blossom refs, and OIDC sub all
+    remain valid with zero-loss.
+
+ 5. SEAL SOVEREIGN RECORD
+    The imported leaf seed is also sealed as a SovereignIdentity under the
+    WebAuthn PRF KEK (ChaCha20Poly1305), so the post-graduation instance can
+    recover the L1 signing key from WebAuthn-bound material (custodial_origin =
+    false; graduated_at = bundle.exported_at).
+
+ 6. TERMINATE PARENT STEWARDSHIP
+    The parent's vault flips custody_stage → 3 and records graduated_at.
+    The parent CAN NO LONGER revoke or export the child.
+    dependents[] is cleared in the child's new instance (no steward of its own).
+```
+
+**Why not re-derive:** re-running derivation under a new root seed `S'` at a
+new index would produce a different keypair, giving the graduate a different
+DID. Every retained signature, follow, media reference, and session would break.
+Importing the leaf verbatim is the only mechanism that satisfies the Zero-Loss
+Guarantee (§4.3.2) while still granting a fresh, parent-independent root seed.
+
+**Continuity invariants after bootstrap:**
+1. Child DID — unchanged (from import, not re-derivation).
+2. Child Nostr pubkey — unchanged.
+3. Opportunistic re-seeding of new L2 burners — now under the child's own root.
+4. The new root seed grants full sovereign autonomy: the graduate may now
+   derive, revoke, and steward personas entirely independent of any parent.
+
 ---
 
 ## 5. Automated Restorative Intervention
@@ -375,3 +515,4 @@ Omni-Social replaces shadowbanning with a **friction flag → restorative routin
 ## Document History
 
 - **2026-09-02 (v1.0.0):** Canonical baseline specification authored. Trust paradigm, enclave key derivation, zero-PII attestation tokens, 5-year trust ladder, and restorative intervention pipeline defined.
+- **2026-09-03 (v1.1.0):** Recorded completed Stage 1–3 implementation. Added Option B `vault.dependents` custodial schema with decoupled monotonic index allocation, the leaf-only `DependentProvisioningBundle` export structure and its export-time security invariants, and the import-not-rederive sovereign bootstrapping protocol (`import_graduated_dependent`). Canonical derivation formula confirmed against `did_rust` (`crypto.rs` `DEPENDENT_ED25519_DOMAIN = "iyou/dependent/"`).
