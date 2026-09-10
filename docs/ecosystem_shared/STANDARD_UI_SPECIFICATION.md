@@ -1,6 +1,6 @@
 # Standard UI Specification: Sovereign Mesh Navigation & Persona Enclave
 
-**Canonical Reference for Layer 0 Ecosystem Bar, Layer 1 Standard Header, and Modular Persona Enclave**  
+**Canonical Reference for Layer 0 Ecosystem Bar, Layer 1 Standard Header, Modular Persona Enclave, Mascot Footer, and PWA Standards**  
 **Version:** 2.0.0  
 **Status:** Authoritative Ecosystem Specification  
 
@@ -23,6 +23,13 @@ The iYou ecosystem presentation tier is structured into strict horizontal layers
 │       ├── Action Links ([ ⚙️ Edit ], Sign Out)                             │
 │       ├── Unauthenticated State (Amber dot + "Sovereign Key Required")     │
 │       └── Dark/Light Theme Toggle (#theme-toggle)                          │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Layer 2: Main Content Area (<main class="flex-1 w-full ...">)              │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Canonical Mascot Footer ("The Polly Pattern" / _footer.html)               │
+│   ├── Mascot Image Block (Light/Dark responsive PNG assets)                │
+│   ├── Brand Lockup & Version Badge (iyou_{slug} vX.Y)                      │
+│   └── Telemetry & Protocol Strip (Relay, Enclave Bridge, License)          │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -267,7 +274,7 @@ This prevents the race condition where `profile.name = "Primary Identity"` overw
 
 ## 6. Integration Checklist for Satellite Templates
 
-To integrate the canonical navigation system into any satellite application:
+To integrate the canonical navigation, mascot footer, and PWA system into any satellite application:
 
 1. **Include Layer 0 Bar**: Immediately following the opening `<body>` tag:
    ```html
@@ -283,3 +290,235 @@ To integrate the canonical navigation system into any satellite application:
    ```
 4. **Ensure Client-Side Bridge Assets**:
    Vendor `bridge_client.js` in your static files and initialize `window.bridgeClient = new TauriBridgeClient()`.
+5. **Mount Canonical Mascot Footer**: Mounted immediately following `</main>` before closing `</body>`:
+   ```html
+   {% include "includes/_footer.html" %}
+   ```
+6. **Inject PWA & Favicon Assets**:
+   Include standard favicon links and manifest in `<head>`, and register `sw.js` before `</body>`.
+
+---
+
+## 7. Canonical Mascot Footer ("The Polly Pattern")
+
+The canonical footer architecture, established in `iyou_poly` ("The Polly Pattern"), anchors the bottom of every satellite application with responsive branding, light/dark mascot illustration, and runtime protocol telemetry.
+
+### 7.1 Layout Sticking Contract (`base.html`)
+To prevent awkward footer floating on sparse or empty views, satellites must enforce the three-part flex layout contract in `base.html`:
+
+1. **Viewport Coverage (`<body>`)**:
+   ```html
+   <body class="flex flex-col min-h-screen bg-slate-50 dark:bg-[#080B11] text-slate-900 dark:text-slate-100 antialiased transition-colors duration-200">
+   ```
+   `<body class="flex flex-col min-h-screen ...">` guarantees that the root layout shell expands to at least 100% of the viewport height.
+
+2. **Main Expansion (`<main>`)**:
+   ```html
+   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+     {% block content %}{% endblock %}
+   </main>
+   ```
+   `<main class="flex-1 w-full ...">` consumes all unused vertical space, driving the footer down to the baseline.
+
+3. **Mounting Order & Positioning (`_footer.html`)**:
+   `{% include "includes/_footer.html" %}` is mounted directly following `</main>` before theme switcher scripts, Service Worker registration, and closing `</body>`:
+   ```html
+   <!-- Footer -->
+   {% include "includes/_footer.html" %}
+   ```
+
+### 7.2 Container & Surface Styling (`_footer.html`)
+The outer footer container uses the ecosystem's glassmorphic translucent surface design with dark-mode borders and sticky-bottom anchoring:
+```html
+<footer class="mt-auto border-t border-slate-200 dark:border-gray-800/80 bg-white/50 dark:bg-[#0B0F19]/50 backdrop-blur-sm py-10 transition-colors duration-200">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center justify-center text-center">
+    ...
+  </div>
+</footer>
+```
+- **Root Wrapper**: `<footer class="mt-auto border-t border-slate-200 dark:border-gray-800/80 bg-white/50 dark:bg-[#0B0F19]/50 backdrop-blur-sm py-10 transition-colors duration-200">`
+  - `mt-auto`: Enforces the sticky-footer margin hook.
+  - `bg-white/50 dark:bg-[#0B0F19]/50 backdrop-blur-sm`: Glassmorphic translucency blending with ambient background gradients.
+  - `py-10`: Provides balanced vertical breathing room across all screen sizes.
+- **Inner Container**: `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center justify-center text-center">` aligns all metadata along the central axis.
+
+### 7.3 Mascot Image Block
+Every satellite showcases its companion mascot using dual light and dark PNG assets with smooth hover interactions:
+```html
+<!-- Prominent Mascot Presentation -->
+<div class="relative group mb-4">
+  <!-- Light Mode Mascot -->
+  <img 
+    src="{% static 'img/{slug}_mascot_light.png' %}" 
+    alt="{Mascot Name} the {Role/Mascot Title}" 
+    class="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover shadow-md border border-slate-200 dark:border-transparent block dark:hidden group-hover:scale-105 transition-transform duration-200" 
+  />
+  <!-- Dark Mode Mascot -->
+  <img 
+    src="{% static 'img/{slug}_mascot_dark.png' %}" 
+    alt="{Mascot Name} the {Role/Mascot Title}" 
+    class="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover shadow-lg border border-transparent dark:border-gray-800 hidden dark:block group-hover:scale-105 transition-transform duration-200" 
+  />
+</div>
+```
+- **Wrapper**: `<div class="relative group mb-4">` establishes the hover coordinate context.
+- **Light Mode Image**: `{% static 'img/{slug}_mascot_light.png' %}`:
+  - Responsive classes: `block dark:hidden`, `h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover shadow-md border border-slate-200 dark:border-transparent group-hover:scale-105 transition-transform duration-200`.
+- **Dark Mode Image**: `{% static 'img/{slug}_mascot_dark.png' %}`:
+  - Responsive classes: `hidden dark:block`, `h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover shadow-lg border border-transparent dark:border-gray-800 group-hover:scale-105 transition-transform duration-200`.
+- **Accessibility Invariant**: Both light and dark `<img>` tags MUST define descriptive `alt` attributes (e.g. `alt="Polly the Consensus Parrot"`).
+- **Placement Invariant**: Mascot assets MUST reside strictly within `<footer>` and are strictly forbidden inside navigation headers (`<nav>`).
+
+### 7.4 Brand Lockup & Subtitle
+The brand lockup presents the dual-tone ecosystem app identity alongside version telemetry:
+```html
+<!-- Brand & Mission Statement -->
+<div class="space-y-1 max-w-md">
+  <div class="flex items-center justify-center gap-1.5 font-bold tracking-tight">
+    <span class="text-slate-400 dark:text-slate-500">iyou</span><span class="text-{color}-600 dark:text-{color}-400 font-bold tracking-tight">_{slug}</span>
+    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-{color}-100 dark:bg-{color}-950/60 text-{color}-700 dark:text-{color}-300 border border-{color}-200 dark:border-{color}-800/60 ml-1">
+      v2.0 Greenfield
+    </span>
+  </div>
+  <p class="text-xs font-mono text-slate-500 dark:text-slate-400">
+    {Satellite Mission Statement or Subtitle}
+  </p>
+</div>
+```
+- **Brand Lockup**: `iyou` in `text-slate-400 dark:text-slate-500`, `_{slug}` in `text-{color}-600 dark:text-{color}-400 font-bold tracking-tight`.
+- **Version Chip**: Monospace badge styled with `text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-{color}-100 dark:bg-{color}-950/60 text-{color}-700 dark:text-{color}-300 border border-{color}-200 dark:border-{color}-800/60 ml-1`.
+- **Subtitle**: Explanatory application role in `text-xs font-mono text-slate-500 dark:text-slate-400`.
+
+### 7.5 Telemetry & Protocol Strip
+At the base of the footer, runtime protocol coordinates are displayed in a clean monospace strip:
+```html
+<!-- Protocol & Network Metadata -->
+<div class="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] font-mono text-slate-400 dark:text-slate-500">
+  <span>Relay: <span class="text-slate-600 dark:text-slate-400">ws://127.0.0.1:9003</span></span>
+  <span>•</span>
+  <span>Enclave Bridge: <span class="text-slate-600 dark:text-slate-400">127.0.0.1:9001</span></span>
+  <span>•</span>
+  <span>License: <span class="text-slate-600 dark:text-slate-400">AGPL-3.0</span></span>
+</div>
+```
+- Monospace line reporting Relay endpoint, Enclave Bridge (`127.0.0.1:9001`), and license (`AGPL-3.0`) at `text-[11px] font-mono text-slate-400 dark:text-slate-500`.
+- Separated by muted bullet dots `<span>•</span>`.
+
+---
+
+## 8. PWA, Web App Manifest & Favicon Routine
+
+To provide native-like standalone desktop and mobile installation with offline resiliency across the ecosystem, each satellite implements standardized Progressive Web App (PWA) artifacts.
+
+### 8.1 Static Assets (`static/`)
+Every satellite repository maintains the following standardized assets in its `static/` directory:
+```
+static/
+├── manifest.json              # Web App Manifest
+├── js/
+│   └── sw.js                  # Minimal offline Service Worker
+└── img/
+    ├── logo_square.png        # Default Favicon & Apple Touch Icon
+    ├── logo_square_dark.png   # Optional Dark Favicon
+    ├── icon-192.png           # 192x192 PWA launcher icon (maskable)
+    ├── icon-512.png           # 512x512 PWA splash / install icon (maskable)
+    ├── {slug}_mascot_light.png # Light mode companion mascot
+    └── {slug}_mascot_dark.png  # Dark mode companion mascot
+```
+
+1. **`static/manifest.json`**:
+   Web app manifest specifying `name`, `short_name`, `description`, `start_url`, `display: "standalone"`, `theme_color`, and icon array (`icon-192.png`, `icon-512.png` with `purpose: "any maskable"`):
+   ```json
+   {
+     "name": "iYou {AppName}",
+     "short_name": "{ShortName}",
+     "description": "{App Description}",
+     "start_url": "/",
+     "scope": "/",
+     "display": "standalone",
+     "background_color": "#0B0F19",
+     "theme_color": "#HEX_COLOR",
+     "orientation": "portrait-primary",
+     "icons": [
+       {
+         "src": "/static/img/icon-192.png",
+         "sizes": "192x192",
+         "type": "image/png",
+         "purpose": "any maskable"
+       },
+       {
+         "src": "/static/img/icon-512.png",
+         "sizes": "512x512",
+         "type": "image/png",
+         "purpose": "any maskable"
+       }
+     ]
+   }
+   ```
+2. **`static/img/logo_square.png`**: Standard square logo used for default favicon and Apple touch icon.
+3. **`static/img/icon-192.png` & `static/img/icon-512.png`**: PWA homescreen and launcher icons.
+4. **`static/js/sw.js`**: Minimal offline service worker caching core static assets and runtime shell:
+   ```javascript
+   const CACHE_NAME = 'iyou-{slug}-v1';
+   const STATIC_ASSETS = [
+     '/',
+     '/static/css/{slug}.css',
+     '/static/manifest.json',
+     '/static/img/logo_square.png',
+     '/static/img/icon-192.png',
+     '/static/img/icon-512.png'
+   ];
+
+   self.addEventListener('install', (event) => {
+     event.waitUntil(
+       caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+     );
+     self.skipWaiting();
+   });
+
+   self.addEventListener('activate', (event) => {
+     event.waitUntil(
+       caches.keys().then((keys) =>
+         Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+       )
+     );
+     self.clients.claim();
+   });
+
+   self.addEventListener('fetch', (event) => {
+     if (event.request.method !== 'GET') return;
+     event.respondWith(
+       caches.match(event.request).then((cached) => cached || fetch(event.request))
+     );
+   });
+   ```
+
+### 8.2 Head Injections (`base.html`)
+The `<head>` block of `templates/base.html` must include the canonical favicons and PWA meta tags:
+```html
+<!-- Favicon & App Icons -->
+<link rel="icon" type="image/png" href="{% static 'img/logo_square.png' %}">
+<link rel="apple-touch-icon" href="{% static 'img/logo_square.png' %}">
+
+<!-- PWA Configuration -->
+<meta name="theme-color" content="#HEX_COLOR">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{App Title}">
+<link rel="manifest" href="{% static 'manifest.json' %}">
+```
+
+### 8.3 Service Worker Registration
+Injected immediately before closing `</body>` to ensure non-blocking page load:
+```html
+<!-- Offline Service Worker Registration -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register("{% static 'js/sw.js' %}")
+        .catch((err) => console.debug('SW registration skipped:', err));
+    });
+  }
+</script>
+```
+
