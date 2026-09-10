@@ -1,0 +1,55 @@
+{% load static %}
+<!-- Persona Enclave Quick-Switcher Partial -->
+<div class="relative inline-block text-left font-mono" id="persona-switcher-container">
+  <button
+    type="button"
+    id="persona-switcher-btn"
+    class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-xs font-mono focus:outline-none"
+    aria-expanded="false"
+    aria-haspopup="true"
+    onclick="togglePersonaDropdown()"
+  >
+    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" id="active-persona-dot" title="Sovereign Key Active"></span>
+    <span id="active-persona-display-name" class="truncate max-w-[140px] font-mono text-xs font-medium text-slate-700 dark:text-slate-200">
+      {{ user_display_label|default:user.username|truncatechars:18 }}
+    </span>
+    <span class="text-[10px] px-1 py-0.5 rounded font-bold transition-colors duration-150 {% if active_persona_level == 1 or not active_persona_level %}bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300{% else %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% endif %}" id="active-persona-level">
+      L{{ active_persona_level|default:1 }}
+    </span>
+    <svg class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200" id="persona-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+    </svg>
+  </button>
+
+  <!-- Flyout Menu -->
+  <div
+    id="persona-switcher-dropdown"
+    class="hidden absolute right-0 mt-2 w-72 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-50 overflow-hidden"
+  >
+    <!-- Public Profile Direct Action -->
+    <div class="px-2 py-1.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
+      <a href="https://wun.iyou.me/{{ user_display_label|default:user.username }}" target="_blank" class="flex items-center justify-between text-xs text-slate-700 dark:text-slate-200 hover:text-violet-500 dark:hover:text-violet-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition font-mono">
+        <span class="flex items-center gap-1.5">👤 <span>View Public Profile</span></span>
+        <span class="text-[10px] text-slate-400">↗</span>
+      </a>
+    </div>
+
+    <div class="px-2 py-1.5 text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60">
+      <span>Active Enclave Personas</span>
+      <span id="persona-bridge-status" class="text-emerald-500 font-normal">Bridge Connected</span>
+    </div>
+
+    <!-- Persona List Target Container -->
+    <div class="py-1 space-y-1" id="persona-list-container">
+      <div class="px-2 py-2 text-slate-400 text-center text-[11px] animate-pulse">
+        Querying local vault personas...
+      </div>
+    </div>
+
+    <!-- Enclave Shortcut Footer -->
+    <div class="pt-1.5 pb-1 px-2.5 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800/60">
+      <span class="truncate">Manage in iyou_home</span>
+      <span class="text-violet-500">🔒 Enclave</span>
+    </div>
+  </div>
+</div>

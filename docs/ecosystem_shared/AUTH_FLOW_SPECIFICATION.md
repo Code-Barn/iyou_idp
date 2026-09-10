@@ -700,3 +700,73 @@ code issuance and returns:
 Graduated DIDs can no longer mint IdP OIDC sessions; satellites must verify
 the self-custodied DID directly. The `sub` claim remains the canonical
 `custodial_did` (`custom_sub_generator`).
+
+---
+
+## 17. Production Invariants (Hardened OIDC/PKCE Runtime Rules)
+
+Across all relying party satellites and core IdP ingress, the following 5 production invariants are strictly enforced:
+
+### 17.1 Rule 2 (ModelBackend Inheritance & Rehydration)
+Authentication backends must extend `django.contrib.auth.backends.ModelBackend` (or implement `get_user(self, user_id)`). Inheriting from `BaseBackend` (or raw `auth.Backend`) without `get_user()` breaks Django's session rehydration and leaves `request.user` anonymous on all subsequent post-login requests.
+
+```python
+from django.contrib.auth.backends import ModelBackend
+
+class PKCEAuthenticationBackend(ModelBackend):
+    """Extends ModelBackend to ensure session rehydration via get_user()."""
+    def get_user(self, user_id):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return None
+```
+
+### 17.2 Rule 4 (DID Identity Anchoring & Unusable Password)
+Map inbound `sub` claim 1:1 to `User.username`. Always execute `user.set_unusable_password()` on user creation to maintain a strict passwordless posture. Admin elevation uses the unidirectional dirty-flag pattern evaluated strictly against `settings.ADMIN_DID` (elevation only; never downgrade):
+
+```python
+user, created = User.objects.get_or_create(
+    username=sub,
+    defaults={
+        "email": user_info.get("email", ""),
+        "first_name": user_info.get("given_name", ""),
+        "last_name": user_info.get("family_name", ""),
+    },
+)
+if created:
+    user.set_unusable_password()
+    user.save(update_fields=["password"])
+```
+
+### 17.3 RFC 7636 PKCE Wire Format
+Initiation views MUST pass `code_verifier=code_verifier` (never `None`) to `add_state_and_verifier_and_nonce_to_session` and store `pkce_code_verifier` + `pkce_redirect_uri` in session. Callback token exchange MUST use `Content-Type: application/x-www-form-urlencoded` (`data=...`, never `json=...`):
+
+```python
+# Authorization request view
+request.session["pkce_code_verifier"] = code_verifier
+request.session["pkce_redirect_uri"] = params["redirect_uri"]
+add_state_and_verifier_and_nonce_to_session(
+    request, state, params, code_verifier=code_verifier
+)
+
+# Back-channel token request
+response = requests.post(
+    token_endpoint,
+    data=token_payload,  # application/x-www-form-urlencoded
+    headers={"Content-Type": "application/x-www-form-urlencoded"},
+    timeout=10,
+)
+```
+
+### 17.4 Ingress Alignment (No Split-Brain)
+`IDP_BASE_INTERNAL_URL` must default to `IDP_BASE_PUBLIC_URL` (`https://iyou.me`) in local dev and environments where direct ingress is accessible. Internal Kubernetes cluster service URLs (e.g. `http://iyou-idp.mesh.svc.cluster.local:8000`) are strictly injected via Helm in production to prevent split-brain routing and TLS/network mismatches.
+
+### 17.5 Resilient Cookies & Logout
+Session cookie security and domain isolation must dynamically follow the deployment environment:
+- Set `SESSION_COOKIE_SECURE = not DEBUG`
+- Set `SESSION_COOKIE_DOMAIN = None if DEBUG else ".iyou.me"`
+- `PKCEOIDCLogoutView` must support both `GET` and `POST` methods to prevent HTTP 405 Method Not Allowed errors on user sign-out from varied satellite interfaces.
+

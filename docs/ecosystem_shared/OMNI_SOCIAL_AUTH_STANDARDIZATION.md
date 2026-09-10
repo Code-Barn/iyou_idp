@@ -24,15 +24,28 @@ The canonical source of truth is:
 omni_social/templates/utils/auth_pkce.py
 ```
 
-This module contains three classes that implement the complete PKCE authentication flow:
+This module contains four classes that implement the complete PKCE authentication flow:
 
 | Class | Role | Extends |
 |:---|:---|:---|
 | `PKCEOIDCAuthenticationRequestView` | Generates PKCE pair, redirects to iyou_idp | `mozilla_django_oidc.views.OIDCAuthenticationRequestView` |
 | `PKCEOIDCAuthenticationCallbackView` | Handles callback, forwards verifier to backend | `mozilla_django_oidc.views.OIDCAuthenticationCallbackView` |
-| `PKCEAuthenticationBackend` | Executes token exchange, provisions user | `django.contrib.auth.Backend` |
+| `PKCEOIDCLogoutView` | Handles GET and POST logout preventing HTTP 405 | `mozilla_django_oidc.views.OIDCLogoutView` |
+| `PKCEAuthenticationBackend` | Executes token exchange, provisions user | `django.contrib.auth.backends.ModelBackend` |
 
 All satellite implementations must conform to the patterns in this module. Per-app customizations are permitted only within the override points documented below.
+
+---
+
+## 2.1 The 5 Hardened Production Invariants
+
+Before reviewing the detailed rules, every engineer and satellite implementation must satisfy these 5 non-negotiable runtime invariants:
+
+1. **Rule 2 (ModelBackend Inheritance & Rehydration)**: Backends must extend `django.contrib.auth.backends.ModelBackend` (or implement `get_user(self, user_id)`). Inheriting from `BaseBackend` without `get_user()` breaks session rehydration and leaves `request.user` anonymous on post-login requests.
+2. **Rule 4 (DID Identity Anchoring)**: Map inbound `sub` claim 1:1 to `User.username`. Always execute `user.set_unusable_password()` on user creation. Admin elevation uses the unidirectional dirty-flag against `settings.ADMIN_DID`.
+3. **RFC 7636 PKCE Wire Format**: Initiation views MUST pass `code_verifier=code_verifier` (never `None`) to `add_state_and_verifier_and_nonce_to_session` and store `pkce_code_verifier` + `pkce_redirect_uri` in session. Callback token exchange MUST use `Content-Type: application/x-www-form-urlencoded` (`data=...`, never `json=...`).
+4. **Ingress Alignment (No Split-Brain)**: `IDP_BASE_INTERNAL_URL` must default to `IDP_BASE_PUBLIC_URL` (`https://iyou.me`) in local dev. Internal Kubernetes cluster URLs are strictly injected via Helm in production.
+5. **Resilient Cookies & Logout**: Set `SESSION_COOKIE_SECURE = not DEBUG` and `SESSION_COOKIE_DOMAIN = None if DEBUG else ...`. `PKCEOIDCLogoutView` must support both `GET` and `POST` methods to prevent HTTP 405 errors.
 
 ---
 
@@ -111,11 +124,11 @@ window.location.href = "/oidc/authorize/?...";
 
 ---
 
-### Rule 2: Public Client Protocol Strategy
+### Rule 2: Public Client Protocol Strategy & ModelBackend Rehydration
 
-**Satellites are explicitly registered as public client types.**
+**Satellites are explicitly registered as public client types and backends must extend `ModelBackend`.**
 
-They rely on cryptographic PKCE verification matrices (S256 code challenge) instead of raw string secrets (`OIDC_RP_CLIENT_SECRET`).
+They rely on cryptographic PKCE verification matrices (S256 code challenge) instead of raw string secrets (`OIDC_RP_CLIENT_SECRET`). Furthermore, **backends must extend `django.contrib.auth.backends.ModelBackend` (or implement `get_user(self, user_id)`)**. Inheriting from `BaseBackend` (or raw `auth.Backend`) without `get_user()` breaks session rehydration and leaves `request.user` anonymous on post-login requests.
 
 **Why this rule exists:**
 
@@ -126,15 +139,27 @@ The original `mozilla_django_oidc` library assumes confidential clients — it e
 3. Requires secret rotation coordination across 10+ deployments
 4. Violates the principle that the PKCE verifier alone proves client possession
 
+Crucially, inheriting from `BaseBackend` without `get_user()` prevents Django's `AuthenticationMiddleware` from rehydrating `request.user` from the session ID stored in cookies. On subsequent requests, `request.user.is_authenticated` evaluates to `False`, throwing users into endless login loops.
+
 **Implementation:**
 
 ```python
-# The backend inherits from auth.Backend, NOT OIDCAuthenticationBackend
-class PKCEAuthenticationBackend(auth.Backend):
+from django.contrib.auth.backends import ModelBackend
+
+# The backend inherits from ModelBackend, NOT OIDCAuthenticationBackend or bare BaseBackend
+class PKCEAuthenticationBackend(ModelBackend):
     """
-    This avoids OIDCAuthenticationBackend's __init__ which enforces
-    OIDC_RP_CLIENT_SECRET presence.
+    Extends ModelBackend to ensure get_user(self, user_id) is present for
+    session rehydration while avoiding OIDCAuthenticationBackend's __init__
+    secret enforcement.
     """
+    def get_user(self, user_id):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return None
 ```
 
 ```python
@@ -157,9 +182,10 @@ if client_secret:
 
 | Symptom | Root cause | Fix |
 |:---|:---|:---|
+| `request.user` anonymous after login | Backend lacks `get_user()`; session rehydration fails | Extend `ModelBackend` and implement `get_user()` |
 | `invalid_client` error from token endpoint | `client_id` mismatch across sources | Align all 4 sources |
 | Silent login loop, no server error | Backend returns `None`, 302 redirect | Check client_id alignment |
-| `OIDCAuthenticationBackend` crashes at init | Inherits secret enforcement | Use `auth.Backend` instead |
+| `OIDCAuthenticationBackend` crashes at init | Inherits secret enforcement | Use `ModelBackend` instead |
 
 **Deployment pattern:**
 
@@ -268,15 +294,17 @@ If you override `authenticate()` in your backend, verify that `kwargs.get("code_
 
 ---
 
-### Rule 4: Sovereign Profile Anchoring
+### Rule 4: DID Identity Anchoring & Unusable Password
 
-**`get_username(claims)` MUST always be explicitly overridden to parse the `sub` claim DID key.**
+**Map inbound `sub` claim 1:1 to `User.username`. Always execute `user.set_unusable_password()` on user creation. Admin elevation uses the unidirectional dirty-flag against `settings.ADMIN_DID`.**
 
-User lookup queries must filter strictly on `username=claims.get("sub")`. Email string fields must never be used as lookup keys. This prevents database collision crashes when multiple DID records share an email address.
+User lookup queries must filter strictly on `username=claims.get("sub")`. Email string fields must never be used as lookup keys. This prevents database collision crashes when multiple DID records share an email address. Furthermore, every created user MUST have `user.set_unusable_password()` executed immediately to enforce passwordless posture.
 
 **Why this rule exists:**
 
 The default `mozilla_django_oidc` backend uses `email__iexact` as the lookup filter. When two different DID identities (different `sub` values) share the same email address, the `get_or_create()` call hits a unique constraint violation and the backend crashes with an `IntegrityError`. Even without crashes, email-based lookup conflates distinct DID identities — a fundamental violation of the sovereign identity model.
+
+Additionally, leaving usable or unset passwords on user models invites password-based authentication bypasses. The sovereign mesh is strictly key-based and passwordless.
 
 **Correct pattern:**
 
@@ -289,53 +317,38 @@ def _get_or_create_user(self, user_info):
     username = sub  # DID string IS the username
 
     user, created = User.objects.get_or_create(
-        username=username,  # Lookup on DID, NOT email
+        username=username,  # Lookup strictly on DID, NOT email
         defaults={
             "email": user_info.get("email", ""),
             "first_name": user_info.get("given_name", ""),
             "last_name": user_info.get("family_name", ""),
         },
     )
+    if created:
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+
+    # Unidirectional dirty-flag evaluation against ADMIN_DID
+    from django.conf import settings as _settings
+    target_admin_did = getattr(_settings, "ADMIN_DID", None) or os.environ.get("ADMIN_DID", "")
+    is_admin = bool(target_admin_did) and sub == target_admin_did
+
+    dirty = False
+    if is_admin:
+        if not user.is_staff:
+            user.is_staff = True
+            dirty = True
+        if not user.is_superuser:
+            user.is_superuser = True
+            dirty = True
+        if user.has_usable_password():
+            user.set_unusable_password()
+            dirty = True
+
+    if dirty:
+        user.save(update_fields=["is_staff", "is_superuser", "password"])
+
     return user
-```
-
-**Incorrect pattern (causes IntegrityError):**
-
-```python
-def _get_or_create_user(self, user_info):
-    # WRONG: email lookup conflates distinct DID identities
-    user, created = User.objects.get_or_create(
-        email=user_info.get("email"),
-        defaults={"username": user_info.get("sub")},
-    )
-```
-
-**Privilege evaluation:**
-
-Admin status is determined by comparing the `sub` claim against an environment variable, not a Django setting:
-
-```python
-admin_did = os.environ.get("ADMIN_DID", "")
-is_admin = bool(admin_did) and sub == admin_did
-```
-
-This decouples privilege configuration from Django settings scaffolding and prevents settings import-time dependency issues.
-
-**Dirty-flag pattern:**
-
-```python
-dirty = False
-if is_admin and not user.is_superuser:
-    user.is_superuser = True
-    user.is_staff = True
-    dirty = True
-elif not is_admin and (user.is_superuser or user.is_staff):
-    user.is_superuser = False
-    user.is_staff = False
-    dirty = True
-
-if dirty:
-    user.save()  # Only write when state actually changes
 ```
 
 **Failure mode if violated:**
@@ -360,20 +373,23 @@ if dirty:
 from mozilla_django_oidc.views import OIDCLogoutView
 
 urlpatterns = [
-    path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout"),
+    path("oidc/logout/", PKCEOIDCLogoutView.as_view(), name="oidc_logout"),
     # ... other routes
 ]
 ```
 
 **Why this rule exists:**
 
-The iyou_ ecosystem uses session-based OIDC with signed cookies. When a user logs out of one satellite, the session teardown must propagate cleanly through `mozilla_django_oidc`'s `OIDCLogoutView` — which clears the local Django session, invalidates the OIDC tokens, and redirects to the IDP's logout endpoint for federated session termination.
+The iyou_ ecosystem uses session-based OIDC with signed cookies. When a user logs out of one satellite, the session teardown must propagate cleanly through `PKCEOIDCLogoutView` (extending `mozilla_django_oidc`'s `OIDCLogoutView`) — which clears the local Django session, invalidates the OIDC tokens, and redirects to the IDP's logout endpoint for federated session termination.
+
+Crucially, the upstream `OIDCLogoutView` strictly requires `POST` requests. Direct user clicks on navigation links trigger `GET` requests, causing an immediate **HTTP 405 Method Not Allowed** crash. `PKCEOIDCLogoutView` adds dual `GET` and `POST` handlers to guarantee seamless logout across all frontend elements.
 
 Without an explicit logout route:
 
-1. **Session teardown loops** — Django's default logout machinery may redirect back to itself or to a login view that immediately re-authenticates via the still-valid OIDC session cookie, creating an infinite redirect loop.
-2. **Template reversing failures** — Dashboard templates and navigation macros that reference `{% url 'oidc_logout' %}` raise `NoReverseMatch` exceptions, breaking the UI for all users on that node.
-3. **Federated logout incomplete** — The IDP's session is never terminated, so the user appears logged out locally but remains authenticated at the IDP — a security gap that allows silent re-authentication on any other satellite.
+1. **HTTP 405 Method Not Allowed** — `GET` requests to default `OIDCLogoutView` fail immediately.
+2. **Session teardown loops** — Django's default logout machinery may redirect back to itself or to a login view that immediately re-authenticates via the still-valid OIDC session cookie, creating an infinite redirect loop.
+3. **Template reversing failures** — Dashboard templates and navigation macros that reference `{% url 'oidc_logout' %}` raise `NoReverseMatch` exceptions, breaking the UI for all users on that node.
+4. **Federated logout incomplete** — The IDP's session is never terminated, so the user appears logged out locally but remains authenticated at the IDP — a security gap that allows silent re-authentication on any other satellite.
 
 **Implementation:**
 
@@ -382,27 +398,32 @@ The route MUST be named `oidc_logout` (not `logout`, not `oidc_logout_view`) to 
 ```python
 # config/urls.py
 from django.urls import path
-from mozilla_django_oidc.views import OIDCLogoutView
+from templates.utils.auth_pkce import PKCEOIDCLogoutView
 
 urlpatterns = [
-    path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout"),
+    path("oidc/logout/", PKCEOIDCLogoutView.as_view(), name="oidc_logout"),
 ]
 ```
 
-**Companion setting (in settings.py):**
+**Companion settings (in settings.py):**
 
 ```python
-# Required for OIDCLogoutView to redirect after logout
+# Required for PKCEOIDCLogoutView to redirect after logout
 LOGOUT_REDIRECT_URL = "/"
+
+# Resilient session cookie configuration
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_DOMAIN = None if DEBUG else ".iyou.me"
 ```
 
 **Failure mode if violated:**
 
 | Symptom | Root cause | Fix |
 |:---|:---|:---|
-| Infinite redirect loop on logout | No `OIDCLogoutView` route — session cookie persists | Add `path("oidc/logout/", ...)` |
+| HTTP 405 Method Not Allowed on logout | GET request sent to POST-only view | Use `PKCEOIDCLogoutView` supporting GET & POST |
+| Infinite redirect loop on logout | No `PKCEOIDCLogoutView` route — session cookie persists | Add `path("oidc/logout/", ...)` |
 | `NoReverseMatch` in templates | `{% url 'oidc_logout' %}` has no matching URL | Name the route `oidc_logout` |
-| User appears logged out but re-authenticates | IDP session not terminated | `OIDCLogoutView` handles federated logout |
+| User appears logged out but re-authenticates | IDP session not terminated | `PKCEOIDCLogoutView` handles federated logout |
 | Dashboard nav shows "Log Out" link that 404s | Logout route missing from URLconf | Add the route |
 
 **Validated across:** iyou_idp (system root), iyou_wun, iyou_poly, iyou_name, iyou_hive, iyou_ride, dc_tech_website, iyou_safe, iyou_talk, iyou_clar, iyou_play.
@@ -1123,11 +1144,16 @@ class PKCEAuthenticationBackend(auth.Backend):
 When onboarding a new satellite, verify these items before marking it as aligned:
 
 - [ ] `OIDC_RP_SCOPES = "openid profile email"` (matches IDP default, §3)
-- [ ] Backend inherits `auth.Backend` (not `OIDCAuthenticationBackend`)
-- [ ] Callback overrides `get_backend_kwargs()` (not `get()`)
+- [ ] Backend inherits `ModelBackend` and implements `get_user()` (Rule 2)
+- [ ] Callback overrides `get_backend_kwargs()` (not `get()`) (Rule 3)
 - [ ] `get_or_create(username=sub)` — no email-based lookup (Rule 4)
+- [ ] `user.set_unusable_password()` executed on user creation (Rule 4)
 - [ ] `evaluate_sovereign_admin_posture(user)` called after `get_or_create()` (§6.2)
 - [ ] `user.save(update_fields=[...])` — not full model save
 - [ ] `try/except requests.RequestException` on all HTTP calls
 - [ ] `SECURE_PROXY_SSL_HEADER` present in settings (Rule 1)
 - [ ] `OIDC_RP_CLIENT_SECRET` absent from codebase and container manifests (Rule 2)
+- [ ] `PKCEOIDCLogoutView` supporting both GET and POST mapped to `oidc_logout` (Rule 5)
+- [ ] `pkce_code_verifier` and `pkce_redirect_uri` stored in session; token POST uses `application/x-www-form-urlencoded`
+- [ ] `IDP_BASE_INTERNAL_URL` defaults to `IDP_BASE_PUBLIC_URL` (`https://iyou.me`) in dev
+- [ ] `SESSION_COOKIE_SECURE = not DEBUG` and `SESSION_COOKIE_DOMAIN` properly scoped

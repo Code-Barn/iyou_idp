@@ -24,8 +24,8 @@ URLconf (config/urls.py):
     from templates.utils.auth_pkce import (
         PKCEOIDCAuthenticationRequestView,
         PKCEOIDCAuthenticationCallbackView,
+        PKCEOIDCLogoutView,
     )
-    from mozilla_django_oidc.views import OIDCLogoutView
 
     path("oidc/authenticate/",
          PKCEOIDCAuthenticationRequestView.as_view(),
@@ -34,7 +34,7 @@ URLconf (config/urls.py):
          PKCEOIDCAuthenticationCallbackView.as_view(),
          name="oidc_authentication_callback"),
     path("oidc/logout/",
-         OIDCLogoutView.as_view(),
+         PKCEOIDCLogoutView.as_view(),
          name="oidc_logout"),
 
 AUTHENTICATION_BACKENDS:
@@ -56,9 +56,12 @@ from base64 import urlsafe_b64encode
 from urllib.parse import urlencode
 
 import requests
+from django.conf import settings
 from django.contrib import auth
+from django.contrib.auth import get_user_model, logout
+from django.contrib.auth.backends import ModelBackend
 from django.http import HttpResponseRedirect
-from django.shortcuts import resolve_url
+from django.shortcuts import redirect, resolve_url
 from django.urls import reverse
 from mozilla_django_oidc.utils import (
     absolutify,
@@ -69,6 +72,7 @@ from mozilla_django_oidc.utils import (
 from mozilla_django_oidc.views import (
     OIDCAuthenticationCallbackView,
     OIDCAuthenticationRequestView,
+    OIDCLogoutView,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,6 +154,7 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
 
             # Persist the verifier in the encrypted session cookie.
             request.session[SESSION_KEY_CODE_VERIFIER] = code_verifier
+            request.session["pkce_redirect_uri"] = params["redirect_uri"]
 
             # -- Build outbound query parameters ------------------------------
             params = {
@@ -174,10 +179,10 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
                 params["nonce"] = nonce
 
             # Stash the state + nonce in the library's oidc_states dict so
-            # the callback view can validate the return.  The code_verifier
-            # lives in its own dedicated session key for clean separation.
+            # the callback view can validate the return. The code_verifier
+            # is passed explicitly per RFC 7636 invariants.
             add_state_and_verifier_and_nonce_to_session(
-                request, state, params, code_verifier=None
+                request, state, params, code_verifier=code_verifier
             )
 
             request.session[SESSION_KEY_OIDC_LOGIN_NEXT] = get_next_url(
@@ -244,17 +249,35 @@ class PKCEOIDCAuthenticationCallbackView(OIDCAuthenticationCallbackView):
 
 
 # ---------------------------------------------------------------------------
+# Logout View — Dual GET & POST support to prevent HTTP 405
+# ---------------------------------------------------------------------------
+
+class PKCEOIDCLogoutView(OIDCLogoutView):
+    """Seamless GET and POST logout view preventing HTTP 405 Method Not Allowed.
+    Flushes the local Django session and redirects to LOGOUT_REDIRECT_URL.
+    """
+
+    def get(self, request, *args, **kwargs):
+        return self.post(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        logout(request)
+        redirect_url = getattr(settings, "LOGOUT_REDIRECT_URL", "/")
+        return redirect(redirect_url)
+
+
+# ---------------------------------------------------------------------------
 # Authentication Backend — PKCE-only, no client_secret required
 # ---------------------------------------------------------------------------
 
-class PKCEAuthenticationBackend(auth.Backend):
+class PKCEAuthenticationBackend(ModelBackend):
     """Authenticate via iyou_idp using an authorization code + PKCE
     code_verifier.
 
-    This backend inherits directly from ``django.contrib.auth.Backend``
-    to avoid any pre-shared credential checks or ``OIDC_RP_CLIENT_SECRET``
-    enforcement that ``OIDCAuthenticationBackend`` would impose at
-    ``__init__`` time.
+    This backend inherits directly from ``django.contrib.auth.backends.ModelBackend``
+    to ensure session rehydration via ``get_user()`` across requests, while avoiding
+    any pre-shared credential checks or ``OIDC_RP_CLIENT_SECRET`` enforcement that
+    ``OIDCAuthenticationBackend`` would impose at ``__init__`` time.
 
     The code verifier proves possession of the original challenge and
     replaces the static shared secret for public clients (RFC 7636).
@@ -264,8 +287,8 @@ class PKCEAuthenticationBackend(auth.Backend):
     prevent unique constraint violations.
 
     Privilege evaluation reads ``settings.ADMIN_DID`` and calls
-    ``set_unusable_password()`` on the admin account to enforce
-    passwordless posture (AUTH_FLOW_SPECIFICATION.md §6.2).
+    ``set_unusable_password()`` on user creation and on admin elevation to
+    enforce passwordless posture (AUTH_FLOW_SPECIFICATION.md §6.2).
     """
 
     def authenticate(self, request, code_verifier=None, nonce=None, **kwargs):
@@ -446,6 +469,9 @@ class PKCEAuthenticationBackend(auth.Backend):
                     "last_name": user_info.get("family_name", ""),
                 },
             )
+            if created:
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
         except Exception:
             logger.exception("User provisioning failed for %s", username)
             return None
