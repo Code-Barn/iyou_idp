@@ -30,7 +30,11 @@ urlpatterns = [
     # Intercept the token endpoint before the library's catch-all to enforce PKCE
     path('openid/token/', PkceTokenView.as_view(), name='pkce_token'),
     # Intercept the authorize endpoint to bypass consent for trusted clients
+    # Both slash variants MUST dispatch to SovereignAuthorizeView so the airlock
+    # + legal gates cannot be bypassed via the oidc_provider library's own
+    # no-trailing-slash '^authorize/?$' pattern falling through the include.
     path('openid/authorize/', SovereignAuthorizeView.as_view(), name='sovereign_authorize'),
+    path('openid/authorize', SovereignAuthorizeView.as_view(), name='sovereign_authorize_noslash'),
     path('openid/', include('oidc_provider.urls', namespace='oidc_provider')),
     path('oauth/', include('oauth2_provider.urls', namespace='oauth2_provider')),
 ]

@@ -103,6 +103,66 @@ cache = ResilientCache()
 DEFAULT_NEXT_URL = django_settings.IDP_WUN_URL
 
 
+def _gate_enabled():
+    return bool(getattr(django_settings, "SYSTEM_GATE_ENABLED", True))
+
+
+def _is_admin_did(did):
+    return bool(did) and did == getattr(django_settings, "ADMIN_DID", "")
+
+
+def _beta_allowlisted_did(did):
+    if not did:
+        return False
+    allowlist = set(getattr(django_settings, "BETA_ACCESS_ALLOWLIST", []) or [])
+    return did in allowlist
+
+
+def _has_beta_session(request):
+    return bool(request.session.get("beta_access", False))
+
+
+def _did_passes_gate(request, did):
+    """
+    Sovereign Airlock check: True when the authenticating DID may proceed.
+
+    The gate is open for ADMIN_DID, pre-approved beta DIDs, and any session
+    that redeemed a valid invite key. When SYSTEM_GATE_ENABLED is False the
+    airlock is fully open and every DID authenticates unhindered.
+    """
+    if not _gate_enabled():
+        return True
+    if _is_admin_did(did):
+        return True
+    if _beta_allowlisted_did(did):
+        return True
+    return _has_beta_session(request)
+
+
+def _render_beta_gate(request, did=None, next_url=None):
+    """Render the Sovereign Airlock beta gate page (HTTP 403 Forbidden)."""
+    next_url = next_url or DEFAULT_NEXT_URL
+    context = {
+        "did": did,
+        "next_url": next_url,
+        "wun_url": django_settings.IDP_WUN_URL,
+        "idp_base_url": django_settings.IDP_BASE_URL,
+        "home_ws_url": django_settings.IDP_HOME_WS_URL,
+    }
+    return render(request, "auth_bridge/beta_gate.html", context, status=403)
+
+
+def _gate_response(request, did, next_url=None):
+    """
+    Return a rendered beta gate response when *did* is airlocked, otherwise
+    None so the caller can proceed with normal authentication.
+    """
+    if _did_passes_gate(request, did):
+        return None
+    logger.warning("SYSTEM GATE: blocked authentication for DID %s", did)
+    return _render_beta_gate(request, did=did, next_url=next_url)
+
+
 def _is_safe_public_redirect(uri: str) -> bool:
     """
     Validate that redirect URI is safe for public browser consumption and
@@ -403,6 +463,10 @@ def verify_signature(request):
                     cached_raw = cache.get(challenge)
                     if cached_raw is not None:
                         print("SECURITY AUDIT BYPASS: challenge", challenge[:16], "DID", holder_did, flush=True)
+                        gate_resp = _gate_response(request, holder_did, next_url)
+                        if gate_resp is not None:
+                            cache.delete(challenge)
+                            return gate_resp
                         user, created = User.objects.get_or_create(custodial_did=holder_did, defaults={"email": None})
                         user = evaluate_sovereign_admin_posture(user)
                         if user.is_active:
@@ -427,6 +491,11 @@ def verify_signature(request):
                         else:
                             print("DIAGNOSTIC: Bypass failed - user account disabled", flush=True)
                     return JsonResponse({"error": "Invalid master key signature"}, status=401)
+
+                gate_resp = _gate_response(request, holder_did, next_url)
+                if gate_resp is not None:
+                    cache.delete(challenge)
+                    return gate_resp
 
                 user, created = User.objects.get_or_create(custodial_did=holder_did, defaults={"email": None})
                 user = evaluate_sovereign_admin_posture(user)
@@ -475,6 +544,10 @@ def verify_signature(request):
             }, status=400)
 
         cache.delete(challenge)
+
+        gate_resp = _gate_response(request, did, next_url)
+        if gate_resp is not None:
+            return gate_resp
 
         user, created = User.objects.get_or_create(custodial_did=did, defaults={"email": None})
         user = evaluate_sovereign_admin_posture(user)
@@ -768,6 +841,11 @@ def check_challenge_status(request, challenge_id):
     did = cached['did']
     next_url = cached.get('next_url', DEFAULT_NEXT_URL)
 
+    gate_resp = _gate_response(request, did, next_url)
+    if gate_resp is not None:
+        cache.delete(challenge_id)
+        return gate_resp
+
     user, created = User.objects.get_or_create(custodial_did=did, defaults={"email": None})
     user = evaluate_sovereign_admin_posture(user)
 
@@ -832,6 +910,10 @@ def managed_login(request):
         user.set_password(password)
         user.save()
         logger.info("JIT USER CREATED: email=%s did=%s", email, custodial_did)
+
+    gate_resp = _gate_response(request, user.custodial_did, next_url)
+    if gate_resp is not None:
+        return gate_resp
 
     # Authenticate and log in
     login(request, user, backend='auth_bridge.backend.DIDAuthBackend')
@@ -1006,8 +1088,13 @@ class LegalDisclaimerView(View):
 @csrf_exempt
 def acknowledge_legal_disclaimer(request):
     """
-    Record user acknowledgment of the Sovereign Network Access & Legal Notice.
-    Persists the 'show_legal_disclaimer' preference on the User model and in session.
+    Record affirmative (GDPR) acknowledgment of the Sovereign Network Access
+    & Legal Notice and release the post-disclaimer redirect.
+
+    Requires explicit consent (``consent_accepted=true``); passive page views
+    never count as consent. On success the user's ``show_legal_disclaimer``
+    flag is cleared server-side so OIDC code issuance may proceed unhindered,
+    and the response carries the ``redirect_url`` to resume the prior flow.
     """
     if not request.user.is_authenticated:
         return JsonResponse({'error': 'authentication_required'}, status=401)
@@ -1017,18 +1104,31 @@ def acknowledge_legal_disclaimer(request):
     except json.JSONDecodeError:
         data = request.POST
 
-    show_on_next = data.get('show_on_next', data.get('show_legal_disclaimer', True))
-    if isinstance(show_on_next, str):
-        show_on_next = show_on_next.lower() in ('true', '1', 'yes', 'on')
+    consent = data.get('consent_accepted', data.get('consent', False))
+    if isinstance(consent, str):
+        consent = consent.lower() in ('true', '1', 'yes', 'on')
 
-    request.user.show_legal_disclaimer = bool(show_on_next)
+    if not consent:
+        return JsonResponse(
+            {'error': 'consent_required', 'success': False},
+            status=400,
+        )
+
+    request.user.show_legal_disclaimer = False
     request.user.disclaimer_acknowledged_at = timezone.now()
     request.user.save(update_fields=['show_legal_disclaimer', 'disclaimer_acknowledged_at'])
-    request.session['show_legal_disclaimer'] = request.user.show_legal_disclaimer
+    request.session['show_legal_disclaimer'] = False
+
+    redirect_url = request.session.pop('post_disclaimer_redirect', None)
+    if not redirect_url:
+        redirect_url = data.get('next_url', data.get('next', ''))
+    if not _is_safe_public_redirect(redirect_url):
+        redirect_url = DEFAULT_NEXT_URL
 
     return JsonResponse({
         'success': True,
-        'show_legal_disclaimer': request.user.show_legal_disclaimer,
+        'redirect_url': redirect_url,
+        'show_legal_disclaimer': False,
         'disclaimer_acknowledged_at': request.user.disclaimer_acknowledged_at.isoformat(),
     })
 
@@ -1080,6 +1180,23 @@ class SovereignAuthorizeView(AuthorizeView):
             )
             return JsonResponse({'error': 'access_denied', 'error_description': 'Graduated sovereign identities must authenticate directly with their own DID.'}, status=403)
 
+        if getattr(request.user, "is_authenticated", False):
+            gate_resp = _gate_response(request, request.user.custodial_did)
+            if gate_resp is not None:
+                return gate_resp
+
+            # Server-side Legal Gate: never issue an authorization code until
+            # the user has affirmatively acknowledged the Sovereign Network
+            # Terms & Node Operator Policy. Preserve the original authorize
+            # request (full query string) so the flow resumes after ack.
+            if getattr(request.user, "show_legal_disclaimer", True):
+                request.session["post_disclaimer_redirect"] = request.get_full_path()
+                disclaimer_url = "{}?{}".format(
+                    reverse("auth_bridge:legal_disclaimer"),
+                    urlencode({"next": request.get_full_path()}),
+                )
+                return HttpResponseRedirect(disclaimer_url)
+
         authorize = self.authorize_endpoint_class(request)
 
         try:
@@ -1099,3 +1216,56 @@ class SovereignAuthorizeView(AuthorizeView):
             pass
 
         return super().get(request, *args, **kwargs)
+
+
+class BetaGateView(View):
+    """
+    Render the Sovereign Airlock gate page.
+
+    This is the graceful HTTP 403 surrender for unauthorized public logins.
+    The page explains that access is limited to authorized keys and offers an
+    input to redeem a beta invite key or submit a DID for waitlist
+    consideration.
+    """
+
+    def get(self, request):
+        next_url = request.GET.get('next', '') or DEFAULT_NEXT_URL
+        did = request.user.custodial_did if request.user.is_authenticated else None
+        return _render_beta_gate(request, did=did, next_url=next_url)
+
+
+@require_POST
+@csrf_exempt
+def redeem_beta_invite(request):
+    """
+    Redeem a beta invite key (or pre-approved DID) for this browser session.
+
+    On success the session is stamped ``beta_access=True`` and the browser is
+    returned to *next_url* (resumed OIDC flow, login page, or download modal).
+    Invalid keys re-render the gate page with an error message.
+    """
+    invite_key = request.POST.get('invite_key', '').strip()
+    did = request.POST.get('did', '').strip()
+    next_url = request.POST.get('next_url', '') or DEFAULT_NEXT_URL
+
+    redeemed = False
+    if invite_key:
+        valid_keys = set(getattr(django_settings, "BETA_INVITE_KEYS", []) or [])
+        if invite_key in valid_keys:
+            redeemed = True
+    if not redeemed and did:
+        if _is_admin_did(did) or _beta_allowlisted_did(did):
+            redeemed = True
+
+    if redeemed:
+        request.session['beta_access'] = True
+        logger.info("SYSTEM GATE: beta access granted for did=%s", did or "anonymous")
+        target = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
+        return HttpResponseRedirect(target)
+
+    messages.error(
+        request,
+        'That invite key has not been issued. Access remains restricted to authorized keys.',
+    )
+    logger.warning("SYSTEM GATE: failed beta invite redemption for key=%s did=%s", invite_key, did)
+    return _render_beta_gate(request, did=did, next_url=next_url)

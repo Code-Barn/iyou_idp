@@ -214,6 +214,12 @@ def passkey_authenticate_complete(request: HttpRequest) -> HttpResponse:
     _destroy_ceremony("auth", ceremony_id)
 
     user = evaluate_sovereign_admin_posture(row.user)
+
+    from .views import _gate_response
+    gate_resp = _gate_response(request, user.custodial_did)
+    if gate_resp is not None:
+        return gate_resp
+
     login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
     logger.info("PASSKEY LOGIN: did=%s via passkey", user.custodial_did)
     return JsonResponse({

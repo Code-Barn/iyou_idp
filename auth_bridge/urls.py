@@ -24,6 +24,8 @@ from .views import (
     GlobalLogoutView,
     LegalDisclaimerView,
     acknowledge_legal_disclaimer,
+    BetaGateView,
+    redeem_beta_invite,
 )
 from .views_oauth import OAuthInitiateView, OAuthCallbackView
 from .views_passkeys import (
@@ -52,6 +54,8 @@ urlpatterns = [
     path('mobile-verify/',             mobile_verify_signature,  name='mobile_verify'),
     path('challenge-status/<str:challenge_id>/', check_challenge_status, name='challenge_status'),
     path('logout/', GlobalLogoutView.as_view(), name='global_logout'),
+    path('gate/', BetaGateView.as_view(), name='gate'),
+    path('gate/redeem/', redeem_beta_invite, name='gate_redeem'),
     path('oauth/initiate/<str:provider>/', OAuthInitiateView.as_view(), name='oauth_initiate'),
     path('oauth/callback/<str:provider>/', OAuthCallbackView.as_view(), name='oauth_callback'),
 

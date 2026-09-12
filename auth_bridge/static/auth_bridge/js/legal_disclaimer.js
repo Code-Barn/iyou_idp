@@ -17,7 +17,7 @@
   'use strict';
 
   var modal = document.getElementById('legal-disclaimer-modal');
-  var checkbox = document.getElementById('disclaimer-show-next-checkbox');
+  var checkbox = document.getElementById('disclaimer-consent-checkbox');
   var ackBtn = document.getElementById('disclaimer-acknowledge-btn');
   var ACK_URL = '/auth/legal-disclaimer/acknowledge/';
 
@@ -43,10 +43,17 @@
     return cookieValue;
   }
 
+  function syncAckButton() {
+    if (ackBtn && checkbox) {
+      ackBtn.disabled = !checkbox.checked;
+    }
+  }
+
   function showModal(redirectUrl) {
     if (!modal) return;
     pendingRedirectUrl = redirectUrl || window.currentNextUrl || window.WUN_URL || '/';
-    if (checkbox) checkbox.checked = true;
+    if (checkbox) checkbox.checked = false;
+    syncAckButton();
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
   }
@@ -58,36 +65,41 @@
   }
 
   function handleAcknowledge() {
+    // GDPR: affirmative consent is required before the acknowledgement fires.
+    if (!checkbox || !checkbox.checked) return;
     if (!ackBtn) return;
     ackBtn.disabled = true;
     var originalText = ackBtn.innerHTML;
     ackBtn.innerHTML = '<span>Proceeding...</span>';
 
     var destination = pendingRedirectUrl || window.currentNextUrl || window.WUN_URL || '/';
-    var showOnNext = checkbox ? checkbox.checked : true;
 
-    if (!showOnNext) {
-      fetch(ACK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken()
-        },
-        body: JSON.stringify({ show_on_next: false })
-      })
-      .then(function (res) { return res.json(); })
-      .then(function () {
-        window.location.href = destination;
-      })
-      .catch(function (err) {
-        console.error('Failed to persist disclaimer preference:', err);
-        window.location.href = destination;
-      });
-    } else {
-      window.location.href = destination;
-    }
+    fetch(ACK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken()
+      },
+      body: JSON.stringify({ consent_accepted: true, next_url: destination })
+    })
+    .then(function (res) {
+      if (!res.ok) throw new Error('acknowledgment failed');
+      return res.json();
+    })
+    .then(function (data) {
+      // Seamless inline redirect in the current window (target defaults to _self).
+      window.location.href = data.redirect_url || destination;
+    })
+    .catch(function (err) {
+      console.error('Failed to persist disclaimer acknowledgement:', err);
+      ackBtn.disabled = false;
+      ackBtn.innerHTML = originalText;
+    });
   }
 
+  if (checkbox) {
+    checkbox.addEventListener('change', syncAckButton);
+  }
   if (ackBtn) {
     ackBtn.addEventListener('click', handleAcknowledge);
   }

@@ -19,7 +19,7 @@ Integration tests for the post-login Legal Disclaimer Gate in iyou_idp.
 
 import json
 from unittest.mock import patch
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from django.conf import settings
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
@@ -55,6 +55,15 @@ class LegalDisclaimerGateUITest(TestCase):
         self.assertIn("Neutral Conduit &amp; Protocol Interface", content)
         self.assertIn("This node instance acts strictly as an open-source indexing interface and communication gateway.", content)
         self.assertIn("The operator does not host, author, or curate third-party mesh communications.", content)
+        self.assertIn("Routing carries zero cleartext private keys", content)
+
+        self.assertIn("Data Minimization", content)
+        self.assertIn("Zero PII storage", content)
+        self.assertIn("cleartext birth dates, phone numbers, or mandatory email", content)
+
+        self.assertIn("Cryptographic Immutability", content)
+        self.assertIn("Nostr/IPFS", content)
+        self.assertIn("Node-level profile erasure can be executed", content)
 
         self.assertIn("Node Operator Policies", content)
         self.assertIn("In accordance with jurisdiction baseline compliance, this gateway explicitly prohibits illegal conduct", content)
@@ -64,11 +73,16 @@ class LegalDisclaimerGateUITest(TestCase):
         self.assertIn("Open Source Ecosystem", content)
         self.assertIn('Core software operates under GPLv3. Service is provided "as is" with no express warranties.', content)
 
-        # Controls Check
-        self.assertIn("Show this legal disclaimer on next login", content)
+        # Controls Check — affirmative consent is unchecked by default and mandated.
+        self.assertIn('id="disclaimer-consent-checkbox"', content)
+        self.assertNotIn('id="disclaimer-consent-checkbox" checked', content)
+        self.assertNotIn('id="disclaimer-show-next-checkbox"', content)
+        self.assertIn("I have read, understood, and explicitly agree to the Sovereign Network", content)
         self.assertIn("Acknowledge and Proceed", content)
-        self.assertIn('id="disclaimer-show-next-checkbox"', content)
-        self.assertIn('checked', content)
+        self.assertRegex(
+            content,
+            r'<button id="disclaimer-acknowledge-btn"[^>]*disabled',
+        )
 
     def test_disclaimer_standalone_view_requires_auth(self):
         resp = self.client.get(reverse("auth_bridge:legal_disclaimer"))
@@ -116,48 +130,63 @@ class LegalDisclaimerStatePersistenceTest(TestCase):
         )
         self.assertEqual(resp.status_code, 401)
 
-    def test_acknowledge_with_checkbox_checked_retains_disclaimer(self):
-        self.client.force_login(self.user)
-        resp = self.client.post(
-            reverse("auth_bridge:legal_disclaimer_acknowledge"),
-            data=json.dumps({"show_on_next": True}),
-            content_type="application/json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertTrue(data["success"])
-        self.assertTrue(data["show_legal_disclaimer"])
-
-        self.user.refresh_from_db()
-        self.assertTrue(self.user.show_legal_disclaimer)
-
-    def test_acknowledge_with_checkbox_unchecked_persists_bypass(self):
+    def test_acknowledge_requires_affirmative_consent(self):
         self.client.force_login(self.user)
         resp = self.client.post(
             reverse("auth_bridge:legal_disclaimer_acknowledge"),
             data=json.dumps({"show_on_next": False}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.show_legal_disclaimer)
+        self.assertIsNone(self.user.disclaimer_acknowledged_at)
+
+    def test_acknowledge_with_consent_clears_disclaimer_server_side(self):
+        self.client.force_login(self.user)
+        resp = self.client.post(
+            reverse("auth_bridge:legal_disclaimer_acknowledge"),
+            data=json.dumps({"consent_accepted": True}),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertTrue(data["success"])
         self.assertFalse(data["show_legal_disclaimer"])
+        self.assertIn("redirect_url", data)
 
         self.user.refresh_from_db()
         self.assertFalse(self.user.show_legal_disclaimer)
         self.assertIsNotNone(self.user.disclaimer_acknowledged_at)
 
+    def test_acknowledge_returns_resumed_redirect_from_session(self):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["post_disclaimer_redirect"] = "/openid/authorize/?client_id=x&state=abc"
+        session.save()
+
+        resp = self.client.post(
+            reverse("auth_bridge:legal_disclaimer_acknowledge"),
+            data=json.dumps({"consent_accepted": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["redirect_url"], "/openid/authorize/?client_id=x&state=abc")
+        self.assertNotIn("post_disclaimer_redirect", self.client.session)
+
     def test_acknowledge_endpoint_alias_disclaimer_acknowledge(self):
         self.client.force_login(self.user)
         resp = self.client.post(
             reverse("auth_bridge:disclaimer_acknowledge"),
-            data=json.dumps({"show_on_next": False}),
+            data=json.dumps({"consent_accepted": True}),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(resp.json()["show_legal_disclaimer"])
 
 
+@override_settings(SYSTEM_GATE_ENABLED=False)
 class LegalDisclaimerFlowAndRoutingTest(TestCase):
     """Verify DID verification, OAuth, and OIDC state continuity with disclaimer gate."""
 

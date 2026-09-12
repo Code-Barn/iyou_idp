@@ -41,7 +41,29 @@
           <span class="text-indigo-600">🌐</span> Neutral Conduit &amp; Protocol Interface
         </h3>
         <p class="text-gray-600 text-xs sm:text-sm">
-          This node instance acts strictly as an open-source indexing interface and communication gateway. The operator does not host, author, or curate third-party mesh communications.
+          This node instance acts strictly as an open-source indexing interface and communication gateway.
+          The operator does not host, author, or curate third-party mesh communications.
+          Routing carries zero cleartext private keys — your signing keys never transit this node.
+        </p>
+      </div>
+
+      <div class="p-3.5 bg-gray-50 rounded-xl border border-gray-200/80">
+        <h3 class="font-bold text-gray-900 mb-1 flex items-center gap-1.5">
+          <span class="text-indigo-600">📉</span> Data Minimization
+        </h3>
+        <p class="text-gray-600 text-xs sm:text-sm">
+          Zero PII storage — no cleartext birth dates, phone numbers, or mandatory emails are required or stored.
+          Personal data is minimized to the sovereign DID you choose to present.
+        </p>
+      </div>
+
+      <div class="p-3.5 bg-gray-50 rounded-xl border border-gray-200/80">
+        <h3 class="font-bold text-gray-900 mb-1 flex items-center gap-1.5">
+          <span class="text-indigo-600">🔗</span> Cryptographic Immutability
+        </h3>
+        <p class="text-gray-600 text-xs sm:text-sm">
+          Distributed ledger actions (Nostr/IPFS) are cryptographically signed and cannot be erased.
+          Node-level profile erasure can be executed at any time via account settings.
         </p>
       </div>
 
@@ -66,19 +88,21 @@
 
     <!-- Footer Controls -->
     <div class="border-t border-gray-100 bg-gray-50/80 p-6 space-y-4">
-      <div class="flex items-center">
-        <label class="flex items-center gap-2.5 cursor-pointer select-none">
-          <input type="checkbox"
-                 id="disclaimer-show-next-checkbox"
-                 checked
-                 class="w-4 h-4 text-indigo-600 bg-white border-gray-300 rounded focus:ring-indigo-500 focus:ring-2 transition-all">
-          <span class="text-sm font-medium text-gray-700">Show this legal disclaimer on next login</span>
+      <div class="flex items-start gap-2.5">
+        <input type="checkbox"
+               id="disclaimer-consent-checkbox"
+               class="w-4 h-4 mt-0.5 text-indigo-600 bg-white border-gray-300 rounded focus:ring-indigo-500 focus:ring-2 transition-all">
+        <label for="disclaimer-consent-checkbox"
+               class="text-sm font-medium text-gray-700 cursor-pointer select-none">
+          I have read, understood, and explicitly agree to the Sovereign Network
+          Terms &amp; Node Operator Policy.
         </label>
       </div>
 
       <button id="disclaimer-acknowledge-btn"
               type="button"
-              class="w-full py-3.5 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 text-base flex items-center justify-center gap-2">
+              disabled
+              class="w-full py-3.5 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 text-base flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
         <span>Acknowledge and Proceed</span>
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M5 12h14M12 5l7 7-7 7"/>

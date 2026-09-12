@@ -64,7 +64,17 @@ IDP_HOME_WS_URL = env("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/")
 IDP_WEB_DID_NAMESPACE = env("IDP_WEB_DID_NAMESPACE", default="did:web:iyou.me")
 
 # Master admin DID for automatic superuser elevation
-ADMIN_DID = env("ADMIN_DID", default="did:key:z6MknA51zaT8CpPx3qvAoqHDiXpSZnp4EqpQnw8FKbnbR5YV")
+ADMIN_DID = env("ADMIN_DID", default="did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Sovereign Airlock — Private Beta / Contributor Preview (MVP showcase)
+# When enabled, only ADMIN_DID, pre-approved beta DIDs (BETA_ACCESS_ALLOWLIST),
+# or sessions that redeemed a valid invite key (BETA_INVITE_KEYS) may
+# authenticate. Unauthorized public logins are redirected to the beta gate.
+# ──────────────────────────────────────────────────────────────────────────────
+SYSTEM_GATE_ENABLED = env.bool("SYSTEM_GATE_ENABLED", default=True)
+BETA_ACCESS_ALLOWLIST = env.list("BETA_ACCESS_ALLOWLIST", default=[])
+BETA_INVITE_KEYS = env.list("BETA_INVITE_KEYS", default=[])
 
 # HashiCorp Vault — custody of Ed25519 managed-identity key material
 IDP_VAULT_ADDR = env("IDP_VAULT_ADDR", default="http://127.0.0.1:8200")
@@ -158,6 +168,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "config.context_processors.global_settings",
             ],
         },
     },

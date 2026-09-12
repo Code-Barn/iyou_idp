@@ -210,6 +210,7 @@ class PasskeyRegistrationTest(PasskeyCeremonyBase):
         self.assertEqual(json.loads(response.content)["error"], "unknown_or_expired_ceremony")
 
 
+@override_settings(SYSTEM_GATE_ENABLED=False)
 class PasskeyAuthenticationTest(PasskeyCeremonyBase):
     def setUp(self) -> None:
         super().setUp()

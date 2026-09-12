@@ -370,6 +370,11 @@ class OAuthCallbackView(View):
     # ── session finalisation ──────────────────────────────────────────────
 
     def _complete_login(self, request, user):
+        from .views import _gate_response
+        gate_resp = _gate_response(request, user.custodial_did)
+        if gate_resp is not None:
+            return gate_resp
+
         login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
 
         pending_next = request.session.pop(SESSION_KEY_OAUTH_NEXT, None)

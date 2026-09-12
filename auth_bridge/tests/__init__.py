@@ -20,7 +20,7 @@ import json
 import hashlib
 import base58
 from base64 import urlsafe_b64encode
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from auth_bridge.views import cache
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
@@ -66,6 +66,7 @@ def _sign_vc(vc: dict, private_key) -> dict:
     }
 
 
+@override_settings(SYSTEM_GATE_ENABLED=False)
 class ChallengeResponseCycleTest(TestCase):
     """Full end-to-end: request challenge → build VP → verify → session."""
 
@@ -210,6 +211,7 @@ class ChallengeResponseCycleTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+@override_settings(SYSTEM_GATE_ENABLED=False)
 class OIDCAuthorizeFlowTest(TestCase):
     """End-to-end: DID login → OIDC authorize → code exchange."""
 
@@ -278,6 +280,12 @@ class OIDCAuthorizeFlowTest(TestCase):
 
     def test_authorize_returns_code_for_authenticated_user(self):
         """OIDC authorize should redirect with code when user is logged in."""
+        # The server-side Legal Gate blocks code issuance until the disclaimer
+        # is affirmatively acknowledged; simulate a user who already consented.
+        user = User.objects.get(custodial_did=self.did)
+        user.show_legal_disclaimer = False
+        user.save(update_fields=["show_legal_disclaimer"])
+
         resp = self.client.get(
             reverse("oidc_provider:authorize"),
             {
@@ -583,7 +591,7 @@ class EmergencyBypassLockdownTest(TestCase):
         resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
         challenge = resp.json()["challenge"]
 
-        with self.settings(ALLOW_EMERGENCY_BYPASS=True):
+        with self.settings(ALLOW_EMERGENCY_BYPASS=True, SYSTEM_GATE_ENABLED=False):
             with self.assertLogs("auth_bridge.views", level="CRITICAL") as captured:
                 resp = self._submit_tampered_vp(challenge)
 
@@ -670,7 +678,7 @@ class CacheFallbackTest(TestCase):
         import redis
         from auth_bridge.views import cache as views_cache
 
-        with self.settings(DEBUG=True):
+        with self.settings(DEBUG=True, SYSTEM_GATE_ENABLED=False):
             with patch.object(views_cache._primary, "set", side_effect=redis.exceptions.ConnectionError("Redis down")):
                 with patch.object(views_cache._primary, "get", side_effect=redis.exceptions.ConnectionError("Redis down")):
                     with patch.object(views_cache._primary, "delete", side_effect=redis.exceptions.ConnectionError("Redis down")):

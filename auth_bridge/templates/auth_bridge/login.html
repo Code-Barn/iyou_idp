@@ -160,6 +160,7 @@
         const VERIFY_URL = "{% url 'auth_bridge:verify_signature' %}";
         const CHALLENGE_URL = "{% url 'auth_bridge:challenge' %}";
         const CHALLENGE_STATUS_URL = "/auth/challenge-status/";
+        const GATE_URL = "{% url 'auth_bridge:gate' %}";
 
         // Satellite destination — navigated to inline after successful auth
         const WUN_URL = '{{ wun_url|escapejs }}';
@@ -590,7 +591,15 @@
                     next_url: currentNextUrl
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.indexOf('text/html') !== -1) {
+                    // Sovereign Airlock — navigate the browser to the beta gate screen.
+                    window.location.href = GATE_URL + '?next=' + encodeURIComponent(currentNextUrl);
+                    return { success: false };
+                }
+                return response.json();
+            })
             .then(data => {
                 console.log("VERIFY RESPONSE FULL:", JSON.stringify(data));
                 signingLoading.classList.add('hidden');
@@ -752,7 +761,15 @@
             communityPollId = setInterval(() => {
                 if (!communityChallengeId) return;
                 fetch(CHALLENGE_STATUS_URL + communityChallengeId + '/')
-                    .then(r => { if (!r.ok) throw new Error('Not found'); return r.json(); })
+                    .then(r => {
+                        const contentType = r.headers.get('content-type') || '';
+                        if (contentType.indexOf('text/html') !== -1) {
+                            window.location.href = GATE_URL + '?next=' + encodeURIComponent(currentNextUrl);
+                            throw new Error('gate');
+                        }
+                        if (!r.ok) throw new Error('Not found');
+                        return r.json();
+                    })
                     .then(data => {
                         if (data.solved && data.redirect_url) {
                             clearInterval(communityPollId);
