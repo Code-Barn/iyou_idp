@@ -1,7 +1,7 @@
 # Standard UI Specification: Sovereign Mesh Navigation & Persona Enclave
 
 **Canonical Reference for Layer 0 Ecosystem Bar, Layer 1 Standard Header, Modular Persona Enclave, Mascot Footer, and PWA Standards**  
-**Version:** 2.0.0  
+**Version:** 3.0.0  
 **Status:** Authoritative Ecosystem Specification  
 
 ---
@@ -12,19 +12,20 @@ The iYou ecosystem presentation tier is structured into strict horizontal layers
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ Layer 0: Sovereign Ecosystem Bar (Hidden drawer, 4px visible activation)    │
+│ Layer 0: Sovereign Ecosystem Bar (Contrast-inverted drawer, 4px lip shown)  │
+│          Light: deep #0B0F19 / Dark: crisp slate-100 (inverted)            │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ Layer 1: Application Brand & Sovereign Identity Header                      │
-│   ├── Left: App Brand Lockup (iyou_{slug})                                 │
+│   ├── Left: Brand Lockup (squircle stamp + iyou_{slug} + DOMAIN BADGE)     │
 │   └── Right:                                                               │
-│       ├── [Optional] Notification Bell (#notification-bell-btn)            │
+│       ├── Notification Bell (#notification-bell-btn)                       │
 │       ├── Modular Persona Enclave Partial (_persona_enclave.html)          │
-│       │     └── Flyout Menu with Direct Public Profile Action              │
+│       │     └── @handle + L1/L2+ level chips, Flyout with Public Profile   │
 │       ├── Action Links ([ ⚙️ Edit ], Sign Out)                             │
-│       ├── Unauthenticated State (Amber dot + "Sovereign Key Required")     │
-│       └── Dark/Light Theme Toggle (#theme-toggle)                          │
+│       ├── Logged-Out: "• Sovereign Key Required" capsule + "🔑 Authenticate"│
+│       └── Outline Theme Toggle (☀ in Light / ☾ in Dark)                    │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ Layer 2: Main Content Area (<main class="flex-1 w-full ...">)              │
+│ Layer 2: Main Content Area (max-w-7xl or data-viz full-bleed)              │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ Canonical Mascot Footer ("The Polly Pattern" / _footer.html)               │
 │   ├── Mascot Image Block (Light/Dark responsive PNG assets)                │
@@ -43,9 +44,35 @@ The Layer 0 bar provides continuous, non-intrusive navigation across all 19 appl
 - **Positioning**: Fixed to the viewport top (`fixed top-0 left-0 right-0 z-[9999]`).
 - **Initial Resting State**: Hidden above the viewport with only a 4px activation lip visible (`-translate-y-[calc(100%-4px)]`).
 - **Desktop Hover Expansion**: Smoothly expands to full height on hover (`sm:hover:translate-y-0`) with hardware-accelerated transitions (`transition-transform duration-300 ease-in-out`).
-- **Surface Styling**: Glassmorphic dark surface (`bg-[#0B0F19]/95 backdrop-blur-md border-b border-__COLOR__-500/50 shadow-2xl`).
+- **Surface Styling**: Glassmorphic deep dark surface in light mode with a crisp white drawer in dark mode (Section 2.4).
 - **Close Action**: Explicit top-right close button (`#close-ecosystem-bar`) calling `closeEcosystemBar(event)`.
-- **Mobile Pull Handle**: Bottom 8px strip (`h-2 w-full bg-__COLOR__-500/80 cursor-pointer`) containing a centered pill (`w-8 h-1 bg-__COLOR__-300 rounded-full opacity-80`) hooked to `toggleEcosystemBar(event)`.
+- **Mobile Pull Handle**: Bottom 8px strip (`h-2 w-full bg-violet-500/80 cursor-pointer`) containing a centered pill (`w-8 h-1 bg-violet-300 rounded-full opacity-80`) hooked to `toggleEcosystemBar(event)`.
+
+### 2.4 Layer 0 High-Contrast Inversion Contract
+The Layer 0 drawer inverts its chroma between color schemes to remain intentionally readable against both modes:
+
+```html
+<div id="sovereign-ecosystem-topbar"
+     class="fixed top-0 left-0 right-0 z-[9999] transition-transform duration-300 ease-in-out -translate-y-[calc(100%-4px)] sm:hover:translate-y-0 bg-[#0B0F19]/95 text-slate-300 border-b border-violet-500/50 dark:bg-slate-100 dark:text-slate-900 dark:border-b-2 dark:border-violet-600 shadow-2xl">
+  <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2">
+    <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 dark:text-slate-600 pb-1 mb-1 border-b border-slate-800 dark:border-slate-300">
+      <span class="text-violet-400 dark:text-violet-700 font-bold tracking-wider">SOVEREIGN MESH ECOSYSTEM</span>
+      <button type="button" id="close-ecosystem-bar"
+              class="text-xs text-slate-400 hover:text-white dark:text-slate-600 dark:hover:text-slate-900 px-2 py-0.5 rounded bg-slate-800/80 dark:bg-slate-200 dark:hover:bg-slate-300 transition"
+              onclick="closeEcosystemBar(event)">✕ Close</button>
+    </div>
+    <!-- 19-App Links Flow (per-app colors + dark variants) -->
+  </div>
+  <div class="h-2 w-full bg-violet-500/80 cursor-pointer flex justify-center items-center select-none" onclick="toggleEcosystemBar(event)">
+    <div class="w-8 h-1 bg-violet-300 rounded-full opacity-80"></div>
+  </div>
+</div>
+```
+
+- **Light mode (`bg-[#0B0F19]/95 text-slate-300 border-b border-violet-500/50`)**: Deep dark drawer, violet mesh accent border/title/handle.
+- **Dark mode (`dark:bg-slate-100 dark:text-slate-900 dark:border-b-2 dark:border-violet-600`)**: Crisp light drawer with functional violet-700 labels and slate-200 close button.
+- **Link contrast**: Every app link ships paired light/dark classes (e.g. `text-violet-400 hover:text-violet-300 dark:text-violet-700 dark:hover:text-violet-600`) so the per-app color stream remains legible in both modes. Section separators use `<span class="text-slate-700 dark:text-slate-400">/</span>`.
+- **Mesh chrome is violet**: The Layer 0 bar border, title, and pull handle use the violet mesh identity (not the per-app accent). Per-app accents appear only in the link stream.
 
 ### 2.2 The 19-App Multi-Colored Stream
 Links are ordered by protocol topology and color-coded with distinct Tailwind CSS palette accents, separated by dark slashes (`<span class="text-slate-700">/</span>`). The active application is highlighted using `text-__COLOR__-400 font-bold underline`:
@@ -107,39 +134,157 @@ function toggleEcosystemBar(e) {
 
 ## 3. Layer 1: Application Brand & Sovereign Identity Header
 
-### 3.1 Standard Header Components
-The canonical `_standard_header.html` provides:
+### 3.1 Header Layout & Width Contract
+All Layer 1 headers across the ecosystem share one mandatory width and spacing contract regardless of app or viewport:
+
+```html
+<header class="relative z-30 border-b backdrop-blur-sm transition-colors duration-200 bg-white/90 border-slate-200 text-slate-900 dark:bg-[#0B0F19]/90 dark:border-gray-800 dark:text-gray-100">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+    <!-- Left: Brand Lockup -->
+    <!-- Right: Action & Identity Controls -->
+  </div>
+</header>
+```
+
+- **Outer `<header>`**: `relative z-30 border-b backdrop-blur-sm transition-colors duration-200 bg-white/90 border-slate-200 text-slate-900 dark:bg-[#0B0F19]/90 dark:border-gray-800 dark:text-gray-100`.
+- **Inner flex row**: `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between`.
+- Data-visualization viewports (`name`, `draw`, `spot`) may permit full-bleed `<main class="w-full">`, but headers and footers **MUST** strictly remain `max-w-7xl mx-auto`.
+
+### 3.2 Standard Header Components
+The canonical `_standard_header.html` provides (all slots visible in both authenticated and unauthenticated states):
+
 1. **Session DID Binding**:
    ```javascript
-   window.CURRENT_SESSION_DID = "{{ current_session_did|escapejs }}";
+   window.CURRENT_SESSION_DID = "{{ current_session_did|default:user.username|escapejs }}";
    ```
-2. **Brand Lockup**: `iyou` in neutral slate with `_{app_slug}` styled in the app accent color.
-3. **Notification Bell**: Button `#notification-bell-btn` with unread badge ping `#notification-unread-dot`.
-4. **Modular Persona Enclave Partial**: Rendered via `{% include "includes/_persona_enclave.html" %}`.
-5. **Direct Actions**:
+
+2. **Left Brand Lockup (Squircle + Name + Domain Badge)**:
+   ```html
+   <a href="/" class="flex items-center gap-2.5 group transition-transform active:scale-95" title="iyou_{app_slug}">
+     <img src="{% static 'img/logo_square_sm.png' %}"
+          onerror="this.onerror=null;this.src='{% static 'img/logo_square.png' %}';"
+          alt="{app_slug}"
+          class="w-6 h-6 sm:w-7 sm:h-7 rounded-lg object-cover shadow-sm border border-slate-200 dark:border-slate-800 group-hover:scale-105 transition-transform duration-150" />
+     <div class="flex items-center gap-1.5 font-bold tracking-tight">
+       <span class="text-slate-400 dark:text-gray-400 group-hover:text-slate-600 dark:group-hover:text-gray-200 transition-colors">iyou</span>
+       <span class="text-{color}-600 dark:text-{color}-400">_{slug}</span>
+       <span class="text-[10px] sm:text-[11px] font-mono tracking-wider uppercase px-2.5 py-0.5 rounded-md border border-slate-300/80 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 select-none ml-1.5 font-medium">
+         __BADGE__
+       </span>
+     </div>
+   </a>
+   ```
+
+3. **Notification Bell**: Button `#notification-bell-btn` with safe function guard:
+   ```html
+   onclick="typeof toggleNotificationDrawer === 'function' && toggleNotificationDrawer()"
+   ```
+   Unread badge ping: `#notification-unread-dot` using the app accent color.
+
+4. **Modular Persona Enclave Partial**: `{% include "includes/_persona_enclave.html" %}` — renders `@handle` and level chips (`L1` violet, `L2+` amber) via the canonical context processor (Section 5).
+
+5. **Direct Actions** (authenticated only):
    - `[ ⚙️ Edit ]` linking to `{% url 'dashboard' %}`
-   - `Sign Out` linking to `{% url 'oidc_logout' %}` (supporting dual GET and POST)
-6. **Canonical Unauthenticated Branch**:
-   - Amber static indicator dot (`w-2 h-2 rounded-full bg-amber-400`)
-   - Text indicator: `"Sovereign Key Required"`
-   - Direct Sign In anchor linking to `{% url 'oidc_authentication_init' %}`
-7. **Theme Toggle**: `#theme-toggle` button on far right toggling `#icon-sun` and `#icon-moon`.
+   - `Sign Out` linking to `{% url 'oidc_logout' %}`
 
-### 3.2 Standard vs. Preserved Custom Designs
-While most satellites adhere strictly to the generated `_standard_header.html`, specific domain-critical satellites maintain specialized presentation requirements:
+6. **Logged-Out Canonical Poly Flow** (Section 3.4):
+   - Soft capsule pill for "Sovereign Key Required"
+   - Solid vibrant accent button for "Authenticate"
 
-```python
-PRESERVE_LAYER_1_APPS = {"poly", "name"}
+7. **Outline Theme Toggle**: Sun in light mode, Moon in dark mode (Section 3.5).
+
+### 3.3 Domain Badge
+A rectangular monospace label rendered inline in the brand lockup, providing immediate semantic classification for every satellite app:
+
+```html
+<span class="text-[10px] sm:text-[11px] font-mono tracking-wider uppercase px-2.5 py-0.5 rounded-md border border-slate-300/80 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 select-none ml-1.5 font-medium">
+  __BADGE__
+</span>
 ```
 
-- **`iyou_poly`**: Preserves custom governance layout including the "Consensus Engine" badge and specialized chamber navigation while consuming the canonical Layer 0 bar and the modular `_persona_enclave.html` partial.
-- **`iyou_name`**: Preserves custom registry styling with teal Sovereign badge and sticky header positioning while consuming the canonical Layer 0 bar and modular `_persona_enclave.html` partial.
+| App | Badge Label |
+|:---|:---|
+| `idp` | `IDENTITY ROOT` |
+| `wun` | `SOCIAL HUB` |
+| `poly` | `CONSENSUS ENGINE` |
+| `name` | `SOVEREIGN` |
+| `hive` | `EVIDENCE VAULT` |
+| `ride` | `TRANSIT` |
+| `dctech` | `HARDENING` |
+| `safe` | `CRISIS TRIAGE` |
+| `talk` | `SUPPORT` |
+| `clar` | `DIRECTORY` |
+| `play` | `ATHLETICS` |
+| `blog` | `PUBLISHING` |
+| `help` | `COMMUNITY` |
+| `draw` | `CANVAS` |
+| `life` | `MEMORIAL` |
+| `walk` | `TRANSIT` |
+| `stay` | `HOSPITALITY` |
+| `dev` | `OPERATIONS` |
+| `spot` | `EXPLORER` |
 
-Automation scripts (`scripts/generate_templates.py` with `--skip-header` and `scripts/regenerate_all.py`) enforce this guard:
-```python
-if app_slug in PRESERVE_LAYER_1_APPS:
-    print(f"  ↳ SKIPPED _standard_header.html for '{app_slug}' (Preserving Custom Layout)")
+The badge is sourced from `APP_METADATA` in `scripts/generate_templates.py` and is templated via `__BADGE__` → `{badge}` in the standard header generator.
+
+### 3.4 Logged-Out Authentication Block (The Poly Standard)
+When no active session exists, the standard header renders a two-part authenticated gate matching `iyou_poly` production screenshots:
+
+```html
+<!-- Logged-Out Canonical Poly Flow -->
+<div class="flex items-center gap-2 sm:gap-3">
+  <!-- Soft Capsule Indicator -->
+  <div class="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/20 text-xs text-slate-600 dark:text-slate-300 italic select-none">
+    <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+    <span class="hidden sm:inline">Sovereign Key Required</span>
+  </div>
+  <!-- Solid Vibrant Authenticate Button -->
+  <a href="{% url 'oidc_authentication_init' %}" class="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-{color}-600 hover:bg-{color}-700 active:scale-95 text-white text-xs font-semibold shadow-sm transition-all select-none">
+    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+    </svg>
+    <span>Authenticate</span>
+  </a>
+</div>
 ```
+
+- **Capsule**: `rounded-full` amber border/bg, italic text, amber-500 dot.
+- **Authenticate Button**: Solid `bg-{color}-600` with key SVG icon, `rounded-full` pill shape.
+
+### 3.5 Outline Theme Toggle (☀ Light / ☾ Dark)
+The `#theme-toggle` button uses the `block dark:hidden` / `hidden dark:block` pattern to show the correct icon per mode without JavaScript class toggling:
+
+```html
+<button id="theme-toggle" type="button" class="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition focus:outline-none" aria-label="Toggle theme">
+  <svg id="icon-sun" class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+  </svg>
+  <svg id="icon-moon" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+  </svg>
+</button>
+```
+
+### 3.6 Dual-Asset Logo Hierarchy
+To optimize performance and eliminate loading high-res square master assets (~512–768px) for a tiny 24px/28px rendering slot, satellites implement a dual-asset logo hierarchy:
+- **`static/img/logo_square_sm.png`**: 64×64 or 96×96 px — dedicated for the Layer 1 header squircle stamp. Minimizes network payload and ensures sharp rasterization on standard and Retina displays.
+- **`static/img/logo_square.png`**: High-res square master — dedicated for `_footer.html`, favicons, Apple Touch icons, and PWA icon generation.
+- **Graceful Fallback Invariant**: Standard headers must implement the `onerror` fallback:
+  ```html
+  onerror="this.onerror=null;this.src='{% static 'img/logo_square.png' %}';"
+  ```
+  This ensures satellites that haven't generated `logo_square_sm.png` yet safely resolve to `logo_square.png` without displaying a broken image box.
+
+### 3.7 Unified Standard Header — No Custom Exceptions
+All 19 satellite applications now receive the standardized canonical `_standard_header.html` from `generate_templates.py` — no exceptions. The domain badge (`APP_METADATA.badge`) provides the per-app differentiation previously handled by custom layouts:
+
+```python
+PRESERVE_LAYER_1_APPS = set()  # All apps use the canonical header
+```
+
+- **`iyou_poly`**: Now renders `CONSENSUS ENGINE` badge via the canonical header — no custom governance layout.
+- **`iyou_name`**: Now renders `SOVEREIGN` badge via the canonical header — no custom registry styling.
+
+The `--skip-header` flag and `PRESERVE_LAYER_1_APPS` guard are retained for future use but no longer activated for any satellite.
 
 ---
 
@@ -284,10 +429,7 @@ To integrate the canonical navigation, mascot footer, and PWA system into any sa
    ```html
    {% include "includes/_standard_header.html" %}
    ```
-3. **Opt-in Enclave Partial in Custom Layouts** (e.g. `poly`, `name`):
-   ```html
-   {% include "includes/_persona_enclave.html" %}
-   ```
+3. **Persona Enclave Partial**: The standard header already renders it via `{% include "includes/_persona_enclave.html" %}`. Only custom Layout 2 headers outside the standard flow need an explicit opt-in include.
 4. **Ensure Client-Side Bridge Assets**:
    Vendor `bridge_client.js` in your static files and initialize `window.bridgeClient = new TauriBridgeClient()`.
 5. **Mount Canonical Mascot Footer**: Mounted immediately following `</main>` before closing `</body>`:
@@ -418,7 +560,8 @@ static/
 ├── js/
 │   └── sw.js                  # Minimal offline Service Worker
 └── img/
-    ├── logo_square.png        # Default Favicon & Apple Touch Icon
+    ├── logo_square_sm.png     # Compact squircle header logo (64x64/96x96)
+    ├── logo_square.png        # Default Favicon & Apple Touch Icon (high-res master)
     ├── logo_square_dark.png   # Optional Dark Favicon
     ├── icon-192.png           # 192x192 PWA launcher icon (maskable)
     ├── icon-512.png           # 512x512 PWA splash / install icon (maskable)
@@ -455,7 +598,7 @@ static/
      ]
    }
    ```
-2. **`static/img/logo_square.png`**: Standard square logo used for default favicon and Apple touch icon.
+2. **`static/img/logo_square_sm.png` & `static/img/logo_square.png`**: `logo_square_sm.png` (~64-96px) serves as the compact Layer 1 header squircle stamp; `logo_square.png` serves as the high-res master for `_footer.html`, default favicon, and Apple touch icon.
 3. **`static/img/icon-192.png` & `static/img/icon-512.png`**: PWA homescreen and launcher icons.
 4. **`static/js/sw.js`**: Minimal offline service worker caching core static assets and runtime shell:
    ```javascript

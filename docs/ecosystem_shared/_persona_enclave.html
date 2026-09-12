@@ -53,3 +53,33 @@
     </div>
   </div>
 </div>
+
+<script>
+  function togglePersonaDropdown() {
+    var dropdown = document.getElementById('persona-switcher-dropdown');
+    var btn = document.getElementById('persona-switcher-btn');
+    if (!dropdown) return;
+    var isHidden = dropdown.classList.contains('hidden');
+    if (isHidden) {
+      dropdown.classList.remove('hidden');
+      if (btn) btn.setAttribute('aria-expanded', 'true');
+      if (window.bridgeClient && typeof window.bridgeClient.queryVaultPersonas === 'function') {
+        window.bridgeClient.queryVaultPersonas();
+      }
+    } else {
+      dropdown.classList.add('hidden');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+  }
+  window.togglePersonaDropdown = togglePersonaDropdown;
+
+  document.addEventListener('click', function (e) {
+    var container = document.getElementById('persona-switcher-container');
+    var dropdown = document.getElementById('persona-switcher-dropdown');
+    var btn = document.getElementById('persona-switcher-btn');
+    if (dropdown && container && !container.contains(e.target)) {
+      dropdown.classList.add('hidden');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+</script>
