@@ -256,7 +256,7 @@ class GatedDownloadModalTest(TestCase):
         resp = self.client.get(reverse("auth_bridge:login"))
         body = resp.content.decode("utf-8")
         self.assertIn("Early Access Key Required", body)
-        self.assertNotIn("iyou-network/iyou_home/releases/download/", body)
+        self.assertNotIn("Code-Barn/iyou_home/releases/download/", body)
 
     def test_beta_session_visitor_sees_real_download_links(self):
         session = self.client.session
@@ -266,7 +266,7 @@ class GatedDownloadModalTest(TestCase):
         resp = self.client.get(reverse("auth_bridge:login"))
         body = resp.content.decode("utf-8")
         self.assertNotIn("Early Access Key Required", body)
-        self.assertIn("https://github.com/iyou-network/iyou_home/releases/download/", body)
+        self.assertIn("https://github.com/Code-Barn/iyou_home/releases/download/", body)
 
     def test_admin_user_sees_real_download_links_in_modal(self):
         admin = User.objects.create_user(
@@ -284,7 +284,7 @@ class GatedDownloadModalTest(TestCase):
             )
 
         self.assertNotIn("Early Access Key Required", html)
-        self.assertIn("https://github.com/iyou-network/iyou_home/releases/download/", html)
+        self.assertIn("https://github.com/Code-Barn/iyou_home/releases/download/", html)
 
 
 class DisclaimerAuthorizeGateTest(TestCase):

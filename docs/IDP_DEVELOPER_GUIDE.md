@@ -1094,7 +1094,7 @@ placement strategy to avoid page-layout shift:
 
   Each variant lists three download sources:
   1. **GitHub Releases** — pinned to the **v0.2.0** tag:
-     `https://github.com/iyou-network/iyou_home/releases/download/v0.2.0/`
+     `https://github.com/Code-Barn/iyou_home/releases/download/v0.2.0/`
      with the asset matrix below
   2. **Magnet torrent link** (clicked → copies to clipboard via `navigator.clipboard.writeText`)
   3. **IPFS gateway** (placeholder)
