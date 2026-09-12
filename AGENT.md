@@ -20,6 +20,51 @@ cp docs/AUTH_FLOW_SPECIFICATION.md docs/ecosystem_shared/AUTH_FLOW_SPECIFICATION
 cp docs/AUTH_FLOW_SPECIFICATION.md /Users/macuser/CODE_BASE/omni_social/docs/AUTH_FLOW_SPECIFICATION.md
 ```
 
+## 🔒 CRITICAL: Pre-Launch Airlock (Sovereign Beta Gate)
+Closed by default: `SYSTEM_GATE_ENABLED` defaults to `True`, and any auth
+ingress whose DID is not the `ADMIN_DID`, not listed in
+`BETA_ACCESS_ALLOWLIST`, and not carrying `session["beta_access"]` is
+short-circuited to the beta gate screen — HTTP 403, template
+`auth_bridge/beta_gate.html`.
+
+- Helpers: `_did_passes_gate(request, did)` → `_gate_response()` /
+  `_render_beta_gate()` in `auth_bridge/views.py`.
+- The gate is enforced at every auth ingress: `verify_signature`,
+  `mobile_verify_signature`, `check_challenge_status`, `managed_login`, the
+  OAuth and passkey flows, and the OIDC front-channel `SovereignAuthorizeView`.
+- Invite redemption: `POST /gate/redeem/` (name `gate_redeem`) validates a key
+  from `BETA_INVITE_KEYS` (or a waitlisted DID) and stamps
+  `session["beta_access"]`; the gate page itself is `/gate/` (name `gate`,
+  `BetaGateView`).
+- `SYSTEM_GATE_ENABLED` is injected into all templates via
+  `config.context_processors.global_settings`.
+
+## 🔒 CRITICAL: GDPR Affirmative Consent Invariant
+New `User` records default to `show_legal_disclaimer = True`
+(`auth_bridge/models.py`, migrations `0005`/`0006`). While it is set, the OIDC
+front-channel `SovereignAuthorizeView` refuses to mint an authorization code;
+the user is diverted to the legal disclaimer and the interrupted request path
+is stashed in `session["post_disclaimer_redirect"]`.
+
+- Acknowledgment lives at `/auth/legal-disclaimer/acknowledge/`
+  (`acknowledge_legal_disclaimer`) and MUST receive `consent_accepted=true`
+  (else HTTP 400 `consent_required`). It flips `show_legal_disclaimer=False`,
+  stamps `disclaimer_acknowledged_at`, and returns the user to the stashed
+  destination. Passive page views never count as consent.
+- The consent checkbox is **unchecked by default** and the acknowledge button
+  stays disabled until ticked; the modal copy is GDPR/node-operator policy.
+- The flag is honored by every auth ingress — mirrors exist in
+  `auth_bridge/views_oauth.py` and `auth_bridge/views_passkeys.py`. Never
+  weaken this invariant in the login/authorize path.
+
+## 🔒 CRITICAL: OIDC Gateway Uniformity
+Both `/openid/authorize/` (name `sovereign_authorize`) and `/openid/authorize`
+(name `sovereign_authorize_noslash`, no trailing slash) MUST resolve to
+`SovereignAuthorizeView` — never to the library's stock `AuthorizeView`.
+`config/urls.py` registers the sovereign view **before** the `oidc_provider`
+include, so the Airlock and the legal consent gate apply on every authorize
+path.
+
 ## Project
 Django-based OIDC provider that authenticates users via W3C DIDs instead of passwords. Rust extension (`_crypto`) handles Ed25519 signature verification, backed by Python `cryptography` primary path.
 
@@ -73,7 +118,7 @@ iyou_idp/
 **Sovereign admin elevation:** Set `ADMIN_DID` env var to a `did:key:` multibase URI. `evaluate_sovereign_admin_posture()` runs after every auth ingress and auto-promotes the matching user to staff+superuser.
 
 ## Environment variables (all via `IDP_` prefix + `ADMIN_DID`)
-`IDP_BASE_URL`, `IDP_WUN_URL`, `IDP_HOME_URL`, `IDP_HOME_WS_URL`, `IDP_SECRET_KEY`, `IDP_DEBUG`, `IDP_ALLOWED_HOSTS`, `IDP_CSRF_TRUSTED_ORIGINS`, `IDP_CORS_ALLOWED_ORIGINS`, `DATABASE_URL`, `REDIS_URL`, `ADMIN_DID`.
+`IDP_BASE_URL`, `IDP_WUN_URL`, `IDP_HOME_URL`, `IDP_HOME_WS_URL`, `IDP_SECRET_KEY`, `IDP_DEBUG`, `IDP_ALLOWED_HOSTS`, `IDP_CSRF_TRUSTED_ORIGINS`, `IDP_CORS_ALLOWED_ORIGINS`, `DATABASE_URL`, `REDIS_URL`, `ADMIN_DID`, `SYSTEM_GATE_ENABLED`, `BETA_ACCESS_ALLOWLIST`, `BETA_INVITE_KEYS`.
 
 ## Auth entry points (where `evaluate_sovereign_admin_posture(user)` is called)
 - `views.py:verify_signature` — desktop WebSocket flow (main + bypass + fallback VP paths)

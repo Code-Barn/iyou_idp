@@ -986,6 +986,8 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/challenge-status/<id>/    → check_challenge_status
 /auth/managed-login/            → managed_login
 /auth/logout/                   → GlobalLogoutView
+/gate/                          → BetaGateView (Sovereign Airlock)
+/gate/redeem/                   → redeem_beta_invite (invite key / waitlist DID)
 /auth/admin/did-login/          → custom_admin_login
 /auth/admin/did-verify/         → custom_admin_verify
 /auth/admin/did-dashboard/      → custom_admin_dashboard
@@ -997,7 +999,8 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/passkeys/authenticate/complete/ → passkey_authenticate_complete
 /api/v1/identity/graduate/export/  → graduate_export
 /api/v1/identity/graduate/confirm/ → graduate_confirm
-/openid/authorize/              → OIDC Authorization Endpoint *
+/openid/authorize/              → SovereignAuthorizeView (OIDC Authorization Endpoint)
+/openid/authorize               → SovereignAuthorizeView (no-trailing-slash alias)
 /openid/token/                  → Token exchange
 /openid/userinfo/               → UserInfo
 /openid/jwks/                   → JWKS
@@ -1017,6 +1020,54 @@ All registered URL patterns (as seen by `django.urls`):
 > with standard OIDC query parameters (`client_id`, `response_type=code`,
 > `redirect_uri`, `scope=openid`, `state`).  Using `/oauth/authorize/` or
 > any `/auth/...` path will return a 404 or unexpected behaviour.
+
+### Sovereign Airlock & Beta Waitlist
+
+Pre-launch, the IdP is closed by default. `SYSTEM_GATE_ENABLED` (env, default
+`True`) puts every auth ingress behind the **Sovereign Airlock**. Any DID that
+is not the `ADMIN_DID`, not present in `BETA_ACCESS_ALLOWLIST`, and not
+carrying `request.session["beta_access"]` receives HTTP **403** — the
+`beta_gate.html` screen — instead of proceeding.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/gate/` | Airlock screen — invite-key + waitlist-DID form (`gate`, `BetaGateView`) |
+| POST | `/gate/redeem/` | Redeem a one-time key from `BETA_INVITE_KEYS` (or a waitlisted DID); success stamps `session["beta_access"]` and returns to the pending destination (`gate_redeem`) |
+
+Enforcement lives in `_did_passes_gate(request, did)` → `_gate_response()` /
+`_render_beta_gate()` (`auth_bridge/views.py`) and is applied on
+`verify_signature`, `mobile_verify_signature`, `check_challenge_status`,
+`managed_login`, the OAuth/passkey flows, and the OIDC front-channel
+`SovereignAuthorizeView`. `SYSTEM_GATE_ENABLED` is injected into all templates
+by `config.context_processors.global_settings`.
+
+### Legal Consent Gate (GDPR Affirmative Consent)
+
+Every new `User` has `show_legal_disclaimer = True` by default
+(`auth_bridge/models.py`, migrations `0005`/`0006`). The OIDC front-channel
+`SovereignAuthorizeView` refuses to issue an authorization code while this flag
+is true — consent must be **explicit and acknowledged** first:
+
+1. Request hits `/openid/authorize/` (or `/openid/authorize`) →
+   `SovereignAuthorizeView`.
+2. If `show_legal_disclaimer` is set, the view stashes `request.get_full_path()`
+   in `request.session["post_disclaimer_redirect"]` and redirects to the legal
+   disclaimer.
+3. The disclaimer modal (`_legal_disclaimer_modal.html`) presents the
+   node-operator / data-policy terms. The consent checkbox is **unchecked by
+   default** and the acknowledge button stays **disabled** until it is ticked —
+   a passive page view or page reload never counts as consent.
+4. `POST /auth/legal-disclaimer/acknowledge/` must include
+   `consent_accepted=true` (else HTTP 400 `consent_required`). On success the
+   server sets `show_legal_disclaimer = False`, stamps
+   `disclaimer_acknowledged_at` (permanent audit timestamp), clears the session
+   flag, pops `post_disclaimer_redirect`, and returns
+   `{success: true, redirect_url}` so the client resumes the interrupted
+   authorization.
+
+The flag is honored by the OAuth completion path (`auth_bridge/views_oauth.py`)
+and the passkey ceremonies (`auth_bridge/views_passkeys.py`), so no auth
+ingress can bypass the consent gate.
 
 ### Download Modals (Desktop & Mobile CTAs)
 
@@ -1042,9 +1093,23 @@ placement strategy to avoid page-layout shift:
   | Linux   | AppImage, deb package |
 
   Each variant lists three download sources:
-  1. **GitHub Releases** (`/releases/latest/download/…`)
+  1. **GitHub Releases** — pinned to the **v0.2.0** tag:
+     `https://github.com/iyou-network/iyou_home/releases/download/v0.2.0/`
+     with the asset matrix below
   2. **Magnet torrent link** (clicked → copies to clipboard via `navigator.clipboard.writeText`)
   3. **IPFS gateway** (placeholder)
+
+  | OS | Asset |
+  |----|-------|
+  | Windows (installer) | `iyou-home_0.2.0_x64-setup.exe` |
+  | Windows (portable) | `iyou-home_0.2.0_x64_portable.zip` |
+  | macOS (Apple Silicon) | `iyou-home_0.2.0_aarch64.dmg` |
+  | macOS (Intel) | `iyou-home_0.2.0_x64.dmg` |
+  | Linux (AppImage) | `iyou-home_0.2.0_amd64.AppImage` |
+  | Linux (deb) | `iyou-home_0.2.0_amd64.deb` |
+
+  Magnet and IPFS links still carry placeholder hashes until the v0.2.0
+  torrent/IPFS pins are published.
 
 - The Linux section header uses a static Tux SVG (`auth_bridge/static/auth_bridge/img/Tux.svg`).
 
@@ -1197,7 +1262,7 @@ All JSON error responses follow this structure:
 |-------------|---------|
 | 400 | Bad request (missing fields, expired challenge, invalid VP structure) |
 | 401 | Verification failed (signature invalid) |
-| 403 | User account disabled / sovereign front-channel lockout |
+| 403 | Beta gate airlock, user account disabled, or sovereign front-channel lockout |
 | 404 | Managed key material not present in Vault (graduation export/confirm) |
 | 500 | Internal error (bridge import failure, unexpected exception) |
 | 502 | Vault unavailable or shred failed (graduation — DB rolled back) |
@@ -1495,7 +1560,7 @@ or any other path.  Common mistakes:
 |-----------|-------------|
 | `http://127.0.0.1:8000/auth/login/?client_id=...` | `http://127.0.0.1:8000/openid/authorize/?client_id=...` |
 | `http://127.0.0.1:8000/oauth/authorize/?client_id=...` | `http://127.0.0.1:8000/openid/authorize/?client_id=...` |
-| `http://127.0.0.1:8000/openid/authorize?client_id=...` (no trailing slash) | `http://127.0.0.1:8000/openid/authorize/?client_id=...` (trailing slash) |
+| `http://127.0.0.1:8000/openid/authorize?client_id=...` (no trailing slash) | Both `/openid/authorize` and `/openid/authorize/` dispatch to `SovereignAuthorizeView` (hardened `sovereign_authorize_noslash` / `sovereign_authorize`); the trailing-slash form is canonical |
 
 If the Relying Party uses OIDC discovery, the `authorization_endpoint` in
 `http://127.0.0.1:8000/openid/.well-known/openid-configuration/` provides

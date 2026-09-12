@@ -1,7 +1,7 @@
 # TODO — iyou_idp (Identity Provider)
 
 **Orchestrated from:** `omni_social` (central hub)
-**Last synced:** 2026-07-13
+**Last synced:** 2026-09-12
 
 ---
 
@@ -25,6 +25,9 @@
 - [ ] **[High] SEC-004 — Central SPOF mitigation:** Investigate offline-capable auth fallback when iyou_idp is unreachable.
 - [ ] **[Future] SEC-007 — Broaden DID ledger:** Activate `did:web` and `did:ethr` validation in `did_rust`.
 - [ ] **[Future] SEC-008 — Rogue extension defense:** Evaluate nonce binding or `web_modal` redirect mode.
+- [x] **Sovereign Airlock Gate (pre-launch beta):** `SYSTEM_GATE_ENABLED` (default `True`) 403s all non-exempt DIDs at every auth ingress with `beta_gate.html`; exceptions via `ADMIN_DID`, `BETA_ACCESS_ALLOWLIST`, or invite-key redemption (`/gate/redeem/`, `BETA_INVITE_KEYS`) → `session["beta_access"]` — **Done 2026-09-12**
+- [x] **GDPR Legal Disclaimer Hard Gate:** `show_legal_disclaimer` defaults `True`; `SovereignAuthorizeView` withholds front-channel OIDC codes until explicit `consent_accepted=true` at `/auth/legal-disclaimer/acknowledge/` (stamps `disclaimer_acknowledged_at`, resumes via `session["post_disclaimer_redirect"]`); unchecked-by-default consent modal — **Done 2026-09-12**
+- [x] **v0.2.0 Asset Matrix Sync:** `_download_modal.html` desktop links pinned to iyou-home v0.2.0 GitHub Releases (Windows setup/portable, macOS Intel/AS DMG, Linux AppImage/deb) — **Done 2026-09-12**
 - [ ] **Ecosystem Doc Organization:** Standardize repo layout to match iyou_wun precedent — root: `AGENT.md`, `README.md`; `docs/`: `DEVELOPER_GUIDE.md`, `DESIGN_DOC.md`, `TODO.md`, `ecosystem_shared/`, `archive/`.
 
 ---
