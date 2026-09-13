@@ -1,7 +1,7 @@
 # iyou_idp Authentication Flow — Authoritative Specification
 
 This document is the single source of truth for how authentication works in the
-iYou ecosystem. Every satellite relying party **must** conform to the flows and
+iyou_ ecosystem. Every satellite relying party **must** conform to the flows and
 contracts defined here.
 
 ---
@@ -36,10 +36,10 @@ standard OIDC authorization codes and exchange them for signed JWTs.
 |------|------|--------|---------|
 | 3 | Full Sovereignty | Desktop WebSocket (`iyou-home`) + manual VP paste | Power users, admin |
 | 2 | Community Self-Signing | OOB QR-code flow with mobile DID wallet | General users |
-| 1 | Managed Convenience | OAuth providers + email/password | Scaffold (not wired) |
+| 1 | Managed Convenience | OAuth providers + email/password JIT + passkeys | Onboarding, transitional |
 
-All tiers converge at the same point: `POST /auth/verify/` or
-`GET /auth/challenge-status/<id>/` → `login()` → OIDC redirect.
+All tiers converge at the same point: `POST /auth/verify/`,
+`GET /auth/challenge-status/<id>/`, or `POST /auth/managed-login/` → `login()` → OIDC redirect.
 
 ---
 
@@ -216,7 +216,7 @@ Returns standard OIDC claims plus custom DID claims (see Section 7).
 **Steps:**
 1. JS calls `POST /auth/challenge/` → receives UUID, stored in Redis for 300s
 2. JS opens WebSocket to `IDP_HOME_WS_URL`, sends `{type: "sign", challenge}`
-3. iYou Home prompts user to confirm, signs the challenge with their Ed25519 key
+3. iyou_home prompts user to confirm, signs the challenge with their Ed25519 key
 4. Returns a W3C Verifiable Presentation over WebSocket
 5. JS calls `POST /auth/verify/` with `{verifiable_presentation, challenge, next_url}`
 6. Server verifies VP → creates User → evaluates admin posture → login → builds OIDC code
@@ -268,10 +268,56 @@ Returns standard OIDC claims plus custom DID claims (see Section 7).
 6. When `solved`: server creates User → evaluates admin posture → login → builds OIDC code
 7. Returns `{solved: true, redirect_url}` → JS navigates inline via `window.location.href`
 
-### 5.3 Tier 1 — Managed Convenience (Scaffold)
+### 5.3 Tier 1 — Managed Convenience (Email / Password JIT Flow)
 
-Email/password login at `POST /auth/managed-login/`. Currently returns a
-"not yet wired" message. No backend logic implemented.
+Email and password authentication at `POST /auth/managed-login/` provides low-friction onboarding for users transitioning to decentralized identity, provisioning a server-managed `did:web` while enforcing all security invariants:
+
+```
+┌──────────┐         ┌──────────┐
+│  Browser  │         │ iyou_idp │
+│  (Client) │         │  (IDP)   │
+└────┬─────┘         └────┬─────┘
+     │  POST /auth/managed-login/  │
+     │  {email, password, next}    │
+     │────────────────────────────▶│
+     │                             │ 1. Extract & sanitize next_url
+     │                             │ 2. Validate credentials / JIT create user
+     │                             │ 3. Evaluate sovereign admin posture
+     │                             │ 4. Check Sovereign Airlock (SYSTEM_GATE_ENABLED)
+     │                             │ 5. Session login (DIDAuthBackend)
+     │                             │ 6. Enforce GDPR legal disclaimer gate
+     │                             │ 7. Resume OIDC flow (_build_oidc_redirect)
+     │  302 Redirect               │
+     │◀────────────────────────────│
+```
+
+**Lifecycle Steps:**
+1. **Context Extraction & Sanitization:**
+   - Extract `next_url` from `request.POST.get("next") or request.GET.get("next") or DEFAULT_NEXT_URL`.
+   - Validate destination via `_is_safe_public_redirect(next_url)`. If untrusted, fall back to `DEFAULT_NEXT_URL`.
+2. **Credential Validation & JIT User Creation:**
+   - Check that `email` and `password` are provided; re-render login with form errors on missing fields.
+   - Look up user by email via `get_user_model().objects.filter(email=email).first()`.
+   - If user exists: verify password via `user.check_password(password)`. If invalid, re-render login with an error message.
+   - If user does not exist (Just-In-Time provisioning):
+     - Generate custodial DID via `generate_custodial_did()` (minting `did:web:iyou.me:user:<uuid>`).
+     - Instantiate user with `email=email`, `custodial_did=custodial_did`, `account_tier=1`, `is_active=True`.
+     - Hash password using `user.set_password(password)`.
+     - Save user model to database.
+3. **Sovereign Posture Evaluation:**
+   - Call `evaluate_sovereign_admin_posture(user)` to auto-elevate user to staff/superuser if DID matches `ADMIN_DID`.
+4. **Sovereign Airlock Check:**
+   - If `settings.SYSTEM_GATE_ENABLED` is active and `not _did_passes_gate(request, user.custodial_did)`:
+     - Short-circuit authentication and return HTTP 403 `auth_bridge/beta_gate.html` via `_render_beta_gate(request, user.custodial_did)`.
+5. **Session Establishment:**
+   - Log user in via `django.contrib.auth.login(request, user, backend="auth_bridge.backend.DIDAuthBackend")`.
+6. **GDPR Affirmative Consent Gate:**
+   - If `user.show_legal_disclaimer` is True:
+     - Stash destination: `request.session["post_disclaimer_redirect"] = next_url`.
+     - Redirect to `/auth/legal-disclaimer/?next=<urlencode(next_url)>`.
+7. **OIDC Handshake Continuity:**
+   - If `next_url` targets an OIDC authorization route (contains `/openid/authorize`), execute `_build_oidc_redirect(next_url, user)` to mint the authorization code and redirect to the satellite callback with `?code=...`.
+   - Otherwise redirect to sanitized `next_url`.
 
 ### 5.4 Tier 1 — Passkey Authentication (WebAuthn)
 
@@ -321,7 +367,7 @@ verification AND a staff permission check.
 
 The function `evaluate_sovereign_admin_posture(user)` runs after **every**
 successful DID verification (in `verify_signature`, `check_challenge_status`,
-and `custom_admin_verify`):
+`managed_login`, and `custom_admin_verify`):
 
 ```python
 def evaluate_sovereign_admin_posture(user):
@@ -523,7 +569,7 @@ If `vp.verifiableCredential` is present:
 /auth/admin/did-login/         → custom_admin_login (GET/POST)
 /auth/admin/did-verify/        → custom_admin_verify (POST)
 /auth/admin/did-dashboard/     → custom_admin_dashboard (GET)
-/auth/managed-login/           → managed_login (POST: scaffold)
+/auth/managed-login/           → managed_login (POST: email/password JIT login)
 /auth/passkeys/register/begin/     → passkey_register_begin (POST)
 /auth/passkeys/register/complete/  → passkey_register_complete (POST)
 /auth/passkeys/authenticate/begin/ → passkey_authenticate_begin (POST)
@@ -599,7 +645,7 @@ At `/oidc/callback/`:
 |----------|---------|---------|
 | `IDP_BASE_URL` | OIDC issuer URL | `https://idp.iyou.me` |
 | `IDP_WUN_URL` | Default post-auth redirect | `https://wun.iyou.me` |
-| `IDP_HOME_URL` | iYou Home desktop URL | `https://home.iyou.me` |
+| `IDP_HOME_URL` | iyou_home desktop URL | `https://home.iyou.me` |
 | `IDP_HOME_WS_URL` | WebSocket endpoint for Tier 3 | `wss://home.iyou.me:9001/` |
 | `IDP_SECRET_KEY` | Django secret key | (random string) |
 | `IDP_DEBUG` | Django DEBUG mode | `False` in production |

@@ -134,7 +134,7 @@ iyou_idp/
 │   │   ├── login.html              # Shell: tab nav + includes + shared JS
 │   │   ├── _tab_sovereign.html     # Tab 0: WebSocket + manual VP flow
 │   │   ├── _tab_community.html     # Tab 1: OOB QR-code flow
-│   │   ├── _tab_managed.html       # Tab 2: OAuth providers (live)
+│   │   ├── _tab_managed.html       # Tab 2: OAuth providers + Tier 1 email/password JIT (live)
 │   │   ├── _download_modal.html    # Desktop iyou_home download overlay
 │   │   ├── _mobile_download_modal.html  # Mobile iyou download overlay
 │   │   ├── authenticated_dashboard.html # Post-login profile interface
@@ -532,6 +532,33 @@ sessions and clients.
 The OIDC provider expects `user.date_joined` — solved via a `@property`
 alias on the `User` model that returns `created_at`.
 
+#### 6.1 Satellite Client Registration & Redirect Matrix
+
+Satellite clients in the mesh are registered as **public** OIDC clients (no `client_secret`, PKCE S256 required) and auto-seeded via `uv run python manage.py seed_clients`. Every client supports authorization code flow (`response_type=code`), scopes `openid profile email`, and pre-configured callback matrices:
+
+| Satellite Name | Client ID | Production Callback | Local Dev Callback(s) |
+|----------------|-----------|---------------------|------------------------|
+| Wun Social Engine | `iyou-wun-satellite-client` | `https://wun.iyou.me/oidc/callback/` | `http://127.0.0.1:8001/oidc/callback/` |
+| Poly Governance Node | `iyou-poly-satellite-client` | `https://poly.iyou.me/oidc/callback/` | `http://127.0.0.1:8002/oidc/callback/` |
+| Name Profile Directory | `iyou-name-satellite-client` | `https://name.iyou.me/oidc/callback/` | `http://127.0.0.1:8003/oidc/callback/` |
+| Hive Satellite Workspace | `iyou-hive-satellite-client` | `https://hive.iyou.me/oidc/callback/` | `http://127.0.0.1:8004/oidc/callback/` |
+| Ride Marketplace | `iyou-ride-satellite-client` | `https://ride.iyou.me/oidc/callback/` | `http://127.0.0.1:8005/oidc/callback/` |
+| DC Tech Platform | `dc-tech-satellite-client` | `https://dctech.iyou.me/oidc/callback/` | `http://127.0.0.1:8006/oidc/callback/` |
+| Safe Accountability Hub | `iyou-safe-satellite-client` | `https://safe.iyou.me/oidc/callback/` | `http://127.0.0.1:8007/oidc/callback/` |
+| Talk Peer Support | `iyou-talk-satellite-client` | `https://talk.iyou.me/oidc/callback/` | `http://127.0.0.1:8008/oidc/callback/` |
+| Clar Policy | `iyou-clar-satellite-client` | `https://clar.iyou.me/oidc/callback/` | `http://127.0.0.1:8009/oidc/callback/` |
+| Play Activity Hub | `iyou-play-satellite-client` | `https://play.iyou.me/oidc/callback/` | `http://127.0.0.1:8010/oidc/callback/` |
+| Blog Publishing Engine | `iyou-blog-satellite-client` | `https://blog.iyou.me/oidc/callback/` | `http://127.0.0.1:8011/oidc/callback/` |
+| Draw Creative Canvas | `iyou-draw-satellite-client` | `https://draw.iyou.me/oidc/callback/` | `http://127.0.0.1:8012/oidc/callback/` |
+| Life Wellness Tracker | `iyou-life-satellite-client` | `https://life.iyou.me/oidc/callback/` | `http://127.0.0.1:8013/oidc/callback/` |
+| Dev Platform Toolkit | `iyou-dev-satellite-client` | `https://dev.iyou.me/oidc/callback/` | `http://127.0.0.1:8014/oidc/callback/` |
+| Walk Navigation Engine | `iyou-walk-satellite-client` | `https://walk.iyou.me/oidc/callback/` | `http://127.0.0.1:8015/oidc/callback/`, `http://localhost:8015/oidc/callback/` |
+| iyou_help (Mutual Aid) | `iyou-help-satellite-client` | `https://help.iyou.me/oidc/callback/` | `http://127.0.0.1:8016/oidc/callback/`, `http://127.0.0.1:8012/oidc/callback/` |
+| iyou_stay (Hospitality) | `iyou-stay-satellite-client` | `https://stay.iyou.me/oidc/callback/` | `http://127.0.0.1:8017/oidc/callback/` |
+| iyou_spot (Muster'd Ezine) | `iyou-spot-satellite-client` | `https://spot.iyou.me/oidc/callback/` | `http://127.0.0.1:8019/oidc/callback/` |
+
+All satellites also include the standard fallback `http://127.0.0.1:8000/oidc/callback/` for single-port testing environments.
+
 ### 7. Post-Login Redirect Configuration
 
 The constant `DEFAULT_NEXT_URL` in `auth_bridge/views.py` reads from
@@ -582,7 +609,7 @@ Every user authenticating through the identity provider passes through a legal d
 
 - **Overlay UI & Blocking:** Displayed as a modal dialog (`_legal_disclaimer_modal.html` and `legal_disclaimer.js`) or full-page view (`LegalDisclaimerView` at `/auth/legal-disclaimer/`), blocking interactions with background content until acknowledged.
 - **Notice Contents:** Four explicit disclosure cards: Cryptographic Keyholder Liability, Neutral Conduit & Protocol Interface, Node Operator Policies (zero-tolerance CSAM & violence policy), and Open Source Ecosystem (GPLv3 / "as is").
-- **Preference Persistence:** Includes a `"Show this legal disclaimer on next login"` checkbox checked by default (`true`). If unchecked and acknowledged, a POST to `/auth/legal-disclaimer/acknowledge/` sets `user.show_legal_disclaimer = False` and records `user.disclaimer_acknowledged_at` as an audit timestamp.
+- **GDPR Affirmative Consent Gate:** Defaults to `show_legal_disclaimer = True` for all new user records. Enforces strict GDPR affirmative consent — the consent checkbox is **unchecked by default**, and the acknowledge button remains disabled until ticked. Submitting `/auth/legal-disclaimer/acknowledge/` requires explicit `consent_accepted=true` (rejecting passive views with HTTP 400 `consent_required`), which sets `user.show_legal_disclaimer = False`, stamps `user.disclaimer_acknowledged_at`, and resumes navigation via `request.session['post_disclaimer_redirect']`. `SovereignAuthorizeView` strictly withholds front-channel OIDC codes until consent is acknowledged.
 - **Routing Integrity:** Preserves the destination URL (including all OIDC `state`, `code`, and PKCE verifier exchanges) and performs navigation inline in the current window (`_self`). Fallbacks default to `IDP_WUN_URL`.
 
 ### 8. Passkey Authentication (WebAuthn)
@@ -817,8 +844,21 @@ persists the active tab across redirects.
 6. The browser opens the redirect URL in a new tab and
    redirects the IdP tab to `/` (dual-window behaviour).
 
-### Tab 2 — Managed Convenience (OAuth2)
+### Tab 2 — Managed Convenience (OAuth2 & Email/Password JIT)
 
+- **Tier 1 Managed Login Form (`_tab_managed.html`):**
+  - Provides low-friction email/password onboarding for users without self-custodied wallets.
+  - **Redirect Context Preservation:** Preserves `next_url` across form submissions via both:
+    1. A hidden input field: `<input type="hidden" name="next" value="{{ next_url }}">`
+    2. Dynamic form action parameter: `action="{% url 'auth_bridge:managed_login' %}{% if next_url %}?next={{ next_url|urlencode }}{% endif %}"`
+  - **Backend Invariant Pipeline (`views.py:managed_login`):**
+    1. Extracts and sanitizes `next_url` via `_is_safe_public_redirect(next_url)` (fallback to `DEFAULT_NEXT_URL`).
+    2. Validates credentials; if user does not exist, performs Just-In-Time (JIT) provisioning with `custodial_did` minted via `generate_custodial_did()` (`did:web:iyou.me:user:<uuid>`), `account_tier=1`, and secure PBKDF2 password hashing.
+    3. Evaluates sovereign admin posture (`evaluate_sovereign_admin_posture`).
+    4. Enforces Pre-Launch Sovereign Airlock (`SYSTEM_GATE_ENABLED` / `_did_passes_gate` → 403 `beta_gate.html`).
+    5. Establishes session via `django.contrib.auth.login(request, user, backend="auth_bridge.backend.DIDAuthBackend")`.
+    6. Checks GDPR legal disclaimer gate: if `show_legal_disclaimer` is True, stashes `session['post_disclaimer_redirect'] = next_url` and redirects to `/auth/legal-disclaimer/?next=...`.
+    7. Restores OIDC continuity via `_build_oidc_redirect(next_url, user)` to mint the authorization code and redirect to the satellite callback, bypassing unnecessary intermediate consent screens.
 - **OAuth buttons** for Google, Apple, and GitHub — each redirects to
   `GET /auth/oauth/initiate/<provider>/` which generates a state token,
   stores it in the session, and redirects to the provider's authorization
@@ -913,7 +953,7 @@ The handshake has several protection layers:
 | POST | `/auth/verify/` | Verifies VP (desktop WebSocket path), logs in, returns redirect |
 | POST | `/auth/mobile-verify/` | Verifies VP (mobile OOB path), marks challenge `solved` |
 | GET | `/auth/challenge-status/<uuid>/` | Polling — returns `{solved, redirect_url}` when mobile has signed |
-| POST | `/auth/managed-login/` | Scaffold — accepts email+password, returns Django messages |
+| POST | `/auth/managed-login/` | Tier 1 Managed Login — validates email/password, JIT creates custodial `did:web`, verifies airlock & GDPR gates, logs in via `DIDAuthBackend`, and preserves OIDC redirect continuity |
 | GET | `/auth/logout/` | Global logout — clears IdP session, redirects to WUN (or `?next=`) |
 | GET/POST | `/auth/oauth/initiate/<provider>/` | Tier 1 OAuth — generates state, redirects to provider |
 | GET/POST | `/auth/oauth/callback/<provider>/` | Tier 1 OAuth — validates state, exchanges code, authenticates |

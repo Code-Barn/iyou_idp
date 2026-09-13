@@ -34,7 +34,62 @@ import environ
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-env = environ.Env()
+env = environ.Env(
+    IDP_SECRET_KEY=(str, "django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5"),
+    IDP_DEBUG=(bool, False),
+    IDP_BASE_URL=(str, "http://iyou-idp.identity.svc.cluster.local:8000"),
+    IDP_WUN_URL=(str, "http://127.0.0.1:8001"),
+    IDP_HOME_URL=(str, "http://iyou-home.user.svc.cluster.local:9000"),
+    IDP_HOME_WS_URL=(str, "wss://home.iyou.me:9001/"),
+    IDP_WEB_DID_NAMESPACE=(str, "did:web:iyou.me"),
+    ADMIN_DID=(str, "did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND"),
+    SYSTEM_GATE_ENABLED=(bool, True),
+    BETA_ACCESS_ALLOWLIST=(list, []),
+    BETA_INVITE_KEYS=(list, []),
+    IDP_VAULT_ADDR=(str, "http://127.0.0.1:8200"),
+    IDP_VAULT_TOKEN=(str, ""),
+    IDP_VAULT_KV_MOUNT=(str, "secret"),
+    ALLOW_EMERGENCY_BYPASS=(bool, False),
+    ENABLE_DEV_AUTH_BYPASS=(bool, False),
+    IDP_ALLOWED_HOSTS=(list, ["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"]),
+    IDP_CORS_ALLOW_ALL_ORIGINS=(bool, False),
+    IDP_CORS_ALLOWED_ORIGINS=(list, []),
+    IDP_CSRF_TRUSTED_ORIGINS=(
+        list,
+        [
+            "http://iyou-idp.identity.svc.cluster.local:8000",
+            "https://*.iyou.me",
+            "http://127.0.0.1:8000",
+            "http://127.0.0.1:8001",
+            "http://127.0.0.1:8002",
+            "http://127.0.0.1:8003",
+            "http://127.0.0.1:8004",
+            "http://127.0.0.1:8005",
+            "http://127.0.0.1:8006",
+            "http://127.0.0.1:8007",
+            "http://127.0.0.1:8008",
+            "http://127.0.0.1:8009",
+            "http://127.0.0.1:8010",
+            "http://127.0.0.1:8011",
+            "http://127.0.0.1:8012",
+            "http://127.0.0.1:8013",
+            "http://127.0.0.1:8014",
+            "http://127.0.0.1:8015",
+            "http://127.0.0.1:8016",
+            "http://127.0.0.1:8017",
+            "http://127.0.0.1:8018",
+            "http://127.0.0.1:8019",
+        ],
+    ),
+    DATABASE_URL=(str, "sqlite:///db.sqlite3"),
+    REDIS_URL=(str, "redis://iyou-redis-master.identity.svc.cluster.local:6379/1"),
+    OAUTH_GOOGLE_CLIENT_ID=(str, ""),
+    OAUTH_GOOGLE_CLIENT_SECRET=(str, ""),
+    OAUTH_APPLE_CLIENT_ID=(str, ""),
+    OAUTH_APPLE_CLIENT_SECRET=(str, ""),
+    OAUTH_GITHUB_CLIENT_ID=(str, ""),
+    OAUTH_GITHUB_CLIENT_SECRET=(str, ""),
+)
 
 # Load .env file so env vars take effect during development
 env.read_env(BASE_DIR / ".env")
@@ -47,24 +102,24 @@ sys.path.append(os.path.join(BASE_DIR, "src"))
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env("IDP_SECRET_KEY", default="django-insecure-7v@zb&(xlnr8jk^0beo9x!k*ng_%1jf#fwk%93nkyj*wen)#@5")
+SECRET_KEY = env("IDP_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env.bool("IDP_DEBUG", default=False)
+DEBUG = env("IDP_DEBUG")
 
 # Single BASE_URL to switch the entire IdP's identity between cluster DNS and localhost
-IDP_BASE_URL = env("IDP_BASE_URL", default="http://iyou-idp.identity.svc.cluster.local:8000")
-IDP_WUN_URL = env("IDP_WUN_URL", default="http://127.0.0.1:8001")
-IDP_HOME_URL = env("IDP_HOME_URL", default="http://iyou-home.user.svc.cluster.local:9000")
-IDP_HOME_WS_URL = env("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/")
+IDP_BASE_URL = env("IDP_BASE_URL")
+IDP_WUN_URL = env("IDP_WUN_URL")
+IDP_HOME_URL = env("IDP_HOME_URL")
+IDP_HOME_WS_URL = env("IDP_HOME_WS_URL")
 
 # Tier-1 managed-identity did:web namespace. Peer instances override this with
 # their own authority (e.g. did:web:hub.community.org) so managed users are
 # minted under the operator's domain rather than iyou.me.
-IDP_WEB_DID_NAMESPACE = env("IDP_WEB_DID_NAMESPACE", default="did:web:iyou.me")
+IDP_WEB_DID_NAMESPACE = env("IDP_WEB_DID_NAMESPACE")
 
 # Master admin DID for automatic superuser elevation
-ADMIN_DID = env("ADMIN_DID", default="did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND")
+ADMIN_DID = env("ADMIN_DID")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Sovereign Airlock — Private Beta / Contributor Preview (MVP showcase)
@@ -72,22 +127,22 @@ ADMIN_DID = env("ADMIN_DID", default="did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNik
 # or sessions that redeemed a valid invite key (BETA_INVITE_KEYS) may
 # authenticate. Unauthorized public logins are redirected to the beta gate.
 # ──────────────────────────────────────────────────────────────────────────────
-SYSTEM_GATE_ENABLED = env.bool("SYSTEM_GATE_ENABLED", default=True)
-BETA_ACCESS_ALLOWLIST = env.list("BETA_ACCESS_ALLOWLIST", default=[])
-BETA_INVITE_KEYS = env.list("BETA_INVITE_KEYS", default=[])
+SYSTEM_GATE_ENABLED = env("SYSTEM_GATE_ENABLED")
+BETA_ACCESS_ALLOWLIST = env("BETA_ACCESS_ALLOWLIST")
+BETA_INVITE_KEYS = env("BETA_INVITE_KEYS")
 
 # HashiCorp Vault — custody of Ed25519 managed-identity key material
-IDP_VAULT_ADDR = env("IDP_VAULT_ADDR", default="http://127.0.0.1:8200")
-IDP_VAULT_TOKEN = env("IDP_VAULT_TOKEN", default="")
-IDP_VAULT_KV_MOUNT = env("IDP_VAULT_KV_MOUNT", default="secret")
+IDP_VAULT_ADDR = env("IDP_VAULT_ADDR")
+IDP_VAULT_TOKEN = env("IDP_VAULT_TOKEN")
+IDP_VAULT_KV_MOUNT = env("IDP_VAULT_KV_MOUNT")
 
 # SEC-001: Emergency Tier 3 bypass (challenge-nonce-only auth on failed signature
 # verification). Strictly requires DEBUG=True and ENABLE_DEV_AUTH_BYPASS=True;
 # defaults to secure rejection in all production environments.
-ALLOW_EMERGENCY_BYPASS = env.bool("ALLOW_EMERGENCY_BYPASS", default=False)  # Legacy, deprecated
-ENABLE_DEV_AUTH_BYPASS = env.bool("ENABLE_DEV_AUTH_BYPASS", default=False)
+ALLOW_EMERGENCY_BYPASS = env("ALLOW_EMERGENCY_BYPASS")  # Legacy, deprecated
+ENABLE_DEV_AUTH_BYPASS = env("ENABLE_DEV_AUTH_BYPASS")
 
-ALLOWED_HOSTS = env.list("IDP_ALLOWED_HOSTS", default=["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"])
+ALLOWED_HOSTS = env("IDP_ALLOWED_HOSTS")
 
 
 # Application definition
@@ -119,8 +174,8 @@ MIDDLEWARE = [
     "auth_bridge.middleware.DependentRevocationMiddleware",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = env.bool("IDP_CORS_ALLOW_ALL_ORIGINS", default=False)
-CORS_ALLOWED_ORIGINS = env.list("IDP_CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOW_ALL_ORIGINS = env("IDP_CORS_ALLOW_ALL_ORIGINS")
+CORS_ALLOWED_ORIGINS = env("IDP_CORS_ALLOWED_ORIGINS")
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.iyou\.me$",
     r"^http://127\.0\.0\.1:\d+$",
@@ -128,33 +183,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
-CSRF_TRUSTED_ORIGINS = env.list(
-    "IDP_CSRF_TRUSTED_ORIGINS",
-    default=[
-        "http://iyou-idp.identity.svc.cluster.local:8000",
-        "https://*.iyou.me",
-        "http://127.0.0.1:8000",
-        "http://127.0.0.1:8001",
-        "http://127.0.0.1:8002",
-        "http://127.0.0.1:8003",
-        "http://127.0.0.1:8004",
-        "http://127.0.0.1:8005",
-        "http://127.0.0.1:8006",
-        "http://127.0.0.1:8007",
-        "http://127.0.0.1:8008",
-        "http://127.0.0.1:8009",
-        "http://127.0.0.1:8010",
-        "http://127.0.0.1:8011",
-        "http://127.0.0.1:8012",
-        "http://127.0.0.1:8013",
-        "http://127.0.0.1:8014",
-        "http://127.0.0.1:8015",
-        "http://127.0.0.1:8016",
-        "http://127.0.0.1:8017",
-        "http://127.0.0.1:8018",
-        "http://127.0.0.1:8019",
-    ],
-)
+CSRF_TRUSTED_ORIGINS = env("IDP_CSRF_TRUSTED_ORIGINS")
 
 ROOT_URLCONF = "config.urls"
 
@@ -181,7 +210,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    "default": env.db_url("DATABASE_URL", default="sqlite:///db.sqlite3"),
+    "default": env.db_url("DATABASE_URL"),
 }
 
 
@@ -249,7 +278,7 @@ AUTHENTICATION_BACKENDS = [
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": env("REDIS_URL", default="redis://iyou-redis-master.identity.svc.cluster.local:6379/1"),
+        "LOCATION": env("REDIS_URL"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
@@ -288,14 +317,14 @@ OIDC_IDTOKEN_SUB_GENERATOR = "auth_bridge.oidc.custom_sub_generator"
 # OAUTH_PROVIDERS dict below is the single lookup table consumed by
 # views_oauth.py — the runtime never touches raw env vars directly.
 
-OAUTH_GOOGLE_CLIENT_ID = env("OAUTH_GOOGLE_CLIENT_ID", default="")
-OAUTH_GOOGLE_CLIENT_SECRET = env("OAUTH_GOOGLE_CLIENT_SECRET", default="")
+OAUTH_GOOGLE_CLIENT_ID = env("OAUTH_GOOGLE_CLIENT_ID")
+OAUTH_GOOGLE_CLIENT_SECRET = env("OAUTH_GOOGLE_CLIENT_SECRET")
 
-OAUTH_APPLE_CLIENT_ID = env("OAUTH_APPLE_CLIENT_ID", default="")
-OAUTH_APPLE_CLIENT_SECRET = env("OAUTH_APPLE_CLIENT_SECRET", default="")
+OAUTH_APPLE_CLIENT_ID = env("OAUTH_APPLE_CLIENT_ID")
+OAUTH_APPLE_CLIENT_SECRET = env("OAUTH_APPLE_CLIENT_SECRET")
 
-OAUTH_GITHUB_CLIENT_ID = env("OAUTH_GITHUB_CLIENT_ID", default="")
-OAUTH_GITHUB_CLIENT_SECRET = env("OAUTH_GITHUB_CLIENT_SECRET", default="")
+OAUTH_GITHUB_CLIENT_ID = env("OAUTH_GITHUB_CLIENT_ID")
+OAUTH_GITHUB_CLIENT_SECRET = env("OAUTH_GITHUB_CLIENT_SECRET")
 
 OAUTH_PROVIDERS = {
     "google": {

@@ -123,6 +123,7 @@ iyou_idp/
 ## Auth entry points (where `evaluate_sovereign_admin_posture(user)` is called)
 - `views.py:verify_signature` — desktop WebSocket flow (main + bypass + fallback VP paths)
 - `views.py:check_challenge_status` — mobile OOB polling flow
+- `views.py:managed_login` — Tier 1 email/password JIT login flow
 - `admin_views.py:custom_admin_verify` — admin DID login flow
 
 ## Conventions
@@ -132,8 +133,8 @@ iyou_idp/
 - Type hints on function signatures
 - `JsonResponse` with `{'error': '...'}` pattern for API errors
 - `@csrf_exempt` on crypto endpoints (no session side-effects)
-- `django-environ` for all config, `env.str()` / `env.bool()` / `env.list()` / `env.db_url()`
-- `environ.Env()` instantiated once at module level in settings.py, `.env` loaded via `env.read_env()`
+- `django-environ` for all config, initialized with schema dictionary in `environ.Env(...)` constructor with typed defaults to avoid Pyright `NoValue` inference warnings; lookups via `env("KEY")` or typed helpers without inline defaults
+- `environ.Env(...)` instantiated once at module level in settings.py, `.env` loaded via `env.read_env()`
 
 ## Tests
 - Located in `auth_bridge/tests.py`
