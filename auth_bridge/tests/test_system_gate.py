@@ -89,6 +89,12 @@ class SovereignAirlockGateTest(TestCase):
         self.assertIn('name="invite_key"', body)
         self.assertIn('name="did"', body)
         self.assertIn("waitlist", body.lower())
+        self.assertIn("Cryptographic Key Verified", body)
+        self.assertIn(f'value="{self.did}"', body)
+        self.assertIn("readonly", body)
+
+        # Verified pending DID is stashed in session for seamless redemption
+        self.assertEqual(self.client.session.get("verified_pending_did"), self.did)
 
         # No session or user may be minted for an airlocked DID.
         self.assertFalse(User.objects.filter(custodial_did=self.did).exists())
@@ -201,6 +207,190 @@ class SovereignAirlockGateTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["success"])
 
+    def test_gate_tripped_user_auto_login_and_oidc_code_on_invite_redemption(self):
+        """
+        Verify that a non-admin user whose signature trips the Sovereign Airlock
+        gate can redeem an invite key and receive an active session and OIDC code
+        without signing a second challenge.
+        """
+        rsa_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = rsa_priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        OIDCRSAKey.objects.create(key=pem.decode())
+
+        code_type, _ = ResponseType.objects.get_or_create(value="code")
+        client_obj = OIDCClient.objects.create(
+            name="Gate Test Client",
+            client_type="confidential",
+            client_id="gate-test-client",
+            client_secret="gate-test-secret",
+            jwt_alg="RS256",
+            _redirect_uris="http://testclient/callback/\n",
+            _scope="openid profile",
+            require_consent=False,
+            reuse_consent=True,
+        )
+        client_obj.response_types.add(code_type)
+
+        oidc_authorize = (
+            f"/openid/authorize/"
+            f"?client_id={client_obj.client_id}"
+            f"&response_type=code"
+            f"&redirect_uri=http://testclient/callback/"
+            f"&scope=openid+profile"
+            f"&state=airlock-state"
+            f"&nonce=airlock-nonce"
+        )
+
+        with override_settings(
+            SYSTEM_GATE_ENABLED=True,
+            ADMIN_DID="did:key:unrelated-admin",
+            BETA_INVITE_KEYS=["INVITE-BETA-001"],
+        ):
+            # 1. User signs challenge, but trips the Sovereign Airlock gate
+            challenge = self._challenge()
+            verify_resp = self._verify(challenge, next_url=oidc_authorize)
+            self.assertEqual(verify_resp.status_code, 403)
+
+            # 2. Verify DID is stashed in session and rendered readonly with green badge
+            self.assertEqual(self.client.session.get("verified_pending_did"), self.did)
+            body = verify_resp.content.decode("utf-8")
+            self.assertIn("Cryptographic Key Verified", body)
+            self.assertIn(f'value="{self.did}"', body)
+            self.assertIn("readonly", body)
+
+            # 3. User submits invite key to redeem_beta_invite
+            redeem_resp = self.client.post(
+                reverse("auth_bridge:gate_redeem"),
+                {
+                    "invite_key": "INVITE-BETA-001",
+                    "did": self.did,
+                    "next_url": oidc_authorize,
+                },
+            )
+
+            # 4. User is automatically logged in and pending DID is consumed
+            self.assertIsNone(self.client.session.get("verified_pending_did"))
+            user = User.objects.get(custodial_did=self.did)
+            self.assertIsNotNone(user)
+            self.assertEqual(str(self.client.session["_auth_user_id"]), str(user.id))
+
+            # 5. Since new user defaults to show_legal_disclaimer=True, redirected to disclaimer
+            self.assertEqual(redeem_resp.status_code, 302)
+            self.assertIn(reverse("auth_bridge:legal_disclaimer"), redeem_resp["Location"])
+
+            # 6. Acknowledge disclaimer
+            ack = self.client.post(
+                reverse("auth_bridge:legal_disclaimer_acknowledge"),
+                data=json.dumps({"consent_accepted": True}),
+                content_type="application/json",
+            )
+            self.assertEqual(ack.status_code, 200)
+
+            # 7. Front-channel authorize now yields OIDC code without signing again
+            authorize = self.client.get(
+                reverse("oidc_provider:authorize"),
+                {
+                    "client_id": client_obj.client_id,
+                    "response_type": "code",
+                    "redirect_uri": "http://testclient/callback/",
+                    "scope": "openid profile",
+                    "state": "airlock-state",
+                    "nonce": "airlock-nonce",
+                },
+            )
+            self.assertEqual(authorize.status_code, 302)
+            location = authorize["Location"]
+            self.assertTrue(location.startswith("http://testclient/callback/"))
+            code = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("code", [None])[0]
+            self.assertIsNotNone(code)
+
+            # 8. Token exchange succeeds with active session
+            token = self.client.post(
+                reverse("pkce_token"),
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": "http://testclient/callback/",
+                    "client_id": client_obj.client_id,
+                    "client_secret": client_obj.client_secret,
+                },
+            )
+            self.assertEqual(token.status_code, 200)
+            token_body = token.json()
+            self.assertIn("access_token", token_body)
+            self.assertIn("id_token", token_body)
+
+    def test_gate_tripped_user_pre_consented_receives_direct_oidc_code(self):
+        """
+        Verify that a user who has already accepted the legal disclaimer is
+        immediately redirected with an OIDC authorization code on invite redemption.
+        """
+        User.objects.create(custodial_did=self.did, email=None, show_legal_disclaimer=False)
+
+        rsa_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = rsa_priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        OIDCRSAKey.objects.create(key=pem.decode())
+
+        code_type, _ = ResponseType.objects.get_or_create(value="code")
+        client_obj = OIDCClient.objects.create(
+            name="Direct Code Client",
+            client_type="confidential",
+            client_id="direct-code-client",
+            client_secret="direct-code-secret",
+            jwt_alg="RS256",
+            _redirect_uris="http://testclient/callback/\n",
+            _scope="openid profile",
+            require_consent=False,
+            reuse_consent=True,
+        )
+        client_obj.response_types.add(code_type)
+
+        oidc_authorize = (
+            f"/openid/authorize/"
+            f"?client_id={client_obj.client_id}"
+            f"&response_type=code"
+            f"&redirect_uri=http://testclient/callback/"
+            f"&scope=openid+profile"
+            f"&state=direct-state"
+            f"&nonce=direct-nonce"
+        )
+
+        with override_settings(
+            SYSTEM_GATE_ENABLED=True,
+            ADMIN_DID="did:key:unrelated-admin",
+            BETA_INVITE_KEYS=["INVITE-BETA-002"],
+        ):
+            challenge = self._challenge()
+            verify_resp = self._verify(challenge, next_url=oidc_authorize)
+            self.assertEqual(verify_resp.status_code, 403)
+
+            # Redeem invite key
+            redeem_resp = self.client.post(
+                reverse("auth_bridge:gate_redeem"),
+                {
+                    "invite_key": "INVITE-BETA-002",
+                    "did": self.did,
+                    "next_url": oidc_authorize,
+                },
+            )
+
+            # Direct 302 to client callback with code
+            self.assertEqual(redeem_resp.status_code, 302)
+            location = redeem_resp["Location"]
+            self.assertTrue(location.startswith("http://testclient/callback/"))
+            code = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("code", [None])[0]
+            self.assertIsNotNone(code)
+            self.assertIn("state=direct-state", location)
+            self.assertEqual(str(self.client.session["_auth_user_id"]), str(User.objects.get(custodial_did=self.did).id))
+
 
 class BetaGateRedemptionTest(TestCase):
     """Invite-key redemption stamps the browser session with beta access."""
@@ -244,6 +434,18 @@ class BetaGateRedemptionTest(TestCase):
         self.assertIn("Sovereign Mesh Airlock", body)
         self.assertIn('name="invite_key"', body)
         self.assertIn('name="did"', body)
+
+    def test_gate_page_renders_with_verified_did_badge_and_readonly_input(self):
+        session = self.client.session
+        session["verified_pending_did"] = "did:key:test-pending-did"
+        session.save()
+
+        resp = self.client.get(reverse("auth_bridge:gate"))
+        self.assertEqual(resp.status_code, 403)
+        body = resp.content.decode("utf-8")
+        self.assertIn("Cryptographic Key Verified", body)
+        self.assertIn('value="did:key:test-pending-did"', body)
+        self.assertIn("readonly", body)
 
 
 class GatedDownloadModalTest(TestCase):

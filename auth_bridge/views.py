@@ -23,8 +23,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.core.cache import cache as default_cache
 from django.core.cache.backends.locmem import LocMemCache
-from django.contrib.auth import login
-from django.contrib.auth import logout as django_logout
+from django.contrib.auth import login, logout as django_logout, get_user_model
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -139,11 +138,14 @@ def _did_passes_gate(request, did):
     return _has_beta_session(request)
 
 
-def _render_beta_gate(request, did=None, next_url=None):
+def _render_beta_gate(request, did=None, next_url=None, verified_did=None):
     """Render the Sovereign Airlock beta gate page (HTTP 403 Forbidden)."""
     next_url = next_url or DEFAULT_NEXT_URL
+    if verified_did is None and hasattr(request, "session"):
+        verified_did = request.session.get("verified_pending_did")
     context = {
-        "did": did,
+        "did": did or verified_did,
+        "verified_did": verified_did,
         "next_url": next_url,
         "wun_url": django_settings.IDP_WUN_URL,
         "idp_base_url": django_settings.IDP_BASE_URL,
@@ -160,7 +162,12 @@ def _gate_response(request, did, next_url=None):
     if _did_passes_gate(request, did):
         return None
     logger.warning("SYSTEM GATE: blocked authentication for DID %s", did)
-    return _render_beta_gate(request, did=did, next_url=next_url)
+    if hasattr(request, "session"):
+        request.session["verified_pending_did"] = did
+        if next_url:
+            request.session["verified_pending_next_url"] = next_url
+        request.session.modified = True
+    return _render_beta_gate(request, did=did, next_url=next_url, verified_did=did)
 
 
 def _is_safe_public_redirect(uri: str) -> bool:
@@ -919,9 +926,9 @@ def managed_login(request):
 
     # 3. Security Posture & Gate Interlocking
     evaluate_sovereign_admin_posture(user)
-    if getattr(django_settings, "SYSTEM_GATE_ENABLED", True) and not _did_passes_gate(request, user.custodial_did):
-        logger.warning("SYSTEM GATE: blocked authentication for DID %s", user.custodial_did)
-        return _render_beta_gate(request, user.custodial_did, next_url)
+    gate_resp = _gate_response(request, user.custodial_did, next_url)
+    if gate_resp is not None:
+        return gate_resp
 
     # 4. Session Establishment
     login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
@@ -1259,11 +1266,16 @@ def redeem_beta_invite(request):
 
     On success the session is stamped ``beta_access=True`` and the browser is
     returned to *next_url* (resumed OIDC flow, login page, or download modal).
+    If the caller has already cryptographically proven their DID, an active
+    session is minted immediately without requiring a second challenge signature.
     Invalid keys re-render the gate page with an error message.
     """
     invite_key = request.POST.get('invite_key', '').strip()
     did = request.POST.get('did', '').strip()
-    next_url = request.POST.get('next_url', '') or DEFAULT_NEXT_URL
+    next_url = request.POST.get('next_url', '').strip()
+    if not next_url and hasattr(request, "session"):
+        next_url = request.session.get('verified_pending_next_url', '')
+    next_url = next_url or DEFAULT_NEXT_URL
 
     redeemed = False
     if invite_key:
@@ -1277,6 +1289,36 @@ def redeem_beta_invite(request):
     if redeemed:
         request.session['beta_access'] = True
         logger.info("SYSTEM GATE: beta access granted for did=%s", did or "anonymous")
+
+        pending_did = request.session.pop('verified_pending_did', None) if hasattr(request, "session") else None
+        if hasattr(request, "session"):
+            request.session.pop('verified_pending_next_url', None)
+
+        if pending_did:
+            User = get_user_model()
+            user, created = User.objects.get_or_create(custodial_did=pending_did, defaults={"email": None})
+            user = evaluate_sovereign_admin_posture(user)
+
+            if not user.is_active:
+                messages.error(request, 'User account is disabled.')
+                return _render_beta_gate(request, did=pending_did, next_url=next_url)
+
+            login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
+            logger.info("SYSTEM GATE: auto-login granted after invite redemption for verified DID %s", pending_did)
+
+            if getattr(user, "show_legal_disclaimer", True):
+                request.session['post_disclaimer_redirect'] = next_url
+                try:
+                    disclaimer_base = reverse('auth_bridge:legal_disclaimer')
+                except Exception:
+                    disclaimer_base = reverse('legal_disclaimer')
+                return HttpResponseRedirect(f"{disclaimer_base}?next={quote_plus(next_url)}")
+
+            redirect_url = _build_oidc_redirect(next_url, user)
+            if redirect_url is None:
+                redirect_url = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
+            return HttpResponseRedirect(redirect_url)
+
         target = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
         return HttpResponseRedirect(target)
 
