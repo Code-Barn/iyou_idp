@@ -25,7 +25,9 @@ The iYou ecosystem presentation tier is structured into strict horizontal layers
 │       ├── Logged-Out: "• Sovereign Key Required" capsule + "🔑 Authenticate"│
 │       └── Outline Theme Toggle (☀ in Light / ☾ in Dark)                    │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ Layer 2: Main Content Area (max-w-7xl or data-viz full-bleed)              │
+│ Layer 2: Application Sub-Nav Ribbon (_nav.html, max-w-7xl width contract)  │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Main Content Area (max-w-7xl or data-viz full-bleed)                       │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ Canonical Mascot Footer ("The Polly Pattern" / _footer.html)               │
 │   ├── Mascot Image Block (Light/Dark responsive PNG assets)                │
@@ -46,7 +48,7 @@ The Layer 0 bar provides continuous, non-intrusive navigation across all 19 appl
 - **Desktop Hover Expansion**: Smoothly expands to full height on hover (`sm:hover:translate-y-0`) with hardware-accelerated transitions (`transition-transform duration-300 ease-in-out`).
 - **Surface Styling**: Glassmorphic deep dark surface in light mode with a crisp white drawer in dark mode (Section 2.4).
 - **Close Action**: Explicit top-right close button (`#close-ecosystem-bar`) calling `closeEcosystemBar(event)`.
-- **Mobile Pull Handle**: Bottom 8px strip (`h-2 w-full bg-violet-500/80 cursor-pointer`) containing a centered pill (`w-8 h-1 bg-violet-300 rounded-full opacity-80`) hooked to `toggleEcosystemBar(event)`.
+- **Mobile Pull Handle**: Bottom 8px strip (`h-2 w-full bg-{color}-600 dark:bg-{color}-500 cursor-pointer`) containing a centered accent pill (`w-8 h-1 bg-{color}-200 dark:bg-{color}-900 rounded-full opacity-80`) hooked to `toggleEcosystemBar(event)`. The collapsed lip dynamically binds to the satellite's accent color so the resting trigger is always visible against the app below.
 
 ### 2.4 Layer 0 High-Contrast Inversion Contract
 The Layer 0 drawer inverts its chroma between color schemes to remain intentionally readable against both modes:
@@ -63,16 +65,16 @@ The Layer 0 drawer inverts its chroma between color schemes to remain intentiona
     </div>
     <!-- 19-App Links Flow (per-app colors + dark variants) -->
   </div>
-  <div class="h-2 w-full bg-violet-500/80 cursor-pointer flex justify-center items-center select-none" onclick="toggleEcosystemBar(event)">
-    <div class="w-8 h-1 bg-violet-300 rounded-full opacity-80"></div>
+  <div class="h-2 w-full bg-{color}-600 dark:bg-{color}-500 cursor-pointer flex justify-center items-center select-none" onclick="toggleEcosystemBar(event)">
+    <div class="w-8 h-1 bg-{color}-200 dark:bg-{color}-900 rounded-full opacity-80"></div>
   </div>
 </div>
 ```
 
-- **Light mode (`bg-[#0B0F19]/95 text-slate-300 border-b border-violet-500/50`)**: Deep dark drawer, violet mesh accent border/title/handle.
+- **Light mode (`bg-[#0B0F19]/95 text-slate-300 border-b border-violet-500/50`)**: Deep dark drawer, violet mesh accent border/title.
 - **Dark mode (`dark:bg-slate-100 dark:text-slate-900 dark:border-b-2 dark:border-violet-600`)**: Crisp light drawer with functional violet-700 labels and slate-200 close button.
 - **Link contrast**: Every app link ships paired light/dark classes (e.g. `text-violet-400 hover:text-violet-300 dark:text-violet-700 dark:hover:text-violet-600`) so the per-app color stream remains legible in both modes. Section separators use `<span class="text-slate-700 dark:text-slate-400">/</span>`.
-- **Mesh chrome is violet**: The Layer 0 bar border, title, and pull handle use the violet mesh identity (not the per-app accent). Per-app accents appear only in the link stream.
+- **Mesh chrome is violet**: The Layer 0 bar border and title use the violet mesh identity (not the per-app accent). Per-app accents appear in the link stream and in the collapsed 4px lip / pull handle (`bg-{color}-600 dark:bg-{color}-500` strip + `bg-{color}-200 dark:bg-{color}-900` pill), which binds to each satellite's accent color so the resting lip is always visible.
 
 ### 2.2 The 19-App Multi-Colored Stream
 Links are ordered by protocol topology and color-coded with distinct Tailwind CSS palette accents, separated by dark slashes (`<span class="text-slate-700">/</span>`). The active application is highlighted using `text-__COLOR__-400 font-bold underline`:
@@ -139,7 +141,7 @@ All Layer 1 headers across the ecosystem share one mandatory width and spacing c
 
 ```html
 <header class="relative z-30 border-b backdrop-blur-sm transition-colors duration-200 bg-white/90 border-slate-200 text-slate-900 dark:bg-[#0B0F19]/90 dark:border-gray-800 dark:text-gray-100">
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
     <!-- Left: Brand Lockup -->
     <!-- Right: Action & Identity Controls -->
   </div>
@@ -147,7 +149,7 @@ All Layer 1 headers across the ecosystem share one mandatory width and spacing c
 ```
 
 - **Outer `<header>`**: `relative z-30 border-b backdrop-blur-sm transition-colors duration-200 bg-white/90 border-slate-200 text-slate-900 dark:bg-[#0B0F19]/90 dark:border-gray-800 dark:text-gray-100`.
-- **Inner flex row**: `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between`.
+- **Inner flex row**: `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between` — fixed 64px (h-16) header height floor with items vertically centered.
 - Data-visualization viewports (`name`, `draw`, `spot`) may permit full-bleed `<main class="w-full">`, but headers and footers **MUST** strictly remain `max-w-7xl mx-auto`.
 
 ### 3.2 Standard Header Components
@@ -160,20 +162,23 @@ The canonical `_standard_header.html` provides (all slots visible in both authen
 
 2. **Left Brand Lockup (Squircle + Name + Domain Badge)**:
    ```html
-   <a href="/" class="flex items-center gap-2.5 group transition-transform active:scale-95" title="iyou_{app_slug}">
-     <img src="{% static 'img/logo_square_sm.png' %}"
-          onerror="this.onerror=null;this.src='{% static 'img/logo_square.png' %}';"
-          alt="{app_slug}"
-          class="w-6 h-6 sm:w-7 sm:h-7 rounded-lg object-cover shadow-sm border border-slate-200 dark:border-slate-800 group-hover:scale-105 transition-transform duration-150" />
-     <div class="flex items-center gap-1.5 font-bold tracking-tight">
-       <span class="text-slate-400 dark:text-gray-400 group-hover:text-slate-600 dark:group-hover:text-gray-200 transition-colors">iyou</span>
-       <span class="text-{color}-600 dark:text-{color}-400">_{slug}</span>
-       <span class="text-[10px] sm:text-[11px] font-mono tracking-wider uppercase px-2.5 py-0.5 rounded-md border border-slate-300/80 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 select-none ml-1.5 font-medium">
-         __BADGE__
+   <div class="flex items-center gap-3">
+     <a href="/" class="flex items-center gap-2 text-2xl font-bold tracking-tight hover:opacity-90 transition-opacity" title="iyou_{app_slug}">
+       <img src="{% static 'img/logo_square_sm.png' %}"
+            onerror="this.onerror=null;this.src='{% static 'img/logo_square.png' %}';"
+            alt="{app_slug}"
+            class="h-8 w-8 aspect-square rounded-lg object-cover shadow-sm border border-slate-200 dark:border-slate-800 group-hover:scale-105 transition-transform duration-150" />
+       <span class="flex items-center">
+         <span class="text-slate-400 dark:text-slate-500 font-medium">iyou</span>
+         <span class="text-{color}-600 dark:text-{color}-400 font-extrabold">_{slug}</span>
        </span>
-     </div>
-   </a>
+     </a>
+     <span class="hidden sm:inline-block px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60">
+       __BADGE__
+     </span>
+   </div>
    ```
+   Brand text renders at `text-2xl font-bold tracking-tight` with `iyou` in `font-medium text-slate-400` and `_{slug}` in `font-extrabold text-{color}-600`.
 
 3. **Notification Bell**: Button `#notification-bell-btn` with safe function guard:
    ```html
@@ -181,7 +186,7 @@ The canonical `_standard_header.html` provides (all slots visible in both authen
    ```
    Unread badge ping: `#notification-unread-dot` using the app accent color.
 
-4. **Modular Persona Enclave Partial**: `{% include "includes/_persona_enclave.html" %}` — renders `@handle` and level chips (`L1` violet, `L2+` amber) via the canonical context processor (Section 5).
+4. **Modular Persona Enclave Partial**: `{% include "includes/_persona_enclave.html" %}` — renders `@handle` and level chips (`L1` violet, `L2+` amber) via the canonical context processor (Section 6).
 
 5. **Direct Actions** (authenticated only):
    - `[ ⚙️ Edit ]` linking to `{% url 'dashboard' %}`
@@ -197,7 +202,7 @@ The canonical `_standard_header.html` provides (all slots visible in both authen
 A rectangular monospace label rendered inline in the brand lockup, providing immediate semantic classification for every satellite app:
 
 ```html
-<span class="text-[10px] sm:text-[11px] font-mono tracking-wider uppercase px-2.5 py-0.5 rounded-md border border-slate-300/80 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 select-none ml-1.5 font-medium">
+<span class="hidden sm:inline-block px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60">
   __BADGE__
 </span>
 ```
@@ -231,24 +236,24 @@ When no active session exists, the standard header renders a two-part authentica
 
 ```html
 <!-- Logged-Out Canonical Poly Flow -->
-<div class="flex items-center gap-2 sm:gap-3">
+<div class="flex items-center gap-2 text-xs">
   <!-- Soft Capsule Indicator -->
-  <div class="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/20 text-xs text-slate-600 dark:text-slate-300 italic select-none">
+  <div class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300">
     <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
-    <span class="hidden sm:inline">Sovereign Key Required</span>
+    <span class="italic text-xs text-slate-600 dark:text-slate-400">Sovereign Key Required</span>
   </div>
   <!-- Solid Vibrant Authenticate Button -->
-  <a href="{% url 'oidc_authentication_init' %}" class="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-{color}-600 hover:bg-{color}-700 active:scale-95 text-white text-xs font-semibold shadow-sm transition-all select-none">
-    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+  <a href="{% url 'oidc_authentication_init' %}" class="px-3 py-1.5 rounded-lg bg-{color}-600 hover:bg-{color}-700 text-white font-medium text-xs shadow-sm transition-all flex items-center gap-1.5">
+    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
     </svg>
     <span>Authenticate</span>
   </a>
 </div>
 ```
 
-- **Capsule**: `rounded-full` amber border/bg, italic text, amber-500 dot.
-- **Authenticate Button**: Solid `bg-{color}-600` with key SVG icon, `rounded-full` pill shape.
+- **Capsule**: `rounded-full` amber border/bg (`border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300`), italic text, `w-2.5 h-2.5` amber-500 dot.
+- **Authenticate Button**: Solid `px-3 py-1.5 rounded-lg bg-{color}-600 hover:bg-{color}-700 text-white font-medium text-xs shadow-sm` with key SVG icon (`w-3.5 h-3.5`) and `gap-1.5`.
 
 ### 3.5 Outline Theme Toggle (☀ Light / ☾ Dark)
 The `#theme-toggle` button uses the `block dark:hidden` / `hidden dark:block` pattern to show the correct icon per mode without JavaScript class toggling:
@@ -265,7 +270,7 @@ The `#theme-toggle` button uses the `block dark:hidden` / `hidden dark:block` pa
 ```
 
 ### 3.6 Dual-Asset Logo Hierarchy
-To optimize performance and eliminate loading high-res square master assets (~512–768px) for a tiny 24px/28px rendering slot, satellites implement a dual-asset logo hierarchy:
+To optimize performance and eliminate loading high-res square master assets (~512–768px) for the 36–40px (`w-9 h-9 sm:w-10 sm:h-10`) rendering slot, satellites implement a dual-asset logo hierarchy:
 - **`static/img/logo_square_sm.png`**: 64×64 or 96×96 px — dedicated for the Layer 1 header squircle stamp. Minimizes network payload and ensures sharp rasterization on standard and Retina displays.
 - **`static/img/logo_square.png`**: High-res square master — dedicated for `_footer.html`, favicons, Apple Touch icons, and PWA icon generation.
 - **Graceful Fallback Invariant**: Standard headers must implement the `onerror` fallback:
@@ -288,7 +293,22 @@ The `--skip-header` flag and `PRESERVE_LAYER_1_APPS` guard are retained for futu
 
 ---
 
-## 4. Modular Persona Enclave Partial (`_persona_enclave.html`)
+## 4. Layer 2: Application Sub-Navigation Contract (`_nav.html`)
+
+Satellites that implement a custom Layer 2 navigation ribbon (`_nav.html`) MUST obey the same horizontal width contract as Layer 1:
+
+### 4.1 Width & Scaffolding Contract
+- All navigation items and controls MUST be wrapped inside a single scroll-locked container:
+  ```html
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between">
+  ```
+- Layer 2 **MUST NEVER** stretch to full browser width. It must remain column-aligned with the Layer 1 header and Layer 0 drawer on all viewports.
+- The `<nav>` element itself may carry its own surface styling (e.g. `border-b border-slate-200 dark:border-gray-800/80 bg-white/70 dark:bg-[#070A10]/70 backdrop-blur-sm`), but the inner scaffolding wrapper above is mandatory and fixed.
+- Canonical reference implementation: `iyou_poly/templates/includes/_nav.html`.
+
+---
+
+## 5. Modular Persona Enclave Partial (`_persona_enclave.html`)
 
 The Persona Enclave quick-switcher is fully decoupled into `templates/includes/_persona_enclave.html`:
 
@@ -350,7 +370,7 @@ The Persona Enclave quick-switcher is fully decoupled into `templates/includes/_
 </div>
 ```
 
-### 4.1 Key Features of the Decoupled Flyout
+### 5.1 Key Features of the Decoupled Flyout
 1. **Public Profile Direct Action**: Nesting the public profile anchor (`https://wun.iyou.me/{{ user_display_label|default:user.username }}`) inside the top of the flyout menu eliminates clutter from Layer 1 while giving users one-click access to their public profile.
 2. **Bridge Connection State**: `#persona-bridge-status` indicates live WebSocket telemetry from `iyou_home` (or degrades gracefully to "BRIDGE OFFLINE" after 2500ms).
 3. **Dynamic Persona Injection**: `#persona-list-container` is populated over the bridge protocol without blocking page load.
@@ -358,9 +378,9 @@ The Persona Enclave quick-switcher is fully decoupled into `templates/includes/_
 
 ---
 
-## 5. Handle Resolution & Context Processor Pattern
+## 6. Handle Resolution & Context Processor Pattern
 
-### 5.1 Context Processor Priority (`user_identity(request)`)
+### 6.1 Context Processor Priority (`user_identity(request)`)
 Identity display labels in satellite templates are resolved through the canonical context processor according to a strict 4-tier fallback priority:
 
 ```python
@@ -391,7 +411,7 @@ def user_identity(request):
     }
 ```
 
-### 5.2 Client-Side Handle Preservation (`bridge_client.js`)
+### 6.2 Client-Side Handle Preservation (`bridge_client.js`)
 When the desktop bridge connects via WebSocket, empty or unassigned profile metadata must **never** wipe out a valid server-rendered `@handle`.
 
 In `updateActivePersonaUI(profile)`:
@@ -417,7 +437,7 @@ This prevents the race condition where `profile.name = "Primary Identity"` overw
 
 ---
 
-## 6. Integration Checklist for Satellite Templates
+## 7. Integration Checklist for Satellite Templates
 
 To integrate the canonical navigation, mascot footer, and PWA system into any satellite application:
 
@@ -441,11 +461,11 @@ To integrate the canonical navigation, mascot footer, and PWA system into any sa
 
 ---
 
-## 7. Canonical Mascot Footer ("The Polly Pattern")
+## 8. Canonical Mascot Footer ("The Polly Pattern")
 
 The canonical footer architecture, established in `iyou_poly` ("The Polly Pattern"), anchors the bottom of every satellite application with responsive branding, light/dark mascot illustration, and runtime protocol telemetry.
 
-### 7.1 Layout Sticking Contract (`base.html`)
+### 8.1 Layout Sticking Contract (`base.html`)
 To prevent awkward footer floating on sparse or empty views, satellites must enforce the three-part flex layout contract in `base.html`:
 
 1. **Viewport Coverage (`<body>`)**:
@@ -469,7 +489,7 @@ To prevent awkward footer floating on sparse or empty views, satellites must enf
    {% include "includes/_footer.html" %}
    ```
 
-### 7.2 Container & Surface Styling (`_footer.html`)
+### 8.2 Container & Surface Styling (`_footer.html`)
 The outer footer container uses the ecosystem's glassmorphic translucent surface design with dark-mode borders and sticky-bottom anchoring:
 ```html
 <footer class="mt-auto border-t border-slate-200 dark:border-gray-800/80 bg-white/50 dark:bg-[#0B0F19]/50 backdrop-blur-sm py-10 transition-colors duration-200">
@@ -484,7 +504,7 @@ The outer footer container uses the ecosystem's glassmorphic translucent surface
   - `py-10`: Provides balanced vertical breathing room across all screen sizes.
 - **Inner Container**: `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center justify-center text-center">` aligns all metadata along the central axis.
 
-### 7.3 Mascot Image Block
+### 8.3 Mascot Image Block
 Every satellite showcases its companion mascot using dual light and dark PNG assets with smooth hover interactions:
 ```html
 <!-- Prominent Mascot Presentation -->
@@ -511,7 +531,7 @@ Every satellite showcases its companion mascot using dual light and dark PNG ass
 - **Accessibility Invariant**: Both light and dark `<img>` tags MUST define descriptive `alt` attributes (e.g. `alt="Polly the Consensus Parrot"`).
 - **Placement Invariant**: Mascot assets MUST reside strictly within `<footer>` and are strictly forbidden inside navigation headers (`<nav>`).
 
-### 7.4 Brand Lockup & Subtitle
+### 8.4 Brand Lockup & Subtitle
 The brand lockup presents the dual-tone ecosystem app identity alongside version telemetry:
 ```html
 <!-- Brand & Mission Statement -->
@@ -531,7 +551,7 @@ The brand lockup presents the dual-tone ecosystem app identity alongside version
 - **Version Chip**: Monospace badge styled with `text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-{color}-100 dark:bg-{color}-950/60 text-{color}-700 dark:text-{color}-300 border border-{color}-200 dark:border-{color}-800/60 ml-1`.
 - **Subtitle**: Explanatory application role in `text-xs font-mono text-slate-500 dark:text-slate-400`.
 
-### 7.5 Telemetry & Protocol Strip
+### 8.5 Telemetry & Protocol Strip
 At the base of the footer, runtime protocol coordinates are displayed in a clean monospace strip:
 ```html
 <!-- Protocol & Network Metadata -->
@@ -548,11 +568,11 @@ At the base of the footer, runtime protocol coordinates are displayed in a clean
 
 ---
 
-## 8. PWA, Web App Manifest & Favicon Routine
+## 9. PWA, Web App Manifest & Favicon Routine
 
 To provide native-like standalone desktop and mobile installation with offline resiliency across the ecosystem, each satellite implements standardized Progressive Web App (PWA) artifacts.
 
-### 8.1 Static Assets (`static/`)
+### 9.1 Static Assets (`static/`)
 Every satellite repository maintains the following standardized assets in its `static/` directory:
 ```
 static/
@@ -636,7 +656,7 @@ static/
    });
    ```
 
-### 8.2 Head Injections (`base.html`)
+### 9.2 Head Injections (`base.html`)
 The `<head>` block of `templates/base.html` must include the canonical favicons and PWA meta tags:
 ```html
 <!-- Favicon & App Icons -->
@@ -651,7 +671,7 @@ The `<head>` block of `templates/base.html` must include the canonical favicons 
 <link rel="manifest" href="{% static 'manifest.json' %}">
 ```
 
-### 8.3 Service Worker Registration
+### 9.3 Service Worker Registration
 Injected immediately before closing `</body>` to ensure non-blocking page load:
 ```html
 <!-- Offline Service Worker Registration -->

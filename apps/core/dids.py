@@ -52,3 +52,6 @@ def managed_did_namespace() -> str:
 def managed_user_did() -> str:
     """Mint a fresh Tier-1 managed identifier under this peer's namespace."""
     return f"{managed_did_namespace()}:{uuid.uuid4()}"
+
+
+generate_custodial_did = managed_user_did

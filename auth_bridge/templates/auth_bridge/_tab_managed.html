@@ -37,8 +37,9 @@
 </div>
 
 <!-- Email / Password form -->
-<form method="POST" action="{% url 'auth_bridge:managed_login' %}">
+<form method="POST" action="{% url 'auth_bridge:managed_login' %}{% if next_url %}?next={{ next_url|urlencode }}{% endif %}">
     {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url }}">
     <div class="mb-4">
         <label for="managed-email" class="block text-gray-700 text-sm font-medium mb-1">Email</label>
         <input type="email" name="email" id="managed-email" required

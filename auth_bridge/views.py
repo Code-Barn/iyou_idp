@@ -29,14 +29,14 @@ from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
-from urllib.parse import urlparse, parse_qs, urlencode
+from urllib.parse import urlparse, parse_qs, urlencode, quote_plus
 
 from django.contrib import messages
 from django.conf import settings as django_settings
 
 from .models import User
 from .backend import evaluate_sovereign_admin_posture
-from apps.core.dids import managed_user_did
+from apps.core.dids import generate_custodial_did
 import uuid
 import json
 import hashlib
@@ -876,49 +876,66 @@ def managed_login(request):
     """
     Tier 1 Managed Convenience — JIT email/password authentication.
 
-    - If the email does not exist, create a new User with account_tier='managed_free'
-      and a custodial did:web, set the password, and log them in.
-    - If the email exists, verify password and log in.
-    - Resume OIDC flow via _build_oidc_redirect if applicable.
+    - Context Extraction & Sanitization: extract next_url and sanitize with _is_safe_public_redirect.
+    - Credential Validation & JIT User Creation: validate inputs, verify password or JIT create user.
+    - Security Posture & Gate Interlocking: evaluate_sovereign_admin_posture and check Sovereign Airlock Gate.
+    - Session Establishment: login(request, user, backend="auth_bridge.backend.DIDAuthBackend").
+    - GDPR Disclaimer Interlocking: divert to legal disclaimer if user.show_legal_disclaimer is True.
+    - OIDC Handshake Continuity: execute _build_oidc_redirect if OIDC parameters exist, else redirect to next_url.
     """
+    # 1. Context Extraction & Sanitization
+    raw_next = request.POST.get('next', '').strip() or request.GET.get('next', '').strip() or DEFAULT_NEXT_URL
+    next_url = raw_next if _is_safe_public_redirect(raw_next) else DEFAULT_NEXT_URL
+
     email = request.POST.get('email', '').strip().lower()
     password = request.POST.get('password', '').strip()
-    next_url = request.POST.get('next', '') or request.GET.get('next', '') or DEFAULT_NEXT_URL
 
+    # 2. Credential Validation & JIT User Creation
     if not email or not password:
         messages.error(request, 'Email and password are required.')
-        return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
+        return redirect(f"{reverse('auth_bridge:login')}?tab=managed&next={quote_plus(next_url)}")
 
     try:
         user = User.objects.get(email__iexact=email)
         # Existing user — verify password
         if not user.check_password(password):
             messages.error(request, 'Invalid email or password.')
-            return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
+            return redirect(f"{reverse('auth_bridge:login')}?tab=managed&next={quote_plus(next_url)}")
         if not user.is_active:
             messages.error(request, 'Account is disabled.')
-            return redirect(f"{reverse('auth_bridge:login')}?tab=managed")
+            return redirect(f"{reverse('auth_bridge:login')}?tab=managed&next={quote_plus(next_url)}")
     except User.DoesNotExist:
-        # JIT create new user
-        custodial_did = managed_user_did()
-        user = User(
-            email=email,
-            username=email,
-            account_tier='managed_free',
-            custodial_did=custodial_did,
+        # JIT create new user cleanly without username kwarg
+        did = generate_custodial_did()
+        user = User.objects.create(
+            email=email.strip().lower(),
+            custodial_did=did,
+            account_tier=1,
+            is_active=True,
         )
         user.set_password(password)
         user.save()
-        logger.info("JIT USER CREATED: email=%s did=%s", email, custodial_did)
+        logger.info("JIT USER CREATED: email=%s did=%s", email, did)
 
-    gate_resp = _gate_response(request, user.custodial_did, next_url)
-    if gate_resp is not None:
-        return gate_resp
+    # 3. Security Posture & Gate Interlocking
+    evaluate_sovereign_admin_posture(user)
+    if getattr(django_settings, "SYSTEM_GATE_ENABLED", True) and not _did_passes_gate(request, user.custodial_did):
+        logger.warning("SYSTEM GATE: blocked authentication for DID %s", user.custodial_did)
+        return _render_beta_gate(request, user.custodial_did, next_url)
 
-    # Authenticate and log in
-    login(request, user, backend='auth_bridge.backend.DIDAuthBackend')
+    # 4. Session Establishment
+    login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
 
-    # Build OIDC redirect if applicable
+    # 5. GDPR Disclaimer Interlocking
+    if user.show_legal_disclaimer:
+        request.session['post_disclaimer_redirect'] = next_url
+        try:
+            disclaimer_base = reverse('auth_bridge:legal_disclaimer')
+        except Exception:
+            disclaimer_base = reverse('legal_disclaimer')
+        return HttpResponseRedirect(f"{disclaimer_base}?next={quote_plus(next_url)}")
+
+    # 6. OIDC Handshake Continuity
     redirect_url = _build_oidc_redirect(next_url, user)
     if redirect_url is None:
         redirect_url = next_url
