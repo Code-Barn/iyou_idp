@@ -151,9 +151,10 @@ iyou_idp/
 
 
 ## MANDATORY EXECUTION INVARIANT: AUTO-COMMIT ON PASSING VERIFICATION
-1. **Never Ask Permission to Commit:** NEVER conclude a build, fix, refactor, or test task with questions like "Would you like me to commit?", "Should I stage changes?", or "Ready to commit?". If system checks and tests pass, staging and committing is an immutable requirement.
-2. **Atomic Execution:** Immediately upon successful verification (clean linters, passing tests, zero runtime errors), stage all modified and added files relevant to the task (`git add <files>`).
-3. **Conventional Commit Message:** Commit immediately using conventional commit semantics (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`) describing the exact change.
-4. **Final Status Output:** Every final build report MUST end with the outputs of:
+1. **Asking to Commit Is a HARD FAILURE:** NEVER — under any circumstance — end a task with "Would you like me to commit?", "Should I commit?", "Ready to commit?", or any equivalent question. Treat the commit question itself as a violation that will not be accepted.
+2. **Commit Immediately — No Exceptions:** The moment your task is complete, stage it (`git add <files>`) and commit it (`git commit`) in the task's repository. Do not wait for approval, do not stop to ask, and do not leave the working tree dirty "for inspection". There is no "want me to commit?" step.
+3. **Conventional Commit Message:** Use conventional semantics (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`) describing the exact change. Where the repo's own local convention differs, match it.
+4. **Final Status Output:** Every final build/code report MUST end with the outputs of:
    - `git log -n 1 --oneline`
    - `git status --short`
+5. **No Question-Containing Final Lines:** Any report whose final line is a question ("Want me to...", "Should I...", "Do you want...") is a failed handoff. Never end on an open-ended commit prompt.
