@@ -198,6 +198,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "config.context_processors.global_settings",
+                "apps.core.context_processors.ecosystem_releases",
             ],
         },
     },

@@ -13,20 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from django.conf import settings
-
-from apps.core.context_processors import ecosystem_releases
-
-__all__ = ["global_settings", "ecosystem_releases"]
+from typing import Any, Dict
+from django.http import HttpRequest
 
 
-def global_settings(request):
-    """
-    Expose a small, curated set of global settings to every template so the
-    airlock gate and gated download modal can reference ADMIN_DID without
-    hardcoding DID literals into markup.
-    """
+def ecosystem_releases(request: HttpRequest) -> Dict[str, Any]:
     return {
-        "ADMIN_DID": getattr(settings, "ADMIN_DID", ""),
-        "SYSTEM_GATE_ENABLED": bool(getattr(settings, "SYSTEM_GATE_ENABLED", True)),
+        "IYOU_HOME_GITHUB_REPO": "https://github.com/Code-Barn/iyou_home",
+        "IYOU_HOME_FALLBACK_TAG": "v0.2.0",
     }
