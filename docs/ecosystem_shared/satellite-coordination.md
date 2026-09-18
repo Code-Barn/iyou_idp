@@ -1,7 +1,7 @@
 # Satellite Coordination Index
 
 **Hub:** `omni_social`
-**Last synced:** 2026-09-02
+**Last synced:** 2026-09-17
 
 Each satellite repo has a `TODO.md` in its root, orchestrated from this central hub.
 Edit tasks here first, then propagate to the satellite repos via their agents.
@@ -18,7 +18,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | iyou_wun | `~/CODE_BASE/iyou_wun/` | [TODO.md](../../../iyou_wun/TODO.md) | ✅ Hardened / Operational | **Golden baseline.** Federated login, inline redirection, single-window UX loop, and admin panel privilege matching verified in production over revision 24. |
 | iyou_poly | `~/CODE_BASE/iyou_poly/` | [TODO.md](../../../iyou_poly/TODO.md) | ✅ Hardened / Operational | PKCE configuration confirmed, backend resolution verified over ModelBackend. |
 | iyou_name | `~/CODE_BASE/iyou_name/` | [TODO.md](../../../iyou_name/TODO.md) | ✅ Hardened / Operational | Import error resolved by transitioning class hierarchy to canonical ModelBackend foundations. |
-| iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | ✅ Hardened / Operational | Backend exception resolved. Ingress lifecycle hardened. |
+| iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | 🟢 Hardened Greenfield (Phase 7 Complete) | React 19 + Vite SPA (Omni-Canvas), Django 5.2 Headless DRF API. Color: orange (#F97316 / #F59E0B amber accents). Domain: https://hive.iyou.me. Flagship React SPA reference implementation. |
 | iyou_ride | `~/CODE_BASE/iyou_ride/` | [TODO.md](../../../iyou_ride/TODO.md) | ✅ Hardened / Operational | SessionMiddleware at index 2. 4-rule alignment complete. |
 | dc_tech_website | `~/CODE_BASE/dc_tech_website/` | [TODO.md](../../../dc_tech_website/TODO.md) | ✅ Hardened / Operational | Proxy header, public client, state relay — all verified. |
 | iyou_safe | `~/CODE_BASE/iyou_safe/` | [TODO.md](../../../iyou_safe/TODO.md) | ✅ Hardened / Operational | Exception guard, proxy header, public client, state relay — all verified. |
