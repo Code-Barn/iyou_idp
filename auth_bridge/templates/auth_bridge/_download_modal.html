@@ -46,7 +46,7 @@
             <div class="flex items-center justify-between flex-wrap gap-2">
               <span class="text-sm font-medium text-gray-700">Installer <span class="text-gray-400 font-mono text-xs">.exe</span></span>
               <div class="flex gap-2">
-                <a id="dl-windows-exe" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}_x64-setup.exe" target="_blank" class="dl-link dl-btn-windows text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .exe</a>
+                <a id="dl-windows-exe" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}_x64-setup.exe" target="_blank" rel="noopener noreferrer" class="dl-link dl-btn-windows text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .exe</a>
               </div>
             </div>
           </div>
@@ -64,7 +64,7 @@
             <div class="flex items-center justify-between flex-wrap gap-2">
               <span class="text-sm font-medium text-gray-700">Disk Image <span class="text-gray-400 font-mono text-xs">.dmg</span></span>
               <div class="flex gap-2">
-                <a id="dl-macos-dmg" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}_x64.dmg" target="_blank" class="dl-link dl-btn-macos text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .dmg</a>
+                <a id="dl-macos-dmg" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}_x64.dmg" target="_blank" rel="noopener noreferrer" class="dl-link dl-btn-macos text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .dmg</a>
               </div>
             </div>
           </div>
@@ -82,7 +82,7 @@
             <div class="flex items-center justify-between flex-wrap gap-2">
               <span class="text-sm font-medium text-gray-700">Debian Package <span class="text-gray-400 font-mono text-xs">.deb</span></span>
               <div class="flex gap-2">
-                <a id="dl-linux-deb" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}_amd64.deb" target="_blank" class="dl-link dl-btn-linux-deb text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .deb</a>
+                <a id="dl-linux-deb" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}_amd64.deb" target="_blank" rel="noopener noreferrer" class="dl-link dl-btn-linux-deb text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .deb</a>
               </div>
             </div>
           </div>
@@ -90,7 +90,15 @@
             <div class="flex items-center justify-between flex-wrap gap-2">
               <span class="text-sm font-medium text-gray-700">AppImage <span class="text-gray-400 font-mono text-xs">standalone</span></span>
               <div class="flex gap-2">
-                <a id="dl-linux-appimage" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}_amd64.AppImage" target="_blank" class="dl-link dl-btn-linux-appimage text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .AppImage</a>
+                <a id="dl-linux-appimage" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}_amd64.AppImage" target="_blank" rel="noopener noreferrer" class="dl-link dl-btn-linux-appimage text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .AppImage</a>
+              </div>
+            </div>
+          </div>
+          <div class="variant-row px-4 py-3" data-os="linux" data-variant="rpm">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <span class="text-sm font-medium text-gray-700">RedHat / Fedora <span class="text-gray-400 font-mono text-xs">.rpm</span></span>
+              <div class="flex gap-2">
+                <a id="dl-linux-rpm" href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home-{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}-1.x86_64.rpm" target="_blank" rel="noopener noreferrer" class="dl-link dl-btn-linux-rpm text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">Download .rpm</a>
               </div>
             </div>
           </div>
@@ -117,13 +125,15 @@
                 <a id="dl-bittorrent"
                    href="{{ IYOU_HOME_GITHUB_REPO }}/releases/download/{{ IYOU_HOME_FALLBACK_TAG }}/iyou-home_{{ IYOU_HOME_FALLBACK_TAG|cut:'v' }}.torrent"
                    download
+                   target="_blank"
+                   rel="noopener noreferrer"
                    class="dl-link dl-btn-torrent text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 shadow-sm">
                   <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   <span>Download .torrent</span>
                 </a>
                 <a id="dl-magnet"
-                   href="#"
-                   class="dl-link dl-btn-magnet hidden text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors flex items-center gap-1.5"
+                   href="magnet:?xt=urn:btih:36aa52f89e030d0a0daf79dffadef7b8ec8277b2&amp;dn=iyou-home_0.2.2&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce"
+                   class="dl-link dl-btn-magnet text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors flex items-center gap-1.5"
                    title="Copy Magnet link">
                   <span>🧲 Magnet</span>
                 </a>
@@ -138,7 +148,7 @@
               </div>
               <div class="flex items-center gap-2">
                 <a id="dl-ipfs"
-                   href="https://ipfs.io/ipns/home.iyou.me/"
+                   href="https://ipfs.io/ipfs/QmfKNn6iVjqo47r5zvwAH9k9mCFeotDLS4mGn1hZ7ETZjH/"
                    target="_blank"
                    rel="noopener noreferrer"
                    class="dl-link dl-btn-ipfs text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 shadow-sm">
@@ -151,11 +161,42 @@
         </div>
       </div>
 
+      <!-- SHA-256 Verification Sums -->
+      <div id="checksums-card" class="rounded-xl border border-gray-200 overflow-hidden bg-gray-50/50">
+        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            <span class="font-semibold text-gray-700 text-sm">SHA-256 Verification Sums</span>
+          </div>
+          <a href="{{ IYOU_HOME_GITHUB_REPO }}/releases/tag/{{ IYOU_HOME_FALLBACK_TAG }}" target="_blank" rel="noopener noreferrer" class="text-xs text-indigo-600 hover:underline">Verify on GitHub &rarr;</a>
+        </div>
+        <div class="p-4 space-y-2.5 text-xs">
+          <div class="p-2.5 bg-white rounded-lg border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span class="font-medium text-gray-700">Windows (.exe):</span>
+            <code class="text-gray-500 select-all font-mono text-[11px] break-all">426c9f3350d8d29e99d6b68beec1a9d1c169c5d51237b04977686e2c3f14271a</code>
+          </div>
+          <div class="p-2.5 bg-white rounded-lg border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span class="font-medium text-gray-700">macOS (.dmg):</span>
+            <code class="text-gray-500 select-all font-mono text-[11px] break-all">2726b36c65bd14e173cd044e66ce98fe7f1fdadda572ab3b720bdd416a5757b5</code>
+          </div>
+          <div class="p-2.5 bg-white rounded-lg border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span class="font-medium text-gray-700">Debian (.deb):</span>
+            <code class="text-gray-500 select-all font-mono text-[11px] break-all">9445c8a98a73ffea9eadd9bb982094c8243cd78eb67a5710f377758b058ce9c9</code>
+          </div>
+          <div class="p-2.5 bg-white rounded-lg border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span class="font-medium text-gray-700">AppImage:</span>
+            <code class="text-gray-500 select-all font-mono text-[11px] break-all">91f411d3870be14625c1519aa861319e674780ab2f7dfd5efa42e41b4e3cc761</code>
+          </div>
+        </div>
+      </div>
+
       <!-- Footer note -->
       <p class="text-xs text-gray-400 text-center leading-relaxed">
         All downloads are served via third-party infrastructure. No data is hosted on iyou servers.
         Verify checksums on the
-        <a id="release-github-link" href="{{ IYOU_HOME_GITHUB_REPO }}/releases" target="_blank" class="text-indigo-600 hover:underline">GitHub releases page</a>.
+        <a id="release-github-link" href="{{ IYOU_HOME_GITHUB_REPO }}/releases" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:underline">GitHub releases page</a>.
       </p>
       {% else %}
       <!-- Early Access Key Required card (ungated users) -->

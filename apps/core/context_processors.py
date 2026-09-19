@@ -20,5 +20,5 @@ from django.http import HttpRequest
 def ecosystem_releases(request: HttpRequest) -> Dict[str, Any]:
     return {
         "IYOU_HOME_GITHUB_REPO": "https://github.com/Code-Barn/iyou_home",
-        "IYOU_HOME_FALLBACK_TAG": "v0.2.0",
+        "IYOU_HOME_FALLBACK_TAG": "v0.2.2",
     }

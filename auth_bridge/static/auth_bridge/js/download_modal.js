@@ -12,7 +12,8 @@
 
   var CACHE_KEY = 'iyou_home_latest_release';
   var GITHUB_API_URL = 'https://api.github.com/repos/Code-Barn/iyou_home/releases/latest';
-  var IPFS_FALLBACK_URL = 'https://ipfs.io/ipns/home.iyou.me/';
+  var IPFS_FALLBACK_URL = 'https://ipfs.io/ipfs/QmfKNn6iVjqo47r5zvwAH9k9mCFeotDLS4mGn1hZ7ETZjH/';
+  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:36aa52f89e030d0a0daf79dffadef7b8ec8277b2&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce';
 
   function detectOS() {
     var ua = navigator.userAgent || navigator.platform || '';
@@ -91,23 +92,60 @@
     }, 150);
   }
 
+  function copyToClipboard(text, onSuccess, onFallback) {
+    if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        if (onSuccess) onSuccess();
+      })["catch"](function () {
+        fallbackCopy(text, onSuccess, onFallback);
+      });
+    } else {
+      fallbackCopy(text, onSuccess, onFallback);
+    }
+  }
+
+  function fallbackCopy(text, onSuccess, onFallback) {
+    var successful = false;
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '-9999px';
+      ta.setAttribute('readonly', '');
+      document.body.appendChild(ta);
+      ta.select();
+      successful = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (err) {
+      successful = false;
+    }
+    if (successful) {
+      if (onSuccess) onSuccess();
+    } else {
+      if (onFallback) onFallback();
+    }
+  }
+
   document.addEventListener('click', function (e) {
     var link = e.target.closest('.dl-link');
     if (!link) return;
 
-    if (link.href && link.href.indexOf('magnet:') === 0) {
+    var magnetUri = (link.href && link.href.indexOf('magnet:') === 0) ? link.href : link.getAttribute('data-magnet');
+
+    if (magnetUri) {
       e.preventDefault();
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(link.href).then(function () {
+      copyToClipboard(
+        magnetUri,
+        function () {
           var orig = link.textContent;
           link.textContent = 'Copied!';
           setTimeout(function () { link.textContent = orig; }, 2000);
-        })["catch"](function () {
-          window.location.href = link.href;
-        });
-      } else {
-        window.location.href = link.href;
-      }
+        },
+        function () {
+          window.location.href = magnetUri;
+        }
+      );
     }
   });
 
@@ -136,6 +174,7 @@
     var macAsset = null;
     var debAsset = null;
     var appImageAsset = null;
+    var rpmAsset = null;
     var winAsset = null;
     var torrentAsset = null;
     var mirrorsAsset = null;
@@ -146,6 +185,7 @@
       if (a.name.endsWith('.dmg')) macAsset = a;
       if (a.name.endsWith('.deb')) debAsset = a;
       if (a.name.endsWith('.AppImage')) appImageAsset = a;
+      if (a.name.endsWith('.rpm')) rpmAsset = a;
       if (a.name.endsWith('.exe')) winAsset = a;
       if (a.name.endsWith('.torrent')) torrentAsset = a;
       if (a.name === 'MIRRORS.txt') mirrorsAsset = a;
@@ -155,6 +195,8 @@
       var macBtns = modal.querySelectorAll('#dl-macos-dmg, .dl-btn-macos, [data-asset="macos-dmg"]');
       macBtns.forEach(function (el) {
         el.href = macAsset.browser_download_url;
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
       });
     }
 
@@ -162,6 +204,8 @@
       var debBtns = modal.querySelectorAll('#dl-linux-deb, .dl-btn-linux-deb, [data-asset="linux-deb"]');
       debBtns.forEach(function (el) {
         el.href = debAsset.browser_download_url;
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
       });
     }
 
@@ -169,6 +213,17 @@
       var appImageBtns = modal.querySelectorAll('#dl-linux-appimage, .dl-btn-linux-appimage, [data-asset="linux-appimage"]');
       appImageBtns.forEach(function (el) {
         el.href = appImageAsset.browser_download_url;
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
+      });
+    }
+
+    if (rpmAsset) {
+      var rpmBtns = modal.querySelectorAll('#dl-linux-rpm, .dl-btn-linux-rpm, [data-asset="linux-rpm"]');
+      rpmBtns.forEach(function (el) {
+        el.href = rpmAsset.browser_download_url;
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
       });
     }
 
@@ -176,6 +231,8 @@
       var winBtns = modal.querySelectorAll('#dl-windows-exe, .dl-btn-windows, [data-asset="windows-exe"]');
       winBtns.forEach(function (el) {
         el.href = winAsset.browser_download_url;
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
       });
     }
 
@@ -184,6 +241,8 @@
       torrentBtns.forEach(function (el) {
         el.href = torrentAsset.browser_download_url;
         el.setAttribute('download', torrentAsset.name);
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
       });
     }
 
@@ -206,36 +265,44 @@
         .then(function (txt) {
           var mirrors = parseMirrorsTxt(txt);
 
-          if (mirrors.IPFS_GATEWAY_URL) {
-            ipfsBtns.forEach(function (el) {
-              el.href = mirrors.IPFS_GATEWAY_URL;
-            });
-          } else {
-            ipfsBtns.forEach(function (el) {
-              el.href = IPFS_FALLBACK_URL;
-            });
-          }
+          var ipfsUrl = mirrors.IPFS_GATEWAY_URL || IPFS_FALLBACK_URL;
+          ipfsBtns.forEach(function (el) {
+            el.href = ipfsUrl;
+            el.setAttribute('target', '_blank');
+            el.setAttribute('rel', 'noopener noreferrer');
+          });
 
-          if (mirrors.MAGNET_LINK) {
-            magnetBtns.forEach(function (el) {
-              el.href = mirrors.MAGNET_LINK;
-              el.classList.remove('hidden');
-            });
+          var magnetUrl = mirrors.MAGNET_LINK || MAGNET_FALLBACK_URI;
+          magnetBtns.forEach(function (el) {
+            el.href = magnetUrl;
+            el.classList.remove('hidden');
+          });
 
-            torrentBtns.forEach(function (el) {
-              el.dataset.magnet = mirrors.MAGNET_LINK;
-              el.setAttribute('title', 'Direct .torrent file (Magnet available)');
-            });
-          }
+          torrentBtns.forEach(function (el) {
+            el.dataset.magnet = magnetUrl;
+            el.setAttribute('title', 'Direct .torrent file (Magnet available)');
+          });
         })
         .catch(function () {
           ipfsBtns.forEach(function (el) {
             el.href = IPFS_FALLBACK_URL;
+            el.setAttribute('target', '_blank');
+            el.setAttribute('rel', 'noopener noreferrer');
+          });
+          magnetBtns.forEach(function (el) {
+            el.href = MAGNET_FALLBACK_URI;
+            el.classList.remove('hidden');
           });
         });
     } else {
       ipfsBtns.forEach(function (el) {
         el.href = IPFS_FALLBACK_URL;
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
+      });
+      magnetBtns.forEach(function (el) {
+        el.href = MAGNET_FALLBACK_URI;
+        el.classList.remove('hidden');
       });
     }
   }
