@@ -110,6 +110,37 @@ To prevent unsightly white-screen flashes when dark mode users navigate pages, a
 </script>
 ```
 
+#### 2.2.1 RFC-006 Reactive DOM Hydration Contract
+When `iyou_home` broadcasts `profile_sync` frames across Port 9001 (or upon satellite bridge client connection), every open satellite tab updates its displayed `@handle` and avatar without requiring a page reload or custom per-repo JavaScript.
+
+- **Canonical Element Classes:**
+  - **Handle Element:** `class="mesh-user-handle ..."` — populates with `@` + normalized handle text.
+  - **Avatar Element:** `class="mesh-user-avatar ..."` — sets `src` to `avatar_url` and un-hides the image (`classList.remove("hidden")`).
+- **Client Reactive Listener:**
+  All canonical header templates (`_standard_header.html` and `_persona_enclave.html`) embed the following listener:
+  ```javascript
+  if (!window.__meshProfileSyncBound) {
+    window.__meshProfileSyncBound = true;
+    window.addEventListener("meshProfileSync", function(e) {
+      var p = e.detail;
+      if (!p) return;
+      var h = document.querySelectorAll(".mesh-user-handle");
+      h.forEach(function(el) {
+        if (p.handle) {
+          el.textContent = "@" + String(p.handle).replace(/^@/, "");
+        }
+      });
+      var a = document.querySelectorAll(".mesh-user-avatar");
+      a.forEach(function(el) {
+        if (p.avatar_url) {
+          el.src = p.avatar_url;
+          el.classList.remove("hidden");
+        }
+      });
+    });
+  }
+  ```
+
 ---
 
 ### 2.3 Layer 2: App Canvas Layout & Tailwind Static Build Rules
@@ -216,6 +247,54 @@ Performs read-only batch resolution of public keys against the local `contacts.j
 - **Security Constraints:**
   - **Batch Frame Cap:** `1 <= pubkeys.length <= 256` (`MAX_RESOLVE_KEYS`). Oversized frames return `{"type":"error","message":"too_many_pubkeys"}`.
   - **Minimal Privacy Projection:** Hit records MUST contain only `{nickname, trust_level, badge}`. Aliases, attestation receipts, and timestamps MUST NOT be returned.
+
+#### 3.1.4 `SET_PROFILE_METADATA` (RFC-006 Profile Claim / Update)
+Claims or updates profile metadata for a persona in the enclave vault.
+- **Request Frame:**
+  ```json
+  {
+    "type": "SET_PROFILE_METADATA",
+    "profile_id": "",
+    "handle": "@dcbyers13",
+    "display_name": "Dan Byers",
+    "avatar_url": "http://127.0.0.1:9002/<sha256hex>",
+    "banner_url": "https://cdn.iyou.me/banners/b.png",
+    "bio": "Independent systems researcher."
+  }
+  ```
+- **Resolution & Security Rules:**
+  - `profile_id`: Optional. Empty string defaults to the active Level 1 Public Persona.
+  - **Air-Gap Invariant:** Targeting Level 0 Anchor (`is_system_reserved` / `level == 0`) immediately returns `ERR_AIR_GAP_VIOLATION` (fail-closed, no write).
+  - **Normalization:** Trims whitespace, strips leading `@`, validates `^[a-zA-Z0-9_-]{3,30}$`. Derives canonical NIP-05: `f"{handle}@iyou.me"`.
+  - **Atomicity & Persistence:** Persists to `vault.json` via staging file + atomic rename.
+  - **Broadcast:** Enclave dispatches `profile_sync` to all active Port 9001 clients and replies with an echo ack to the caller.
+
+#### 3.1.5 `profile_sync` (RFC-006 Outbound Broadcast)
+Broadcast by the `iyou_home` bridge to all connected satellite tabs whenever metadata is updated or when the active persona is switched in the enclave.
+- **Broadcast Frame:**
+  ```json
+  {
+    "type": "profile_sync",
+    "profile": {
+      "profile_id": "primary",
+      "derivation_index": 1,
+      "did": "did:key:z6Mk...",
+      "nostr_pubkey_hex": "02...",
+      "handle": "dcbyers13",
+      "display_name": "Dan Byers",
+      "avatar_url": "http://127.0.0.1:9002/<sha256hex>",
+      "banner_url": null,
+      "bio": "Independent systems researcher.",
+      "nip05": "dcbyers13@iyou.me"
+    }
+  }
+  ```
+- **Satellite Client Contract:**
+  When a satellite bridge client receives `profile_sync`, it upserts its local database cache (`UserLinkDeck` keyed by `did`) and emits the window event:
+  ```javascript
+  window.dispatchEvent(new CustomEvent("meshProfileSync", { detail: message.profile }));
+  ```
+  This triggers DOM hydration, updating all `.mesh-user-handle` and `.mesh-user-avatar` elements across open tabs without page reloads.
 
 ---
 

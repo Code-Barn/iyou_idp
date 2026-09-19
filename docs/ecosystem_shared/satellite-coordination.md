@@ -38,7 +38,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 | Repo | Stack | TODO.md | Key Items |
 |:---|:---|:---|:---|
-| iyou_home | Tauri/TypeScript | [TODO.md](../../../iyou_home/TODO.md) | Local desktop enclave. SEC-002/003/004/005/006. |
+| iyou_home | Tauri/TypeScript | [TODO.md](../../../iyou_home/TODO.md) | Local desktop enclave. Released v0.2.2 (RFC-001 through RFC-006 implemented). SEC-002/003/004/005/006. |
 | did_rust | Rust crate | [TODO.md](../../../did_rust/TODO.md) | Core DID library. SEC-003 alignment enforcement. Shared by idp + home. |
 | iyou_mobile | Tauri/React | [TODO.md](../../../iyou_mobile/TODO.md) | Mobile counterpart. Barcode scanner, deep-link, secure storage. |
 
@@ -91,6 +91,17 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | **Protocol Integrity & Post-Mortem Governance** | [`PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`](strategy/PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md) | Canonical Living Spec | Long-term North Star for existential risk mitigation, Perpetual Purpose Trust legal shielding, client-side invariant verification engine, Merkle vote root domain separation, temporal drift guards ($\pm 900\text{s}$), dead-man key decay, and hydra relay federation. |
 | **Immediate Integrity Execution Plan** | [`IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`](strategy/IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md) | Active Execution Blueprint | Tactical sprint rollout: Phase 1 near-term zero-cost engineering (Invariant Alert hook specs `INVARIANT_ALERT_PUSH`, read-only database guards, fail-closed bridge checks), Phase 2 entity ring-fencing & Purpose Trust charter drafting, Phase 3 automated key decay & community witnesses. |
 | **Dependent Identity & Graduation Spec** | [`DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`](specs/DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md) | Canonical Living Spec | Parent-stewarded minors: client-side Web-of-Trust graph distance replaces intrusive cloud age verification; `iyou_home` enclave child subkey derivation (`m/iyou/dependent/<index>`); zero-PII `DependentTokenSlot` age-bracket VCs signed by parent DID; 5-year Trust Ladder (Stages 1–3); Sovereign Graduation zero-loss key export; automated restorative intervention (`iyou_safe` → `iyou_talk` COGS/POGS routing). |
+| **Universal Profile Metadata & Cross-Satellite Sync (RFC-006)** | [`specs/RFC-006-universal-profile-metadata.md`](specs/RFC-006-universal-profile-metadata.md) | Canonical Living Spec (Implemented v0.2.2) | Universal profile metadata (handle, display name, avatar, banner, bio, nip05); `SET_PROFILE_METADATA` ingress & `profile_sync` Port 9001 broadcast; Level 0 air-gap enforcement; canonical `.mesh-user-handle` / `.mesh-user-avatar` reactive DOM hydration without reload. |
+
+---
+
+### RFC-006 Reactive Header Hydration Rollout
+
+| Ticket | Target Repo | Status | Notes |
+|:---|:---|:---|:---|
+| RFC-006 — Bridge Client Event Dispatch | iyou_wun | Open | Wire bridge client to emit `window.dispatchEvent(new CustomEvent("meshProfileSync", { detail: profile }))` upon receiving `profile_sync` / `get_profile`. |
+| RFC-006 — Bridge Client Event Dispatch | iyou_poly | Open | Wire bridge client to emit `window.dispatchEvent(new CustomEvent("meshProfileSync", { detail: profile }))` upon receiving `profile_sync` / `get_profile`. |
+| RFC-006 — Bridge Client Event Dispatch | iyou_talk | Open | Wire bridge client to emit `window.dispatchEvent(new CustomEvent("meshProfileSync", { detail: profile }))` upon receiving `profile_sync` / `get_profile`. |
 
 ---
 
@@ -140,5 +151,5 @@ Roadmap for `OMNI-DEP-GRAD-SPEC-V1` (`docs/specs/DEPENDENT_IDENTITY_AND_GRADUATI
 
 ## Sync Status
 
-- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 21 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `PROJECT_ZERO_SPEC.md`, `OMNI_SOCIAL_PEER_FEDERATION_SPEC.md`, `DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`, `DEVELOPER_TRANSLATION_MANUAL.md`, `satellite-coordination.md`, `LONG_TERM_AUTH_TOPOLOGY.md`, `PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`, `IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
-- **Last sync:** 2026-09-02
+- **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 21 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `PROJECT_ZERO_SPEC.md`, `OMNI_SOCIAL_PEER_FEDERATION_SPEC.md`, `DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`, `RFC-006-universal-profile-metadata.md`, `DEVELOPER_TRANSLATION_MANUAL.md`, `satellite-coordination.md`, `LONG_TERM_AUTH_TOPOLOGY.md`, `STANDARD_UI_SPECIFICATION.md`, `PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`, `IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`, `_persona_enclave.html`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
+- **Last sync:** 2026-09-19

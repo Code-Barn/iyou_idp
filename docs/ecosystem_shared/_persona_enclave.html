@@ -9,8 +9,15 @@
     aria-haspopup="true"
     onclick="togglePersonaDropdown()"
   >
+    <img
+      src="{% firstof user_avatar_url '' %}"
+      alt=""
+      class="mesh-user-avatar w-4 h-4 rounded-full object-cover shrink-0 {% if not user_avatar_url %}hidden{% endif %}"
+      onerror="this.classList.add('hidden')"
+      onload="this.classList.remove('hidden')"
+    />
     <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" id="active-persona-dot" title="Sovereign Key Active"></span>
-    <span id="active-persona-display-name" class="truncate max-w-[140px] font-mono text-xs font-medium text-slate-700 dark:text-slate-200">
+    <span id="active-persona-display-name" class="mesh-user-handle truncate max-w-[140px] font-mono text-xs font-medium text-slate-700 dark:text-slate-200">
       {{ user_display_label|default:user.username|truncatechars:18 }}
     </span>
     <span class="text-[10px] px-1 py-0.5 rounded font-bold transition-colors duration-150 {% if active_persona_level == 1 or not active_persona_level %}bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300{% else %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% endif %}" id="active-persona-level">
@@ -82,4 +89,25 @@
       if (btn) btn.setAttribute('aria-expanded', 'false');
     }
   });
+
+  if (!window.__meshProfileSyncBound) {
+    window.__meshProfileSyncBound = true;
+    window.addEventListener("meshProfileSync", function(e) {
+      var p = e.detail;
+      if (!p) return;
+      var h = document.querySelectorAll(".mesh-user-handle");
+      h.forEach(function(el) {
+        if (p.handle) {
+          el.textContent = "@" + String(p.handle).replace(/^@/, "");
+        }
+      });
+      var a = document.querySelectorAll(".mesh-user-avatar");
+      a.forEach(function(el) {
+        if (p.avatar_url) {
+          el.src = p.avatar_url;
+          el.classList.remove("hidden");
+        }
+      });
+    });
+  }
 </script>
