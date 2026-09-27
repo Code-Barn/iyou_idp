@@ -10,7 +10,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ## TODO Registry
 
-### Ecosystem Bar Apps (19-App Ecosystem Roster)
+### Ecosystem Bar Apps (20-App Ecosystem Roster)
 
 | App | Repo | TODO.md | Auth Status | Key Items |
 |:---|:---|:---|:---|:---|
@@ -33,6 +33,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | iyou_stay | `~/CODE_BASE/iyou_stay/` | [TODO.md](../../../iyou_stay/TODO.md) | 🟡 Onboarding | Hospitality & Accommodation. Color: `yellow`. |
 | iyou_dev | `~/CODE_BASE/iyou_dev/` | [TODO.md](../../../iyou_dev/TODO.md) | 🟡 Onboarding | Developer Portal & API Docs. Color: `zinc`. |
 | iyou_spot | `~/CODE_BASE/iyou_spot/` | [TODO.md](../../../iyou_spot/TODO.md) | 🟡 Onboarding | Local Discovery & Recommendations. Color: `pink`. |
+| iyou_baba | `~/CODE_BASE/iyou_baba/` | [TODO.md](../../../iyou_baba/TODO.md) | 🟢 Operational (PKCE Secretless) | Sovereign Sticker Vault, Discovery Index & Curation Foundry. Color: `blue`. Domain: `baba.iyou.me`. Dev port: 8016. Cookie namespaces: `baba_sessionid`, `baba_csrftoken`. |
 
 ### Supporting Projects (Not in Ecosystem Bar)
 
@@ -109,10 +110,10 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 | Milestone / Ticket | Target Repo | Status | Notes |
 |:---|:---|:---|:---|
-| GEO-001 — L0 Scope Preservation | All 19 apps | Complete | Client-side geographic scope preserver (`initEcosystemScopePreservation` + `data-app-slug`) automatically rewrites cross-app anchors while preserving non-scoped roots (`idp`, `dev`). |
-| GEO-002 — L1 Auth-Gated Brand Lockup | All 19 apps | Complete | Anonymous users see static monospace badge; authenticated users receive interactive scope capsule (`#geo-scope-trigger-btn`). |
-| GEO-003 — Hierarchical Popover Ladder Modal | All 19 apps | Complete | Embedded `#geo-scope-modal` with right-to-left tier rendering, quick scope search, switch actions, and localStorage history. |
-| GEO-004 — Fleet Template Regeneration | 17 Satellites | Complete | Fleet-wide templates regenerated via `scripts/regenerate_all.py` without Layer 2 drift. Verified with reference satellites `iyou_play` and `iyou_wun`. |
+| GEO-001 — L0 Scope Preservation | All 20 apps | Complete | Client-side geographic scope preserver (`initEcosystemScopePreservation` + `data-app-slug`) automatically rewrites cross-app anchors while preserving non-scoped roots (`idp`, `dev`). |
+| GEO-002 — L1 Auth-Gated Brand Lockup | All 20 apps | Complete | Anonymous users see static monospace badge; authenticated users receive interactive scope capsule (`#geo-scope-trigger-btn`). |
+| GEO-003 — Hierarchical Popover Ladder Modal | All 20 apps | Complete | Embedded `#geo-scope-modal` with right-to-left tier rendering, quick scope search, switch actions, and localStorage history. |
+| GEO-004 — Fleet Template Regeneration | 18 Satellites | Complete | Fleet-wide templates regenerated via `scripts/regenerate_all.py` without Layer 2 drift. Verified with reference satellites `iyou_play` and `iyou_wun`. |
 
 ---
 

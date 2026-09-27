@@ -177,12 +177,12 @@ Phase 2 secures the protocol against corporate, jurisdictional, and legal captur
 1. **DNS & Apex Domains:**
    - Primary apex: `iyou.me`
    - Infrastructure roots: `home.iyou.me`, `idp.iyou.me`, `k3s.iyou.me`
-   - Satellite endpoints (19 apps): `wun.iyou.me`, `poly.iyou.me`, `name.iyou.me`, `hive.iyou.me`, `ride.iyou.me`, `dctech.iyou.me`, `safe.iyou.me`, `talk.iyou.me`, `clar.iyou.me`, `play.iyou.me`, `blog.iyou.me`, `help.iyou.me`, `draw.iyou.me`, `life.iyou.me`, `walk.iyou.me`, `stay.iyou.me`, `dev.iyou.me`, `spot.iyou.me`, `shop.iyou.me`.
+   - Satellite endpoints (20 apps): `wun.iyou.me`, `poly.iyou.me`, `name.iyou.me`, `hive.iyou.me`, `ride.iyou.me`, `dctech.iyou.me`, `safe.iyou.me`, `talk.iyou.me`, `clar.iyou.me`, `play.iyou.me`, `blog.iyou.me`, `help.iyou.me`, `draw.iyou.me`, `life.iyou.me`, `walk.iyou.me`, `stay.iyou.me`, `dev.iyou.me`, `spot.iyou.me`, `baba.iyou.me`.
 2. **Canonical Code Repositories:**
    - Coordination Hub: `omni_social`
    - Cryptographic Core: `did_rust`
    - Enclaves: `iyou_home`, `iyou_mobile`
-   - Satellites: All 19 Django satellite codebases
+   - Satellites: All 20 satellite codebases
    - Infrastructure: `k3s_vm`
 3. **Decentralized Git Mirrors:**
    - Radicle project IDs for sovereign peer-to-peer git replication
