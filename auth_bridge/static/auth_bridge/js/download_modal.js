@@ -12,8 +12,8 @@
 
   var CACHE_KEY = 'iyou_home_latest_release';
   var GITHUB_API_URL = 'https://api.github.com/repos/Code-Barn/iyou_home/releases/latest';
-  var IPFS_FALLBACK_URL = 'https://ipfs.io/ipfs/QmfKNn6iVjqo47r5zvwAH9k9mCFeotDLS4mGn1hZ7ETZjH/';
-  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:36aa52f89e030d0a0daf79dffadef7b8ec8277b2&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce';
+  var IPFS_FALLBACK_URL = 'https://ipfs.io/ipfs/QmccNj2FErKMBKi6r6g9W1wErnrskKJ6sgFWTUbYHRw9aS/';
+  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:fce87647422c7c326ff6d59ddda462a57de8fd56&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce';
 
   function detectOS() {
     var ua = navigator.userAgent || navigator.platform || '';

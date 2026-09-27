@@ -92,9 +92,25 @@ class EcosystemReleasesContextProcessorTest(TestCase):
             "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.2/iyou-home_0.2.2.torrent",
             html,
         )
-        self.assertIn("https://ipfs.io/ipfs/QmfKNn6iVjqo47r5zvwAH9k9mCFeotDLS4mGn1hZ7ETZjH/", html)
-        self.assertIn("36aa52f89e030d0a0daf79dffadef7b8ec8277b2", html)
-        self.assertIn("91f411d3870be14625c1519aa861319e674780ab2f7dfd5efa42e41b4e3cc761", html)
-        self.assertIn("9445c8a98a73ffea9eadd9bb982094c8243cd78eb67a5710f377758b058ce9c9", html)
-        self.assertIn("426c9f3350d8d29e99d6b68beec1a9d1c169c5d51237b04977686e2c3f14271a", html)
-        self.assertIn("2726b36c65bd14e173cd044e66ce98fe7f1fdadda572ab3b720bdd416a5757b5", html)
+        self.assertIn(
+            "https://ipfs.io/ipfs/QmccNj2FErKMBKi6r6g9W1wErnrskKJ6sgFWTUbYHRw9aS/", html
+        )
+        self.assertIn("fce87647422c7c326ff6d59ddda462a57de8fd56", html)
+
+        expected_sha256 = {
+            "iyou-home_0.2.2_x64-setup.exe": (
+                "b5074c4ab8064b252956ee5890be330dc8c48c533283f3bd906a82580a82935c"
+            ),
+            "iyou-home_0.2.2_x64.dmg": (
+                "b809a8d84228c9bcb7487dd2ddf6cb650de7f4c85ce31e6a91552eb46aa8bc1f"
+            ),
+            "iyou-home_0.2.2_amd64.deb": (
+                "96fc57733d03a734cb7efef3f681e4a0c3e86a72f85d4dc26450b865380da630"
+            ),
+            "iyou-home_0.2.2_amd64.AppImage": (
+                "9715928adcf3bdbacaeac58b29455773b16b6550ece024501e9f3df7437d3779"
+            ),
+        }
+        for asset, digest in expected_sha256.items():
+            with self.subTest(asset=asset):
+                self.assertIn(digest, html)
