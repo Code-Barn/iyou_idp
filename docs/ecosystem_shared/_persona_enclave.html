@@ -17,7 +17,7 @@
       onload="this.classList.remove('hidden')"
     />
     <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" id="active-persona-dot" title="Sovereign Key Active"></span>
-    <span id="active-persona-display-name" class="mesh-user-handle truncate max-w-[140px] font-mono text-xs font-medium text-slate-700 dark:text-slate-200">
+    <span id="active-persona-display-name" class="mesh-user-handle truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[140px] font-mono text-xs font-medium text-slate-700 dark:text-slate-200">
       {{ user_display_label|default:user.username|truncatechars:18 }}
     </span>
     <span class="text-[10px] px-1 py-0.5 rounded font-bold transition-colors duration-150 {% if active_persona_level == 1 or not active_persona_level %}bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300{% else %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% endif %}" id="active-persona-level">

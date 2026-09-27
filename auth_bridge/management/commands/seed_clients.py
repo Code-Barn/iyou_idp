@@ -259,6 +259,19 @@ SATELLITES = [
             "http://127.0.0.1:8019/",
         ],
     },
+    {
+        "client_id": "iyou-baba-satellite-client",
+        "name": "iyou_baba (Sovereign Sticker Vault)",
+        "redirects": [
+            "https://baba.iyou.me/oidc/callback/",
+            "http://127.0.0.1:8016/oidc/callback/",
+            LOCAL_DEV_FALLBACK,
+        ],
+        "post_logout_redirects": [
+            "https://baba.iyou.me/",
+            "http://127.0.0.1:8016/",
+        ],
+    },
 ]
 
 

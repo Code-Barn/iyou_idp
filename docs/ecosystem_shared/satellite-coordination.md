@@ -105,6 +105,17 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ---
 
+### Universal Geographic Subdomain Navigation System Rollout
+
+| Milestone / Ticket | Target Repo | Status | Notes |
+|:---|:---|:---|:---|
+| GEO-001 — L0 Scope Preservation | All 19 apps | Complete | Client-side geographic scope preserver (`initEcosystemScopePreservation` + `data-app-slug`) automatically rewrites cross-app anchors while preserving non-scoped roots (`idp`, `dev`). |
+| GEO-002 — L1 Auth-Gated Brand Lockup | All 19 apps | Complete | Anonymous users see static monospace badge; authenticated users receive interactive scope capsule (`#geo-scope-trigger-btn`). |
+| GEO-003 — Hierarchical Popover Ladder Modal | All 19 apps | Complete | Embedded `#geo-scope-modal` with right-to-left tier rendering, quick scope search, switch actions, and localStorage history. |
+| GEO-004 — Fleet Template Regeneration | 17 Satellites | Complete | Fleet-wide templates regenerated via `scripts/regenerate_all.py` without Layer 2 drift. Verified with reference satellites `iyou_play` and `iyou_wun`. |
+
+---
+
 ## Dependent Identity & Graduation — Phase Milestones (Satellite Backlogs)
 
 Roadmap for `OMNI-DEP-GRAD-SPEC-V1` (`docs/specs/DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`). Each satellite implements its slice of the dependent identity / sovereign graduation lifecycle. Full checklist in `OMNI_SOCIAL_DEVELOPER_GUIDE.md` §7a.

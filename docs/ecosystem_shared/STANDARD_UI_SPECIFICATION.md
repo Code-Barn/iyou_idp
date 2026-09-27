@@ -1,7 +1,7 @@
 # Standard UI Specification: Sovereign Mesh Navigation & Persona Enclave
 
 **Canonical Reference for Layer 0 Ecosystem Bar, Layer 1 Standard Header, Modular Persona Enclave, Mascot Footer, and PWA Standards**  
-**Version:** 3.0.0  
+**Version:** 2.1.0  
 **Status:** Authoritative Ecosystem Specification  
 
 ---
@@ -16,7 +16,7 @@ The iYou ecosystem presentation tier is structured into strict horizontal layers
 │          Light: deep #0B0F19 / Dark: crisp slate-100 (inverted)            │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ Layer 1: Application Brand & Sovereign Identity Header                      │
-│   ├── Left: Brand Lockup (squircle stamp + iyou_{slug} + DOMAIN BADGE)     │
+│   ├── Left: Brand Lockup (squircle stamp + iyou_{slug} + DESCRIPTOR / GEO) │
 │   └── Right:                                                               │
 │       ├── Notification Bell (#notification-bell-btn)                       │
 │       ├── Modular Persona Enclave Partial (_persona_enclave.html)          │
@@ -146,15 +146,21 @@ All Layer 1 headers across the ecosystem share one mandatory width and spacing c
 
 ```html
 <header class="relative z-30 border-b backdrop-blur-sm transition-colors duration-200 bg-white/90 border-slate-200 text-slate-900 dark:bg-[#0B0F19]/90 dark:border-gray-800 dark:text-gray-100">
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-    <!-- Left: Brand Lockup -->
+  <div class="w-full max-w-7xl mx-auto px-2 sm:px-4 h-16 flex items-center justify-between">
+    <!-- Left: Brand Lockup & Geo-Scope Capsule -->
     <!-- Right: Action & Identity Controls -->
   </div>
 </header>
 ```
 
 - **Outer `<header>`**: `relative z-30 border-b backdrop-blur-sm transition-colors duration-200 bg-white/90 border-slate-200 text-slate-900 dark:bg-[#0B0F19]/90 dark:border-gray-800 dark:text-gray-100`.
-- **Inner flex row**: `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between` — fixed 64px (h-16) header height floor with items vertically centered.
+- **Inner flex row**: `w-full max-w-7xl mx-auto px-2 sm:px-4 h-16 flex items-center justify-between` — responsive padding floor (`px-2 sm:px-4`) providing maximum horizontal breathing room for micro-screens (320px–375px), with fixed 64px (`h-16`) header height floor and items vertically centered.
+- **Enlarged Brand Logo**: Responsive squircle brand stamp `class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-sm border border-slate-200 dark:border-slate-800 shrink-0 group-hover:scale-105 transition-transform duration-150"` (44px–48px rendering slot, matching `logo_square_sm.png` dual-asset hierarchy, scaled up from previous 32-36px).
+- **Responsive Geo-Scope Capsule vs. Brandmark Descriptor Pill Interchange**:
+  - When **Authenticated** (`{% if user.is_authenticated or request.user.is_authenticated %}`): Renders the interactive Geographic Scope Capsule wrapped in `<div class="relative inline-block text-left shrink-0" id="geo-scope-container">`, with compact pill button (`#geo-scope-trigger-btn`), pulsing status dot (`shrink-0`), responsive label `<span id="geo-scope-display-label" class="hidden sm:inline font-bold uppercase tracking-wider text-[10px]">` (label hidden on micro-screens to prevent overflow, showing only icon and pulse indicator), and interactive popover ladder modal.
+  - When **Unauthenticated** (`{% else %}`): Renders the static Brandmark Descriptor Pill (`<div id="brand-descriptor-pill" class="inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">__APP_DESCRIPTOR__</div>`). Because the unauthenticated header contains minimal right-side controls ("Sovereign Key Required" capsule + "Authenticate" button), the brand descriptor pill fits comfortably across all viewport widths down to 320px without requiring breakpoint hiding or `xs:` responsive rules.
+- **Mobile Action Pruning**: Direct action links `[ ⚙️ Edit ]` and `Sign Out` use `hidden md:inline-flex` so they are pruned from the primary header on smaller screens (below `md:` / 768px). Mobile users access profile editing and session termination via the Persona Enclave dropdown flyout or mobile bottom navigation dock.
+- **Persona Micro-Truncation**: Active persona handle (`#active-persona-display-name`) incorporates granular breakpoint clamps: `truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[140px]`.
 - Data-visualization viewports (`name`, `draw`, `spot`) may permit full-bleed `<main class="w-full">`, but headers and footers **MUST** strictly remain `max-w-7xl mx-auto`.
 
 ### 3.2 Standard Header Components
@@ -165,76 +171,119 @@ The canonical `_standard_header.html` provides (all slots visible in both authen
    window.CURRENT_SESSION_DID = "{{ current_session_did|default:user.username|escapejs }}";
    ```
 
-2. **Left Brand Lockup (Squircle + Name + Domain Badge)**:
+2. **Left Brand Lockup (Squircle + Name + Auth-Interchange Pill/Capsule)**:
    ```html
-   <div class="flex items-center gap-3">
-     <a href="/" class="flex items-center gap-2 text-2xl font-bold tracking-tight hover:opacity-90 transition-opacity" title="iyou_{app_slug}">
+   <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+     <a href="/" class="flex items-center gap-2 text-2xl font-bold tracking-tight hover:opacity-90 transition-opacity shrink-0 group focus:outline-none" title="iyou_{app_slug}">
        <img src="{% static 'img/logo_square_sm.png' %}"
             onerror="this.onerror=null;this.src='{% static 'img/logo_square.png' %}';"
             alt="{app_slug}"
-            class="h-8 w-8 aspect-square rounded-lg object-cover shadow-sm border border-slate-200 dark:border-slate-800 group-hover:scale-105 transition-transform duration-150" />
+            class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-sm border border-slate-200 dark:border-slate-800 shrink-0 group-hover:scale-105 transition-transform duration-150" />
        <span class="flex items-center">
          <span class="text-slate-400 dark:text-slate-500 font-medium">iyou</span>
          <span class="text-{color}-600 dark:text-{color}-400 font-extrabold">_{slug}</span>
        </span>
      </a>
-     <span class="hidden sm:inline-block px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60">
-       __BADGE__
-     </span>
+
+     {% if user.is_authenticated or request.user.is_authenticated %}
+       <!-- Geo-Scope Capsule (Authenticated Session) -->
+       <div class="relative inline-block text-left shrink-0" id="geo-scope-container">
+         <button type="button"
+                 id="geo-scope-trigger-btn"
+                 class="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-xs font-mono border border-{color}-300 dark:border-{color}-800/60 bg-{color}-50/70 dark:bg-{color}-950/30 text-{color}-700 dark:text-{color}-300 hover:bg-{color}-100 dark:hover:bg-{color}-900/40 transition select-none focus:outline-none"
+                 aria-expanded="false"
+                 aria-haspopup="dialog"
+                 onclick="toggleGeoScopeModal(event)">
+           <span class="w-1.5 h-1.5 rounded-full bg-{color}-500 animate-pulse shrink-0"></span>
+           <span id="geo-scope-display-label" class="hidden sm:inline font-bold uppercase tracking-wider text-[10px]">
+             {% if request.geographic_scope %}{{ request.geographic_scope|upper }}{% else %}GLOBAL MESH{% endif %}
+           </span>
+           <svg class="w-3 h-3 text-{color}-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+           </svg>
+         </button>
+       </div>
+     {% else %}
+       <!-- Brandmark Descriptor Pill (Unauthenticated Session) -->
+       <div id="brand-descriptor-pill"
+            class="inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">
+         __APP_DESCRIPTOR__
+       </div>
+     {% endif %}
    </div>
    ```
    Brand text renders at `text-2xl font-bold tracking-tight` with `iyou` in `font-medium text-slate-400` and `_{slug}` in `font-extrabold text-{color}-600`.
 
-3. **Notification Bell**: Button `#notification-bell-btn` with safe function guard:
+3. **Notification Bell**: Button `#notification-bell-btn` (`shrink-0`) with safe function guard:
    ```html
    onclick="typeof toggleNotificationDrawer === 'function' && toggleNotificationDrawer()"
    ```
    Unread badge ping: `#notification-unread-dot` using the app accent color.
 
-4. **Modular Persona Enclave Partial**: `{% include "includes/_persona_enclave.html" %}` — renders `@handle` and level chips (`L1` violet, `L2+` amber) via the canonical context processor (Section 6).
+4. **Modular Persona Enclave Partial**: `{% include "includes/_persona_enclave.html" %}` — renders `@handle` with responsive micro-truncation (`truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[140px]`) and level chips (`L1` violet, `L2+` amber) via the canonical context processor (Section 6).
 
-5. **Direct Actions** (authenticated only):
-   - `[ ⚙️ Edit ]` linking to `{% url 'dashboard' %}`
-   - `Sign Out` linking to `{% url 'oidc_logout' %}`
+5. **Direct Actions** (authenticated only, mobile-pruned):
+   - `[ ⚙️ Edit ]` (`hidden md:inline-flex`) linking to `{% url 'dashboard' %}`
+   - `Sign Out` (`hidden md:inline-flex`) linking to `{% url 'oidc_logout' %}`
 
 6. **Logged-Out Canonical Poly Flow** (Section 3.4):
    - Soft capsule pill for "Sovereign Key Required"
    - Solid vibrant accent button for "Authenticate"
 
-7. **Outline Theme Toggle**: Sun in light mode, Moon in dark mode (Section 3.5).
+7. **Feature-Gated Persistent L2 Collapser (`#l2-toggle-header-btn`)**:
+   Positioned directly preceding `#theme-toggle`, gated by `{% if SHOW_L2_TOGGLE %}`:
+   ```html
+   {% if SHOW_L2_TOGGLE %}
+   <button id="l2-toggle-header-btn" type="button"
+           onclick="toggleL2Header()"
+           title="Toggle __L2_LABEL__ (L2)"
+           aria-label="Toggle __L2_LABEL__"
+           class="flex items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition text-xs shrink-0">
+     <svg class="w-4 h-4 stroke-current stroke-2" fill="none" viewBox="0 0 24 24">
+       <path d="M4 6h16M4 12h16M4 18h7"/>
+     </svg>
+   </button>
+   {% endif %}
+   ```
+   - **Feature Flag Contract**: Server setting `SHOW_L2_TOGGLE = env.bool("SHOW_L2_TOGGLE", default=False)` in general satellites, overridden to `True` where Layer 2 ribbons exist (e.g. `iyou_wun`).
+   - **Client DOM Check Rule**: In addition to template feature-gating, `theme.js` implements a DOM check rule that auto-hides `#l2-toggle-header-btn` (`btn.style.display = 'none'`) if `#app-l2-ribbon` is absent on the rendered page, preventing inert toggles.
+   - **State Persistence**: Toggling adds/removes `.l2-collapsed` on both `document.body` and `document.documentElement`, persisted in `localStorage.setItem('{slug}_l2_collapsed', ...)`.
 
-### 3.3 Domain Badge
-A rectangular monospace label rendered inline in the brand lockup, providing immediate semantic classification for every satellite app:
+8. **Outline Theme Toggle**: Sun in light mode, Moon in dark mode (Section 3.5), with `shrink-0`.
+
+### 3.3 Brandmark Descriptor Registry
+A rounded monospace pill (`#brand-descriptor-pill`) rendered inline in the unauthenticated brand lockup, providing immediate semantic domain classification for visitors before login. Upon authentication, this descriptor swaps dynamically to the interactive Geographic Scope Capsule (`#geo-scope-container`).
 
 ```html
-<span class="hidden sm:inline-block px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60">
-  __BADGE__
-</span>
+<div id="brand-descriptor-pill"
+     class="inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">
+  __APP_DESCRIPTOR__
+</div>
 ```
 
-| App | Badge Label |
-|:---|:---|
-| `idp` | `IDENTITY ROOT` |
-| `wun` | `SOCIAL HUB` |
-| `poly` | `CONSENSUS ENGINE` |
-| `name` | `SOVEREIGN` |
-| `hive` | `EVIDENCE VAULT` |
-| `ride` | `TRANSIT` |
-| `dctech` | `HARDENING` |
-| `safe` | `CRISIS TRIAGE` |
-| `talk` | `SUPPORT` |
-| `clar` | `DIRECTORY` |
-| `play` | `ATHLETICS` |
-| `blog` | `PUBLISHING` |
-| `help` | `COMMUNITY` |
-| `draw` | `CANVAS` |
-| `life` | `MEMORIAL` |
-| `walk` | `TRANSIT` |
-| `stay` | `HOSPITALITY` |
-| `dev` | `OPERATIONS` |
-| `spot` | `EXPLORER` |
+| App | Descriptor Label | Semantic Domain |
+|:---|:---|:---|
+| `idp` | `IDENTITY PROVIDER` | Root Identity Provider |
+| `wun` | `SOCIAL HUB` | Profile & Sovereign Space |
+| `poly` | `CONSENSUS ENGINE` | Consensus & Governance |
+| `name` | `GENEALOGY REGISTRY` | Decentralized Naming & Registry |
+| `hive` | `LEGAL VAULT` | Communal Vaults & Legal Proofs |
+| `ride` | `TRANSIT AUCTION` | Sovereign Transport & Dispatch |
+| `dctech` | `CORPORATE SITE` | Developer Portal & Hardening |
+| `safe` | `CRISIS TRIAGE` | Key Escrow & Emergency Recovery |
+| `talk` | `PEER SUPPORT` | P2P Encrypted Comms & Support |
+| `clar` | `DIRECTORY LEDGER` | Verification & Auditing Ledger |
+| `play` | `ATHLETICS MASTER` | Athletics, Media & Events |
+| `blog` | `SOVEREIGN PUBLISHING` | Censorship-Resistant Publishing |
+| `help` | `HELP & SUPPORT` | Documentation & User Guidance |
+| `draw` | `CANVAS` | Collaborative Canvas & Visual Mesh |
+| `life` | `LEGACY ARCHIVE` | Memorial & Legacy Archive |
+| `walk` | `PEDESTRIAN MESH` | Navigation & Pedestrian Mesh |
+| `stay` | `HOSPITALITY` | Sovereign Hospitality & Spaces |
+| `dev` | `DEVELOPER PORTAL` | Mesh Operations & Developer Tools |
+| `spot` | `LOCAL DISCOVERY` | Geolocation & Local Discovery |
 
-The badge is sourced from `APP_METADATA` in `scripts/generate_templates.py` and is templated via `__BADGE__` → `{badge}` in the standard header generator.
+The descriptor is sourced from `APP_DESCRIPTORS` in `scripts/generate_templates.py` and is templated via `__APP_DESCRIPTOR__` in the standard header generator.
 
 ### 3.4 Logged-Out Authentication Block (The Poly Standard)
 When no active session exists, the standard header renders a two-part authenticated gate matching `iyou_poly` production screenshots:
@@ -275,7 +324,7 @@ The `#theme-toggle` button uses the `block dark:hidden` / `hidden dark:block` pa
 ```
 
 ### 3.6 Dual-Asset Logo Hierarchy
-To optimize performance and eliminate loading high-res square master assets (~512–768px) for the 36–40px (`w-9 h-9 sm:w-10 sm:h-10`) rendering slot, satellites implement a dual-asset logo hierarchy:
+To optimize performance and eliminate loading high-res square master assets (~512–768px) for the 44–48px (`w-11 h-11 sm:w-12 sm:h-12 rounded-xl`) rendering slot, satellites implement a dual-asset logo hierarchy:
 - **`static/img/logo_square_sm.png`**: 64×64 or 96×96 px — dedicated for the Layer 1 header squircle stamp. Minimizes network payload and ensures sharp rasterization on standard and Retina displays.
 - **`static/img/logo_square.png`**: High-res square master — dedicated for `_footer.html`, favicons, Apple Touch icons, and PWA icon generation.
 - **Graceful Fallback Invariant**: Standard headers must implement the `onerror` fallback:
@@ -284,17 +333,20 @@ To optimize performance and eliminate loading high-res square master assets (~51
   ```
   This ensures satellites that haven't generated `logo_square_sm.png` yet safely resolve to `logo_square.png` without displaying a broken image box.
 
-### 3.7 Unified Standard Header — No Custom Exceptions
-All 19 satellite applications now receive the standardized canonical `_standard_header.html` from `generate_templates.py` — no exceptions. The domain badge (`APP_METADATA.badge`) provides the per-app differentiation previously handled by custom layouts:
+### 3.7 Unified Standard Header — Deprecation of PRESERVE_LAYER_1_APPS
+All 19 satellite applications now receive the standardized canonical `_standard_header.html` from `generate_templates.py` — no custom exceptions are preserved. The domain badge (`APP_METADATA.badge`) provides the per-app semantic classification.
+
+`PRESERVE_LAYER_1_APPS` is formally deprecated and cleared across all generator and synchronization tooling:
 
 ```python
-PRESERVE_LAYER_1_APPS = set()  # All apps use the canonical header
+# PRESERVE_LAYER_1_APPS is emptied: all apps receive canonical Layer 1 header
+PRESERVE_LAYER_1_APPS = set()
 ```
 
-- **`iyou_poly`**: Now renders `CONSENSUS ENGINE` badge via the canonical header — no custom governance layout.
-- **`iyou_name`**: Now renders `SOVEREIGN` badge via the canonical header — no custom registry styling.
+- **`iyou_poly`**: Removed from preserve set; now renders the `CONSENSUS ENGINE` badge via the canonical header.
+- **`iyou_name`**: Removed from preserve set; now renders the `SOVEREIGN` badge via the canonical header.
 
-The `--skip-header` flag and `PRESERVE_LAYER_1_APPS` guard are retained for future use but no longer activated for any satellite.
+The `--skip-header` flag is retained only for local debugging/development workflows, but all 19 satellite applications in the sovereign mesh strictly adhere to this universal Layer 1 header contract.
 
 ---
 
