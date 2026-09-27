@@ -626,12 +626,12 @@ class EmergencyBypassLockdownTest(TestCase):
 
 
 class SatelliteRosterTest(TestCase):
-    def test_eighteen_satellites_seeded(self):
+    def test_nineteen_satellites_seeded(self):
         from django.core.management import call_command
         from oidc_provider.models import Client as OIDCClient
 
         call_command("seed_clients")
-        self.assertEqual(OIDCClient.objects.count(), 18)
+        self.assertEqual(OIDCClient.objects.count(), 19)
 
         help_client = OIDCClient.objects.get(client_id="iyou-help-satellite-client")
         self.assertEqual(help_client.name, "iyou_help (Mutual Aid)")
@@ -647,6 +647,12 @@ class SatelliteRosterTest(TestCase):
         self.assertEqual(spot_client.name, "iyou_spot (Muster'd Ezine)")
         self.assertIn("https://spot.iyou.me/oidc/callback/", spot_client.redirect_uris)
         self.assertIn("http://127.0.0.1:8019/oidc/callback/", spot_client.redirect_uris)
+
+        baba_client = OIDCClient.objects.get(client_id="iyou-baba-satellite-client")
+        self.assertEqual(baba_client.name, "iyou_baba (Sovereign Sticker Vault)")
+        self.assertEqual(baba_client.client_type, "public")
+        self.assertIn("https://baba.iyou.me/oidc/callback/", baba_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8016/oidc/callback/", baba_client.redirect_uris)
 
 
 class CacheFallbackTest(TestCase):

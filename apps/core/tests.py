@@ -93,9 +93,9 @@ class EcosystemReleasesContextProcessorTest(TestCase):
             html,
         )
         self.assertIn(
-            "https://ipfs.io/ipfs/QmccNj2FErKMBKi6r6g9W1wErnrskKJ6sgFWTUbYHRw9aS/", html
+            "https://ipfs.io/ipfs/QmUA8mAoo7fTZbG1hwvChbSVbD3trAhACBHjzYQDAoFDQu/", html
         )
-        self.assertIn("fce87647422c7c326ff6d59ddda462a57de8fd56", html)
+        self.assertIn("9494b77a7837fcd0347d3d3e42db8de9117c504a", html)
 
         expected_sha256 = {
             "iyou-home_0.2.2_x64-setup.exe": (
