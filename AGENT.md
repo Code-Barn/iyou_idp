@@ -32,10 +32,25 @@ short-circuited to the beta gate screen — HTTP 403, template
 - The gate is enforced at every auth ingress: `verify_signature`,
   `mobile_verify_signature`, `check_challenge_status`, `managed_login`, the
   OAuth and passkey flows, and the OIDC front-channel `SovereignAuthorizeView`.
-- Invite redemption: `POST /gate/redeem/` (name `gate_redeem`) validates a key
-  from `BETA_INVITE_KEYS` (or a waitlisted DID) and stamps
+- Invite redemption: `GET|POST /gate/redeem/` (name `gate_redeem`) accepts an
+  RFC-002 invite capability token minted by `iyou_home` **or** a legacy static
+  key from `BETA_INVITE_KEYS` (or a waitlisted DID), and stamps
   `session["beta_access"]`; the gate page itself is `/gate/` (name `gate`,
   `BetaGateView`).
+- **RFC-002 token redemption** (`auth_bridge/invite_tokens.py`): a submission is
+  treated as a cryptographic token when it decodes to a JSON object carrying a
+  `signature` field, as raw JSON, Base64URL, or Base58. The token is admitted
+  only after schema → expiry → signature → issuer authorization → use budget,
+  in that order. The signature is Ed25519 over `SHA-256` of the canonical
+  payload (the ten signed fields, sorted keys, no whitespace, `signature`
+  excluded) — byte-identical to the iyou_home minter
+  (`src-tauri/src/invites.rs`); `satellite_id` defaults to `""` for portable
+  tokens. The issuer must be `ADMIN_DID` or listed in `BETA_ACCESS_ALLOWLIST`.
+  Use counts are claimed atomically at `airlock:nonce:{nonce}:uses` and must
+  stay `<= max_uses`. On success the issuer DID is recorded on both the session
+  and `User.beta_invite_issuer_did` / `beta_invite_nonce` /
+  `beta_invite_redeemed_at` for Web-of-Trust provenance. `guest`-tier tokens are
+  read-only and never admit. Bearer secrets are redacted before logging.
 - `SYSTEM_GATE_ENABLED` is injected into all templates via
   `config.context_processors.global_settings`.
 
@@ -86,6 +101,8 @@ iyou_idp/
 │   ├── backend.py            # DIDAuthBackend + evaluate_sovereign_admin_posture
 │   ├── admin_views.py        # DID-based admin login views
 │   ├── views.py              # verify_signature, ChallengeView, LoginPageView, etc.
+│   ├── invite_tokens.py      # RFC-002 capability-token verification (Airlock)
+│   ├── resilient_cache.py    # ResilientCache (Redis → LocMem) + atomic quota claims
 │   ├── views_oauth.py        # Tier 1 OAuth: OAuthInitiateView, OAuthCallbackView
 │   ├── pipeline.py           # Smart-Merge: process_oauth_identity()
 │   ├── oidc.py               # OIDC userinfo/id-token hooks (custodial_did)

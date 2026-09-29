@@ -1027,7 +1027,7 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/managed-login/            → managed_login
 /auth/logout/                   → GlobalLogoutView
 /gate/                          → BetaGateView (Sovereign Airlock)
-/gate/redeem/                   → redeem_beta_invite (invite key / waitlist DID)
+/gate/redeem/                   → redeem_beta_invite (RFC-002 token / invite key / waitlist DID)
 /auth/admin/did-login/          → custom_admin_login
 /auth/admin/did-verify/         → custom_admin_verify
 /auth/admin/did-dashboard/      → custom_admin_dashboard
@@ -1072,7 +1072,7 @@ carrying `request.session["beta_access"]` receives HTTP **403** — the
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/gate/` | Airlock screen — invite-key + waitlist-DID form (`gate`, `BetaGateView`) |
-| POST | `/gate/redeem/` | Redeem a one-time key from `BETA_INVITE_KEYS` (or a waitlisted DID); success stamps `session["beta_access"]` and returns to the pending destination (`gate_redeem`) |
+| GET, POST | `/gate/redeem/` | Redeem an RFC-002 invite capability token, a one-time key from `BETA_INVITE_KEYS`, or a waitlisted DID; success stamps `session["beta_access"]` and returns to the pending destination (`gate_redeem`) |
 
 Enforcement lives in `_did_passes_gate(request, did)` → `_gate_response()` /
 `_render_beta_gate()` (`auth_bridge/views.py`) and is applied on
@@ -1080,6 +1080,53 @@ Enforcement lives in `_did_passes_gate(request, did)` → `_gate_response()` /
 `managed_login`, the OAuth/passkey flows, and the OIDC front-channel
 `SovereignAuthorizeView`. `SYSTEM_GATE_ENABLED` is injected into all templates
 by `config.context_processors.global_settings`.
+
+### RFC-002 Invite Capability Tokens
+
+`iyou_home` mints signed, quota-limited admission tokens; `iyou_idp` admits
+them at `/gate/redeem/`. Verification lives in `auth_bridge/invite_tokens.py`
+and is the byte-level counterpart of the minter
+(`iyou_home/src-tauri/src/invites.rs`, RFC-002 §5.1).
+
+A submission is treated as a cryptographic token when it decodes to a JSON
+object carrying a `signature` field. Three encodings are accepted so a direct
+link tap works: raw JSON, Base64URL (`/gate/redeem/?invite=…` or `?t=…`), and
+Base58 (the iyou_home QR form). Anything else falls through to the legacy
+`BETA_INVITE_KEYS` / `BETA_ACCESS_ALLOWLIST` path.
+
+| Step | Check | Denial code |
+|------|-------|-------------|
+| 1 | Schema: `v=1`, `issuer_did` is an Ed25519 `did:key`, `nonce` ≥ 32 hex chars, `1 ≤ max_uses ≤ 4`, tier ∈ `admin｜member｜guest`, lifetime ≤ 90 days | `INVITE_INVALID` |
+| 2 | Expiry: `expires_at > now` | `INVITE_EXPIRED` |
+| 3 | Signature: Ed25519 over `SHA-256(canonical payload)`, issuer key decoded from the `did:key` multicodec `0xed01` | `INVITE_INVALID` |
+| 4 | Issuer authorization: `issuer_did == ADMIN_DID` or in `BETA_ACCESS_ALLOWLIST` | `INVITE_UNAUTHORIZED` |
+| 5 | Tier: `guest` is read-only and never admits | `INVITE_SCOPE` |
+| 6 | Use budget: atomic claim at `airlock:nonce:{nonce}:uses`, reject at `> max_uses` | `INVITE_USED` |
+
+The **canonical payload** is the ten signed fields (`v`, `issuer_did`,
+`satellite_id`, `nonce`, `max_uses`, `uses_count`, `tier`, `created_at`,
+`expires_at`, `scope`) serialized with alphabetically sorted keys and no
+insignificant whitespace; `signature` is never part of it. A missing
+`satellite_id` is read as `""` (portable), matching how the minter encodes it.
+The signature is base58-encoded and may carry a multibase `z` prefix.
+
+Steps run in that order and fail fast, so a token is never billed against its
+use budget until it is proven authentic and unexpired. The counter is seeded
+from the issuer-declared `uses_count` and outlives the token only, and the
+claim is a single pinned `add` + `incr` on one cache backend
+(`ResilientCache.claim_unit`) so concurrent redemptions cannot over-admit. If
+no cache backend is reachable the claim fails **closed**.
+
+On success the issuer is recorded as Web-of-Trust provenance on the session
+(`beta_invite_issuer_did`, `beta_invite_nonce`, `beta_invite_tier`,
+`beta_invite_redeemed_at`) and, once the caller has proven their DID, durably
+on the `User` row (`beta_invite_issuer_did`, `beta_invite_nonce`,
+`beta_invite_redeemed_at`; migration `0008`). Invite submissions are bearer
+secrets and are redacted before they reach the logs.
+
+`auth_bridge/tests/test_invite_tokens.py` pins the canonicalization against a
+golden vector emitted by the real Rust minter, so any drift in field
+selection, key ordering, separators, digest, or signature encoding fails CI.
 
 ### Legal Consent Gate (GDPR Affirmative Consent)
 
@@ -1187,7 +1234,8 @@ placement strategy to avoid page-layout shift:
 ### Adding New Features [L469-477]
 
 1. Write a test first in `auth_bridge/tests/` (package: legacy flows in
-   `__init__.py`, graduation in `test_graduation.py`, passkeys in `test_passkeys.py`)
+   `__init__.py`, graduation in `test_graduation.py`, passkeys in `test_passkeys.py`,
+   RFC-002 invite redemption in `test_invite_tokens.py`)
 2. Implement the feature
 3. Run `uv run python manage.py test auth_bridge -v2`
 4. Run `uv run ruff check auth_bridge/`

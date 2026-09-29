@@ -33,7 +33,8 @@ from django.urls import reverse
 from oidc_provider.models import Client as OIDCClient, ResponseType, RSAKey as OIDCRSAKey
 
 from auth_bridge.models import User
-from auth_bridge.views import ResilientCache, _build_oidc_redirect, _is_safe_public_redirect, cache as views_cache
+from auth_bridge.resilient_cache import ResilientCache
+from auth_bridge.views import _build_oidc_redirect, _is_safe_public_redirect, cache as views_cache
 
 
 def _make_did(pub_bytes: bytes) -> str:

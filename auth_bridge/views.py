@@ -16,13 +16,11 @@
 """
 Views for authentication challenges and OIDC flows.
 """
-from django.http import JsonResponse, HttpResponseRedirect
+from django.http import JsonResponse, HttpResponseRedirect, HttpResponseNotAllowed
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from django.core.cache import cache as default_cache
-from django.core.cache.backends.locmem import LocMemCache
 from django.contrib.auth import login, logout as django_logout, get_user_model
 from django.shortcuts import render, redirect
 from django.urls import reverse
@@ -35,6 +33,8 @@ from django.conf import settings as django_settings
 
 from .models import User
 from .backend import evaluate_sovereign_admin_posture
+from .invite_tokens import InviteTokenError, parse_token_input, verify_invite_token
+from .resilient_cache import cache
 from apps.core.dids import generate_custodial_did
 import uuid
 import json
@@ -54,49 +54,6 @@ from oidc_provider.lib.utils.common import redirect as oidc_redirect
 from oidc_provider.compat import get_attr_or_callable
 
 logger = logging.getLogger(__name__)
-
-_locmem_fallback = LocMemCache("auth_bridge_locmem_fallback", {})
-
-
-class ResilientCache:
-    """
-    Cache wrapper that delegates to Django's configured default cache (e.g., Redis)
-    and gracefully falls back to an in-memory LocMemCache if Redis is unreachable
-    or stalls, ensuring challenge generation and verification never fail with 500.
-    """
-
-    def __init__(self, primary_cache=default_cache, fallback_cache=None):
-        self._primary = primary_cache
-        self._fallback = fallback_cache or _locmem_fallback
-
-    def get(self, key, default=None):
-        try:
-            val = self._primary.get(key, default)
-            if val is not None:
-                return val
-            return self._fallback.get(key, default)
-        except Exception as e:
-            logger.warning("Primary cache.get failed (%s); using in-memory fallback", e)
-            return self._fallback.get(key, default)
-
-    def set(self, key, value, timeout=300):
-        try:
-            self._primary.set(key, value, timeout=timeout)
-            self._fallback.set(key, value, timeout=timeout)
-        except Exception as e:
-            logger.warning("Primary cache.set failed (%s); using in-memory fallback", e)
-            self._fallback.set(key, value, timeout=timeout)
-
-    def delete(self, key):
-        try:
-            self._primary.delete(key)
-        except Exception as e:
-            logger.warning("Primary cache.delete failed (%s); using in-memory fallback", e)
-        finally:
-            self._fallback.delete(key)
-
-
-cache = ResilientCache()
 
 # Where to send the user after authentication when no explicit next_url is given.
 DEFAULT_NEXT_URL = django_settings.IDP_WUN_URL
@@ -136,6 +93,40 @@ def _did_passes_gate(request, did):
     if _beta_allowlisted_did(did):
         return True
     return _has_beta_session(request)
+
+
+def _redact_invite_submission(raw: str) -> str:
+    """
+    Truncate an invite submission before it reaches the logs.
+
+    An RFC-002 token is a bearer credential with a finite use budget, so echoing
+    it verbatim would hand a log reader a working redemption.
+    """
+    trimmed = (raw or "").strip()
+    return f"{trimmed[:12]}…({len(trimmed)} chars)" if len(trimmed) > 12 else trimmed
+
+
+def _record_invite_provenance(request, token):
+    """
+    Stamp RFC-002 issuer provenance onto the session.
+
+    The Web-of-Trust edge "who admitted this browser" stays attributable for
+    the life of the session even though the invite itself is a bearer secret.
+    """
+    request.session['beta_invite_issuer_did'] = token['issuer_did']
+    request.session['beta_invite_nonce'] = token['nonce']
+    request.session['beta_invite_tier'] = token['tier']
+    request.session['beta_invite_redeemed_at'] = int(timezone.now().timestamp())
+
+
+def _attach_invite_provenance(user, token):
+    """Persist RFC-002 issuer provenance on the User for durable audit."""
+    user.beta_invite_issuer_did = token['issuer_did']
+    user.beta_invite_nonce = token['nonce']
+    user.beta_invite_redeemed_at = timezone.now()
+    user.save(
+        update_fields=['beta_invite_issuer_did', 'beta_invite_nonce', 'beta_invite_redeemed_at']
+    )
 
 
 def _render_beta_gate(request, did=None, next_url=None, verified_did=None):
@@ -1258,38 +1249,71 @@ class BetaGateView(View):
         return _render_beta_gate(request, did=did, next_url=next_url)
 
 
-@require_POST
 @csrf_exempt
 def redeem_beta_invite(request):
     """
-    Redeem a beta invite key (or pre-approved DID) for this browser session.
+    Redeem a beta invite for this browser session.
+
+    Accepts either a legacy static key from ``BETA_INVITE_KEYS`` (or a
+    waitlisted DID), or an RFC-002 invite capability token minted by
+    `iyou_home`. Tokens arrive as raw JSON, Base64URL, or Base58 so a direct
+    link tap (``/gate/redeem/?invite=...`` or ``?t=...``) works as well as the
+    gate form's POST. A token must be schema-valid, unexpired, signed by an
+    authorized issuer, and within its use budget; the issuer DID is then
+    recorded on the session and user as Web-of-Trust provenance.
 
     On success the session is stamped ``beta_access=True`` and the browser is
     returned to *next_url* (resumed OIDC flow, login page, or download modal).
     If the caller has already cryptographically proven their DID, an active
-    session is minted immediately without requiring a second challenge signature.
-    Invalid keys re-render the gate page with an error message.
+    session is minted immediately without requiring a second challenge
+    signature. Invalid input re-renders the gate page with an error message.
     """
-    invite_key = request.POST.get('invite_key', '').strip()
-    did = request.POST.get('did', '').strip()
-    next_url = request.POST.get('next_url', '').strip()
+    if request.method not in ("GET", "POST"):
+        return HttpResponseNotAllowed(["GET", "POST"])
+
+    source = request.POST if request.method == "POST" else request.GET
+    invite_key = (source.get("invite_key") or source.get("invite") or source.get("t") or "").strip()
+    did = source.get("did", "").strip()
+    next_url = (source.get("next_url") or source.get("next") or "").strip()
     if not next_url and hasattr(request, "session"):
         next_url = request.session.get('verified_pending_next_url', '')
     next_url = next_url or DEFAULT_NEXT_URL
 
+    token = None
+    token_error = None
     redeemed = False
+
     if invite_key:
-        valid_keys = set(getattr(django_settings, "BETA_INVITE_KEYS", []) or [])
-        if invite_key in valid_keys:
-            redeemed = True
-    if not redeemed and did:
+        if parse_token_input(invite_key) is not None:
+            try:
+                token = verify_invite_token(invite_key, cache=cache)
+                redeemed = True
+                logger.info(
+                    "SYSTEM GATE: RFC-002 invite accepted issuer=%s nonce=%s tier=%s",
+                    token["issuer_did"],
+                    token["nonce"],
+                    token["tier"],
+                )
+            except InviteTokenError as e:
+                token_error = e
+                logger.warning("SYSTEM GATE: RFC-002 invite rejected code=%s detail=%s", e.code, e.detail)
+        else:
+            valid_keys = set(getattr(django_settings, "BETA_INVITE_KEYS", []) or [])
+            if invite_key in valid_keys:
+                redeemed = True
+
+    if not redeemed and token_error is None and did:
         if _is_admin_did(did) or _beta_allowlisted_did(did):
             redeemed = True
 
     if redeemed:
         request.session['beta_access'] = True
+        if token is not None:
+            _record_invite_provenance(request, token)
         logger.info("SYSTEM GATE: beta access granted for did=%s", did or "anonymous")
 
+        # Only consume the stashed DID once access is actually granted, so a
+        # failed attempt leaves the caller able to retry from the gate page.
         pending_did = request.session.pop('verified_pending_did', None) if hasattr(request, "session") else None
         if hasattr(request, "session"):
             request.session.pop('verified_pending_next_url', None)
@@ -1297,6 +1321,8 @@ def redeem_beta_invite(request):
         if pending_did:
             User = get_user_model()
             user, created = User.objects.get_or_create(custodial_did=pending_did, defaults={"email": None})
+            if token is not None:
+                _attach_invite_provenance(user, token)
             user = evaluate_sovereign_admin_posture(user)
 
             if not user.is_active:
@@ -1322,9 +1348,16 @@ def redeem_beta_invite(request):
         target = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
         return HttpResponseRedirect(target)
 
-    messages.error(
-        request,
-        'That invite key has not been issued. Access remains restricted to authorized keys.',
+    if token_error is not None:
+        messages.error(request, f'That invite token is not valid ({token_error.detail}).')
+    else:
+        messages.error(
+            request,
+            'That invite key has not been issued. Access remains restricted to authorized keys.',
+        )
+    logger.warning(
+        "SYSTEM GATE: failed beta invite redemption for key=%s did=%s",
+        _redact_invite_submission(invite_key),
+        did,
     )
-    logger.warning("SYSTEM GATE: failed beta invite redemption for key=%s did=%s", invite_key, did)
     return _render_beta_gate(request, did=did, next_url=next_url)
