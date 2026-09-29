@@ -106,6 +106,20 @@ def _redact_invite_submission(raw: str) -> str:
     return f"{trimmed[:12]}…({len(trimmed)} chars)" if len(trimmed) > 12 else trimmed
 
 
+def _default_next_for(request) -> str:
+    """
+    Where a successful redemption lands when no ``next`` was supplied.
+
+    An invite QR code is scanned cold, with no OIDC request to resume, so the
+    canonical ``/airlock/`` link returns the browser to this IdP's own root
+    rather than off-site. ``/gate/redeem/`` keeps the default WUN destination.
+    """
+    match = getattr(request, "resolver_match", None)
+    if match is not None and match.url_name == "airlock":
+        return "/"
+    return DEFAULT_NEXT_URL
+
+
 def _record_invite_provenance(request, token):
     """
     Stamp RFC-002 issuer provenance onto the session.
@@ -1257,10 +1271,15 @@ def redeem_beta_invite(request):
     Accepts either a legacy static key from ``BETA_INVITE_KEYS`` (or a
     waitlisted DID), or an RFC-002 invite capability token minted by
     `iyou_home`. Tokens arrive as raw JSON, Base64URL, or Base58 so a direct
-    link tap (``/gate/redeem/?invite=...`` or ``?t=...``) works as well as the
-    gate form's POST. A token must be schema-valid, unexpired, signed by an
-    authorized issuer, and within its use budget; the issuer DID is then
+    link tap works: the canonical ``/airlock/?invite=...`` link published in
+    invite QR codes, the ``/gate/redeem/?invite=...`` / ``?t=...`` variants,
+    and the gate form's POST. A token must be schema-valid, unexpired, signed
+    by an authorized issuer, and within its use budget; the issuer DID is then
     recorded on the session and user as Web-of-Trust provenance.
+
+    Reached with no input at all, it is a neutral landing that just displays
+    the manual entry form — a bare ``/airlock/`` tap is not a failed
+    redemption and must not be reported as one.
 
     On success the session is stamped ``beta_access=True`` and the browser is
     returned to *next_url* (resumed OIDC flow, login page, or download modal).
@@ -1277,7 +1296,7 @@ def redeem_beta_invite(request):
     next_url = (source.get("next_url") or source.get("next") or "").strip()
     if not next_url and hasattr(request, "session"):
         next_url = request.session.get('verified_pending_next_url', '')
-    next_url = next_url or DEFAULT_NEXT_URL
+    next_url = next_url or _default_next_for(request)
 
     token = None
     token_error = None
@@ -1350,14 +1369,20 @@ def redeem_beta_invite(request):
 
     if token_error is not None:
         messages.error(request, f'That invite token is not valid ({token_error.detail}).')
-    else:
+        logger.warning(
+            "SYSTEM GATE: failed RFC-002 invite redemption code=%s key=%s did=%s",
+            token_error.code,
+            _redact_invite_submission(invite_key),
+            did,
+        )
+    elif invite_key or did:
         messages.error(
             request,
             'That invite key has not been issued. Access remains restricted to authorized keys.',
         )
-    logger.warning(
-        "SYSTEM GATE: failed beta invite redemption for key=%s did=%s",
-        _redact_invite_submission(invite_key),
-        did,
-    )
+        logger.warning(
+            "SYSTEM GATE: failed beta invite redemption for key=%s did=%s",
+            _redact_invite_submission(invite_key),
+            did,
+        )
     return _render_beta_gate(request, did=did, next_url=next_url)

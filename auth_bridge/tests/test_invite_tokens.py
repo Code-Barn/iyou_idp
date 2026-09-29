@@ -564,3 +564,95 @@ class AirlockEndToEndTest(TestCase):
         self.assertEqual(granted.status_code, 302)
         self.assertIsNone(self.client.session.get("verified_pending_did"))
         self.assertIn("_auth_user_id", self.client.session)
+
+
+@override_settings(SYSTEM_GATE_ENABLED=True, BETA_INVITE_KEYS=[])
+class CanonicalAirlockRouteTest(TestCase):
+    """
+    The `/airlock/?invite=…` link published in `iyou_home` invite QR codes.
+
+    Registered at the top level in `config/urls.py` (not under the `/auth/`
+    namespaced include) because the QR encodes an absolute `https://iyou.me`
+    path, and it is scanned cold — no OIDC request is in flight to resume.
+    """
+
+    def setUp(self):
+        self.client = TestClient()
+        self.key = ed25519.Ed25519PrivateKey.generate()
+        self.issuer_did = _did_of(self.key)
+        self.settings_ctx = override_settings(ADMIN_DID=self.issuer_did, BETA_ACCESS_ALLOWLIST=[])
+        self.settings_ctx.enable()
+        self.addCleanup(self.settings_ctx.disable)
+        cache.clear()
+        self.airlock_url = reverse("airlock")
+
+    def test_canonical_route_is_top_level(self):
+        self.assertEqual(self.airlock_url, "/airlock/")
+
+    def test_valid_base64_token_grants_access_and_redirects(self):
+        token = _mint(self.key, nonce=_nonce())
+
+        resp = self.client.get(f"{self.airlock_url}?invite={_b64url(token)}")
+
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp["Location"], "/")
+        self.assertIs(self.client.session["beta_access"], True)
+        self.assertEqual(self.client.session["beta_invite_issuer_did"], self.issuer_did)
+        self.assertEqual(self.client.session["beta_invite_nonce"], token["nonce"])
+
+    def test_explicit_next_is_honoured(self):
+        token = _mint(self.key, nonce=_nonce())
+
+        resp = self.client.get(f"{self.airlock_url}?invite={_b64url(token)}&next=/auth/login/")
+
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp["Location"], "/auth/login/")
+        self.assertIs(self.client.session["beta_access"], True)
+
+    def test_expired_token_renders_the_form_with_an_error(self):
+        now = int(time.time())
+        token = _mint(self.key, created_at=now - 172_800, expires_at=now - 86_400, nonce=_nonce())
+
+        resp = self.client.get(f"{self.airlock_url}?invite={_b64url(token)}")
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertNotIn("beta_access", self.client.session)
+        self.assertIn("expired", resp.content.decode())
+        self.assertIn('name="invite_key"', resp.content.decode())
+
+    def test_tampered_token_renders_the_form_with_an_error(self):
+        token = _mint(self.key, nonce=_nonce())
+        token["max_uses"] = 4
+
+        resp = self.client.get(f"{self.airlock_url}?invite={_b64url(token)}")
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertNotIn("beta_access", self.client.session)
+        self.assertIn("not valid", resp.content.decode())
+
+    def test_bare_visit_renders_the_form_without_a_failure_message(self):
+        """Scanning the link with the token stripped is a landing, not a rejection."""
+        resp = self.client.get(self.airlock_url)
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertNotIn("beta_access", self.client.session)
+        body = resp.content.decode()
+        self.assertIn('name="invite_key"', body)
+        self.assertNotIn("has not been issued", body)
+
+    def test_garbage_token_renders_the_form_with_an_error(self):
+        resp = self.client.get(f"{self.airlock_url}?invite=not-a-real-token")
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertNotIn("beta_access", self.client.session)
+        self.assertIn("has not been issued", resp.content.decode())
+
+    def test_redeemed_airlock_session_passes_the_gate(self):
+        token = _mint(self.key, nonce=_nonce())
+        self.assertEqual(self.client.get(f"{self.airlock_url}?invite={_b64url(token)}").status_code, 302)
+
+        from auth_bridge.views import _did_passes_gate
+
+        request = RequestFactory().get("/")
+        request.session = self.client.session
+        self.assertTrue(_did_passes_gate(request, "did:key:z6Mkstranger"))

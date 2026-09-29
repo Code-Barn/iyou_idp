@@ -15,11 +15,17 @@
 
 from django.contrib import admin
 from django.urls import path, include
-from auth_bridge.views import LoginPageView, PkceTokenView, SovereignAuthorizeView
+from auth_bridge.views import LoginPageView, PkceTokenView, SovereignAuthorizeView, redeem_beta_invite
 from apps.core.views import peer_instance_info
 
 urlpatterns = [
     path('', LoginPageView.as_view(), name='landing'),
+    # Canonical invite landing. `iyou_home` publishes RFC-002 QR codes and
+    # invite links as /airlock/?invite=<base64url_token>, so this must resolve
+    # at the top level rather than under the /auth/ namespaced include.
+    # Reuses redeem_beta_invite: a valid token redeems and redirects, anything
+    # else renders the airlock form.
+    path('airlock/', redeem_beta_invite, name='airlock'),
     path('admin/', admin.site.urls),
     # Peer instance capability descriptor (public JSON, no auth required)
     path('api/v1/instance/', peer_instance_info, name='peer_instance_info'),

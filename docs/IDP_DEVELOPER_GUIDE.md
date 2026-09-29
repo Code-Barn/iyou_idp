@@ -1019,6 +1019,7 @@ All registered URL patterns (as seen by `django.urls`):
 
 ```
 /                               → LoginPageView (login portal)
+/airlock/                      → redeem_beta_invite (canonical RFC-002 invite link from iyou_home QR)
 /auth/login/                    → LoginPageView (same template)
 /auth/challenge/                → ChallengeView
 /auth/verify/                   → verify_signature
@@ -1073,6 +1074,7 @@ carrying `request.session["beta_access"]` receives HTTP **403** — the
 |--------|------|-------------|
 | GET | `/gate/` | Airlock screen — invite-key + waitlist-DID form (`gate`, `BetaGateView`) |
 | GET, POST | `/gate/redeem/` | Redeem an RFC-002 invite capability token, a one-time key from `BETA_INVITE_KEYS`, or a waitlisted DID; success stamps `session["beta_access"]` and returns to the pending destination (`gate_redeem`) |
+| GET, POST | `/airlock/` | Canonical invite landing published in `iyou_home` QR codes as `?invite=<base64url_token>`; same view as `/gate/redeem/`, but a bare visit renders the form with no error and success defaults to `/` (`airlock`, registered at the top level in `config/urls.py`) |
 
 Enforcement lives in `_did_passes_gate(request, did)` → `_gate_response()` /
 `_render_beta_gate()` (`auth_bridge/views.py`) and is applied on
@@ -1090,9 +1092,22 @@ and is the byte-level counterpart of the minter
 
 A submission is treated as a cryptographic token when it decodes to a JSON
 object carrying a `signature` field. Three encodings are accepted so a direct
-link tap works: raw JSON, Base64URL (`/gate/redeem/?invite=…` or `?t=…`), and
-Base58 (the iyou_home QR form). Anything else falls through to the legacy
-`BETA_INVITE_KEYS` / `BETA_ACCESS_ALLOWLIST` path.
+link tap works: raw JSON, Base64URL, and Base58 (the iyou_home QR form).
+Anything else falls through to the legacy `BETA_INVITE_KEYS` /
+`BETA_ACCESS_ALLOWLIST` path.
+
+**Route.** The canonical entry point is `GET /airlock/?invite=<base64url_token>`,
+the absolute path `iyou_home` bakes into its invite QR codes. It is registered
+at the top level in `config/urls.py` — *not* under the `/auth/` include — so it
+resolves unprefixed and unnamespaced as `reverse('airlock')`. `/gate/redeem/`
+and `/gate/` remain the in-app equivalents and share the same view.
+
+`/airlock/` and `/gate/redeem/` differ in one deliberate way. An invite QR is
+scanned cold, with no OIDC request in flight, so `_default_next_for()` sends a
+successful airlock redemption to `/` rather than off-site to `IDP_WUN_URL`.
+A bare visit with no token at all renders the entry form with **no** error
+message, because nothing was rejected; only a token or key that was actually
+supplied and failed produces a message.
 
 | Step | Check | Denial code |
 |------|-------|-------------|

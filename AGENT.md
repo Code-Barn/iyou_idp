@@ -37,6 +37,17 @@ short-circuited to the beta gate screen — HTTP 403, template
   key from `BETA_INVITE_KEYS` (or a waitlisted DID), and stamps
   `session["beta_access"]`; the gate page itself is `/gate/` (name `gate`,
   `BetaGateView`).
+- **`/airlock/` (name `airlock`) is the canonical invite landing and is
+  registered at the top level in `config/urls.py`, NOT under the `/auth/`
+  include.** `iyou_home` publishes RFC-002 QR codes and invite links as
+  `https://iyou.me/airlock/?invite=<base64url_token>`, so this path must
+  resolve unprefixed and unnamespaced (`reverse('airlock')`). It reuses
+  `redeem_beta_invite`: a valid token redeems and redirects, a bare visit
+  renders the form with no error message, and an invalid/expired token renders
+  the form with one. Because a QR scan is cold — no OIDC request is in flight
+  to resume — `_default_next_for()` sends a successful airlock redemption to
+  `/`, while `/gate/redeem/` keeps `IDP_WUN_URL` as its default. Do not move
+  this route into `auth_bridge/urls.py` without re-encoding the QR target.
 - **RFC-002 token redemption** (`auth_bridge/invite_tokens.py`): a submission is
   treated as a cryptographic token when it decodes to a JSON object carrying a
   `signature` field, as raw JSON, Base64URL, or Base58. The token is admitted
