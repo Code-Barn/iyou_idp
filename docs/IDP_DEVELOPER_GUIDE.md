@@ -1111,12 +1111,13 @@ supplied and failed produces a message.
 
 | Step | Check | Denial code |
 |------|-------|-------------|
-| 1 | Schema: `v=1`, `issuer_did` is an Ed25519 `did:key`, `nonce` ≥ 32 hex chars, `1 ≤ max_uses ≤ 4`, tier ∈ `admin｜member｜guest`, lifetime ≤ 90 days | `INVITE_INVALID` |
+| 1 | Schema: `v=1`, `issuer_did` is an Ed25519 `did:key`, `nonce` ≥ 32 hex chars, `max_uses` is an integer in `[1, 100]`, tier ∈ `admin｜member｜guest`, lifetime ≤ 90 days | `INVITE_INVALID` |
 | 2 | Expiry: `expires_at > now` | `INVITE_EXPIRED` |
 | 3 | Signature: Ed25519 over `SHA-256(canonical payload)`, issuer key decoded from the `did:key` multicodec `0xed01` | `INVITE_INVALID` |
 | 4 | Issuer authorization: `issuer_did == ADMIN_DID` or in `BETA_ACCESS_ALLOWLIST` | `INVITE_UNAUTHORIZED` |
-| 5 | Tier: `guest` is read-only and never admits | `INVITE_SCOPE` |
-| 6 | Use budget: atomic claim at `airlock:nonce:{nonce}:uses`, reject at `> max_uses` | `INVITE_USED` |
+| 5 | Use ceiling: `max_uses ≤ 100` for a delegated issuer, else `max_uses ≤ 4` | `INVITE_INVALID` |
+| 6 | Tier: `guest` is read-only and never admits | `INVITE_SCOPE` |
+| 7 | Use budget: atomic claim at `airlock:nonce:{nonce}:uses`, reject at `> max_uses` | `INVITE_USED` |
 
 The **canonical payload** is the ten signed fields (`v`, `issuer_did`,
 `satellite_id`, `nonce`, `max_uses`, `uses_count`, `tier`, `created_at`,
@@ -1131,6 +1132,32 @@ from the issuer-declared `uses_count` and outlives the token only, and the
 claim is a single pinned `add` + `incr` on one cache backend
 (`ResilientCache.claim_unit`) so concurrent redemptions cannot over-admit. If
 no cache backend is reachable the claim fails **closed**.
+
+### Use ceilings
+
+The budget ceiling is **issuer-dependent**, because the `iyou_home` Genesis
+minter (`cd489af`) issues community invites with `max_uses` up to **100**, while
+the plain RFC-002 profile caps a token at **4**.
+
+| Issuer | Ceiling | Constant |
+|--------|---------|----------|
+| `ADMIN_DID` or in `BETA_ACCESS_ALLOWLIST` | 100 | `RFC002_COMMUNITY_MAX_USES` |
+| anything else | 4 | `RFC002_MAX_USES_PER_TOKEN` |
+
+Two properties of the implementation are load-bearing, so please preserve them
+if this is refactored:
+
+1. **The ceiling is never decided from the unverified payload.** Step 1 accepts
+   the wide `[1, 100]` range as a purely structural check, and the
+   issuer-dependent clamp is applied in step 5 by `validate_use_ceiling`. If
+   step 1 instead asked "is this the admin?", it would be reading a
+   self-declared string, and any anonymous caller could request the 100-use
+   budget by writing the admin DID into a forged token. The order in
+   `verify_invite_token` — signature, then authorization, then ceiling — is what
+   makes the DID being examined one the operator actually delegated to.
+2. **A rejected token spends nothing.** `validate_use_ceiling` runs *before*
+   `consume_use`, so a `max_uses=250` token is denied without seeding a counter
+   that a smaller token reusing the same nonce could later draw on.
 
 On success the issuer is recorded as Web-of-Trust provenance on the session
 (`beta_invite_issuer_did`, `beta_invite_nonce`, `beta_invite_tier`,

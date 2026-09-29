@@ -54,7 +54,13 @@ from .resilient_cache import cache as shared_cache
 logger = logging.getLogger(__name__)
 
 RFC002_TOKEN_VERSION = 1
+# Baseline RFC-002 clamp applied to any issuer this instance has not delegated
+# elevated invite issuance to.
 RFC002_MAX_USES_PER_TOKEN = 4
+# Widest admissible budget, matching the `iyou_home` Genesis minter ceiling. Only
+# reachable by an issuer that has already been proven and authorized; see
+# `validate_use_ceiling`.
+RFC002_COMMUNITY_MAX_USES = 100
 RFC002_MAX_VALIDITY_SECONDS = 90 * 86_400
 RFC002_NONCE_MIN_HEX_CHARS = 32
 RFC002_VALID_TIERS = ("admin", "member", "guest")
@@ -232,9 +238,21 @@ def validate_schema(token: dict[str, Any]) -> None:
     ):
         raise InviteTokenError("INVITE_INVALID", "Nonce must be >= 16 hex bytes (32 hex chars)")
 
+    # This is the structural ceiling only. The issuer-dependent clamp lives in
+    # `validate_use_ceiling`, which cannot run until after the signature and the
+    # issuer's authorization are established -- otherwise the budget would be
+    # decided by an unverified `issuer_did` field, and any anonymous caller could
+    # claim the admin tier simply by writing the admin DID into a forged token.
     max_uses = token.get("max_uses")
-    if not isinstance(max_uses, int) or isinstance(max_uses, bool) or not 1 <= max_uses <= RFC002_MAX_USES_PER_TOKEN:
-        raise InviteTokenError("INVITE_INVALID", f"max_uses must be an integer in [1, {RFC002_MAX_USES_PER_TOKEN}]")
+    if (
+        not isinstance(max_uses, int)
+        or isinstance(max_uses, bool)
+        or not 1 <= max_uses <= RFC002_COMMUNITY_MAX_USES
+    ):
+        raise InviteTokenError(
+            "INVITE_INVALID",
+            f"max_uses must be an integer in [1, {RFC002_COMMUNITY_MAX_USES}]",
+        )
 
     tier = token.get("tier")
     if tier not in RFC002_VALID_TIERS:
@@ -277,6 +295,44 @@ def validate_authorization(token: dict[str, Any]) -> None:
     raise InviteTokenError("INVITE_UNAUTHORIZED", "Token issuer is not authorized to admit to this instance")
 
 
+def issuer_may_mint_community_invites(issuer_did: str) -> bool:
+    """
+    Whether this operator has delegated elevated invite budgets to *issuer_did*.
+
+    Mirrors the authorization rule in `validate_authorization`: the Genesis
+    identity and the delegated beta-issuers run the full `iyou_home` minter and
+    can therefore spend a long-lived community invite across many recipients,
+    whereas the plain RFC-002 clamp of 4 applies to everything else.
+    """
+    if issuer_did == getattr(django_settings, "ADMIN_DID", ""):
+        return True
+    allowlist = set(getattr(django_settings, "BETA_ACCESS_ALLOWLIST", []) or [])
+    return issuer_did in allowlist
+
+
+def validate_use_ceiling(token: dict[str, Any]) -> None:
+    """
+    Clamp `max_uses` to the budget this token's issuer is actually entitled to.
+
+    Must be called only after `verify_token_signature` and
+    `validate_authorization` have both passed, so the issuer DID being examined
+    is one the operator has delegated to rather than a self-declared string. An
+    authorized Genesis issuer may mint up to `RFC002_COMMUNITY_MAX_USES`; every
+    other issuer is held to the standard RFC-002 ceiling.
+    """
+    max_uses = token["max_uses"]
+    ceiling = (
+        RFC002_COMMUNITY_MAX_USES
+        if issuer_may_mint_community_invites(token["issuer_did"])
+        else RFC002_MAX_USES_PER_TOKEN
+    )
+    if max_uses > ceiling:
+        raise InviteTokenError(
+            "INVITE_INVALID",
+            f"max_uses {max_uses} exceeds the {ceiling} ceiling for this issuer",
+        )
+
+
 def consume_use(token: dict[str, Any], cache=None) -> int:
     """
     Atomically claim one use from the token's budget.
@@ -315,7 +371,12 @@ def verify_invite_token(raw: str, cache=None) -> dict[str, Any]:
     validate_schema(token)
     validate_expiry(token, int(time.time()))
     verify_token_signature(token)
+    # Order matters: the ceiling is issuer-dependent, so it can only be settled
+    # once the signature proves who minted this and authorization proves the
+    # operator delegated to them.
     validate_authorization(token)
+    validate_use_ceiling(token)
+    validate_use_ceiling(token)
     if token["tier"] not in RFC002_ADMISSIBLE_TIERS:
         raise InviteTokenError(
             "INVITE_SCOPE",

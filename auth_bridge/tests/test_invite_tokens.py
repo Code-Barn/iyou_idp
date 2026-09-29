@@ -313,6 +313,203 @@ class RedemptionAcceptanceTest(TestCase):
         self.assertIn("read-only", resp.content.decode())
 
 
+@override_settings(BETA_INVITE_KEYS=[])
+class CommunityUseBudgetTest(TestCase):
+    """
+    Tiered `max_uses` ceilings.
+
+    `iyou_home` Genesis identities mint invites with `max_uses` up to 100
+    (`cd489af`), so the IdP must accept that for issuers it has delegated to,
+    while holding everything else to the standard RFC-002 clamp of 4. The
+    security property under test is that the elevated ceiling is unreachable
+    by claiming an authorized DID in a token the caller cannot sign.
+    """
+
+    def setUp(self):
+        self.client = TestClient()
+        self.admin_key = ed25519.Ed25519PrivateKey.generate()
+        self.admin_did = _did_of(self.admin_key)
+
+        self.peer_key = ed25519.Ed25519PrivateKey.generate()
+        self.peer_did = _did_of(self.peer_key)
+
+        self.stranger_key = ed25519.Ed25519PrivateKey.generate()
+        self.stranger_did = _did_of(self.stranger_key)
+
+        # The operator delegates to the peer, so both admin and peer may spend a
+        # full community budget; the stranger is authorized by nobody.
+        self.settings_ctx = override_settings(
+            ADMIN_DID=self.admin_did,
+            BETA_ACCESS_ALLOWLIST=[self.peer_did],
+        )
+        self.settings_ctx.enable()
+        self.addCleanup(self.settings_ctx.disable)
+        cache.clear()
+        self.redeem_url = reverse("auth_bridge:gate_redeem")
+
+    def _verify(self, token: dict) -> dict:
+        return invite_tokens.verify_invite_token(_b64url(token), cache=cache)
+
+    def _assert_rejected(self, token: dict, needle: str) -> None:
+        with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+            self._verify(token)
+        self.assertIn(needle, ctx.exception.detail)
+        self.assertEqual(ctx.exception.code, "INVITE_INVALID")
+
+    # --- ADMIN_DID issuer: full community range ---------------------------
+
+    def test_admin_token_with_max_uses_50_is_accepted(self):
+        token = _mint(self.admin_key, max_uses=50, nonce=_nonce())
+
+        self.assertEqual(self._verify(token)["max_uses"], 50)
+
+    def test_admin_token_with_max_uses_100_is_accepted(self):
+        token = _mint(self.admin_key, max_uses=100, nonce=_nonce())
+
+        self.assertEqual(self._verify(token)["max_uses"], 100)
+
+    def test_admin_token_with_max_uses_4_is_accepted(self):
+        token = _mint(self.admin_key, max_uses=4, nonce=_nonce())
+
+        self.assertEqual(self._verify(token)["max_uses"], 4)
+
+    def test_admin_token_above_100_is_rejected(self):
+        self._assert_rejected(_mint(self.admin_key, max_uses=101, nonce=_nonce()), "100")
+
+    # --- allowlisted issuer: same elevated ceiling -------------------------
+
+    def test_allowlisted_issuer_may_spend_a_community_budget(self):
+        token = _mint(self.peer_key, max_uses=100, nonce=_nonce())
+
+        self.assertEqual(self._verify(token)["max_uses"], 100)
+
+    # --- everyone else stays clamped to 4 ----------------------------------
+
+    def test_allowlisted_issuer_still_rejected_above_101(self):
+        self._assert_rejected(_mint(self.peer_key, max_uses=101, nonce=_nonce()), "100")
+
+    @override_settings(BETA_ACCESS_ALLOWLIST=[])
+    def test_unauthorized_issuer_with_max_uses_5_is_rejected(self):
+        """The narrow-ceiling path for a non-delegated issuer."""
+        token = _mint(self.peer_key, max_uses=5, nonce=_nonce())
+
+        with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+            self._verify(token)
+        self.assertEqual(ctx.exception.code, "INVITE_UNAUTHORIZED")
+
+    @override_settings(BETA_ACCESS_ALLOWLIST=[])
+    def test_unauthorized_issuer_within_the_standard_ceiling_is_authorized_only(self):
+        """max_uses=4 is in range, so the denial must be about the issuer, not the budget."""
+        token = _mint(self.peer_key, max_uses=4, nonce=_nonce())
+
+        with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+            self._verify(token)
+        self.assertEqual(ctx.exception.code, "INVITE_UNAUTHORIZED")
+
+    # --- the ceiling cannot be reached by self-declaration -----------------
+
+    def test_claiming_the_admin_did_in_an_unsigned_token_fails_at_signature(self):
+        """
+        The ceiling is issuer-dependent, so it must not be settled from the
+        unverified payload. A forged token that merely *names* the admin DID
+        cannot borrow the admin budget.
+        """
+        token = _mint(self.stranger_key, max_uses=100, nonce=_nonce(), issuer_did=self.admin_did)
+
+        with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+            self._verify(token)
+        self.assertNotEqual(ctx.exception.code, "INVITE_UNAUTHORIZED")
+        self.assertIn("signature", ctx.exception.detail.lower())
+
+    def test_admin_did_token_signed_by_a_stranger_is_refused(self):
+        """Same as above with the DID mismatch, asserting the signature gate wins."""
+        token = _mint(self.stranger_key, max_uses=100, nonce=_nonce())
+        token["issuer_did"] = self.admin_did
+
+        with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+            self._verify(token)
+        self.assertNotEqual(ctx.exception.code, "INVITE_UNAUTHORIZED")
+
+    def test_ceiling_helper_tracks_the_delegation_settings(self):
+        self.assertTrue(invite_tokens.issuer_may_mint_community_invites(self.admin_did))
+        self.assertTrue(invite_tokens.issuer_may_mint_community_invites(self.peer_did))
+        self.assertFalse(invite_tokens.issuer_may_mint_community_invites(self.stranger_did))
+
+    # --- the budget is actually enforced, not just parsed ------------------
+
+    def test_admin_community_budget_grants_exactly_its_declared_uses(self):
+        """A 50-use token must admit 50 redemptions and deny the 51st."""
+        token = _mint(self.admin_key, max_uses=50, nonce=_nonce())
+        token_str = _b64url(token)
+
+        for attempt in range(1, 51):
+            verified = invite_tokens.verify_invite_token(token_str, cache=cache)
+            self.assertEqual(verified["max_uses"], 50, f"attempt {attempt} should be within budget")
+
+        with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+            invite_tokens.verify_invite_token(token_str, cache=cache)
+        self.assertEqual(ctx.exception.code, "INVITE_USED")
+
+    def test_oversized_budget_does_not_credit_extra_redemptions(self):
+        """
+        A rejected 100-use token must not leave a spendable counter behind, and
+        a later token reusing the nonce must still be bounded.
+        """
+        self._assert_rejected(_mint(self.admin_key, max_uses=101, nonce="ab" * 16), "100")
+
+        # Same nonce, now within range: the budget accounting starts from zero
+        # and is capped by the smaller declared value.
+        small = _b64url(_mint(self.admin_key, max_uses=2, nonce="ab" * 16))
+        self.assertEqual(invite_tokens.verify_invite_token(small, cache=cache)["max_uses"], 2)
+        self.assertEqual(invite_tokens.verify_invite_token(small, cache=cache)["max_uses"], 2)
+        with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+            invite_tokens.verify_invite_token(small, cache=cache)
+        self.assertEqual(ctx.exception.code, "INVITE_USED")
+
+    def test_end_to_end_admin_50_use_token_opens_the_airlock(self):
+        token = _mint(self.admin_key, max_uses=50, nonce=_nonce())
+
+        resp = self.client.get(reverse("airlock"), {"invite": _b64url(token)})
+
+        self.assertEqual(resp.status_code, 302)
+        self.assertIs(self.client.session["beta_access"], True)
+
+    def test_oversized_budget_renders_the_form_rather_than_opening_it(self):
+        token = _mint(self.admin_key, max_uses=250, nonce=_nonce())
+
+        resp = self.client.get(reverse("airlock"), {"invite": _b64url(token)})
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertNotIn("beta_access", self.client.session)
+        self.assertIn("max_uses must be an integer in [1, 100]", resp.content.decode())
+
+    # --- the issuer-dependent clamp itself ---------------------------------
+    #
+    # With the shipped configuration both authorized classes sit at the 100
+    # ceiling, so `validate_use_ceiling` is unreachable through the happy path.
+    # These call it directly to prove the two branches really do differ, and
+    # that the narrow branch is what a non-delegated issuer would be held to.
+
+    def test_ceiling_clamps_a_delegated_issuer_to_its_own_ceiling(self):
+        """A delegated issuer gets 100; anything above is refused by name."""
+        invite_tokens.validate_use_ceiling(_mint(self.admin_key, max_uses=100))
+        invite_tokens.validate_use_ceiling(_mint(self.peer_key, max_uses=100))
+
+        with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+            invite_tokens.validate_use_ceiling(_mint(self.admin_key, max_uses=101))
+        self.assertIn("100", ctx.exception.detail)
+
+    def test_ceiling_clamps_an_undelegated_issuer_to_four(self):
+        """The narrow branch: with no delegation this issuer is held to 4."""
+        with override_settings(BETA_ACCESS_ALLOWLIST=[]):
+            invite_tokens.validate_use_ceiling(_mint(self.peer_key, max_uses=4))
+
+            with self.assertRaises(invite_tokens.InviteTokenError) as ctx:
+                invite_tokens.validate_use_ceiling(_mint(self.peer_key, max_uses=5))
+            self.assertIn("4", ctx.exception.detail)
+            self.assertIn("5", ctx.exception.detail)
+
+
 class RedemptionRejectionTest(TestCase):
     """Every RFC-002 denial path leaves the airlock shut."""
 
@@ -376,8 +573,32 @@ class RedemptionRejectionTest(TestCase):
         token = _mint(self.key, v=2, nonce=_nonce())
         self._assert_denied(self.client.post(self.redeem_url, {"invite_key": json.dumps(token)}))
 
-    def test_max_uses_above_ceiling_rejected(self):
-        token = _mint(self.key, max_uses=9, nonce=_nonce())
+    def test_max_uses_above_community_ceiling_rejected(self):
+        """
+        The ceiling is now 100 for delegated issuers, not the original 4.
+
+        This still holds an admin-issued token, so it now has to exceed the
+        *community* ceiling. The narrow 4-use clamp is covered directly in
+        `CommunityUseBudgetTest`, where an undelegated issuer can be exercised
+        without the authorization gate short-circuiting first.
+        """
+        token = _mint(self.key, max_uses=101, nonce=_nonce())
+        self._assert_denied(self.client.post(self.redeem_url, {"invite_key": json.dumps(token)}))
+
+    def test_zero_max_uses_rejected(self):
+        token = _mint(self.key, max_uses=0, nonce=_nonce())
+        self._assert_denied(self.client.post(self.redeem_url, {"invite_key": json.dumps(token)}))
+
+    def test_negative_max_uses_rejected(self):
+        token = _mint(self.key, max_uses=-1, nonce=_nonce())
+        self._assert_denied(self.client.post(self.redeem_url, {"invite_key": json.dumps(token)}))
+
+    def test_boolean_max_uses_rejected(self):
+        token = _mint(self.key, max_uses=True, nonce=_nonce())
+        self._assert_denied(self.client.post(self.redeem_url, {"invite_key": json.dumps(token)}))
+
+    def test_non_integer_max_uses_rejected(self):
+        token = _mint(self.key, max_uses="9", nonce=_nonce())
         self._assert_denied(self.client.post(self.redeem_url, {"invite_key": json.dumps(token)}))
 
     def test_lifetime_beyond_90_days_rejected(self):

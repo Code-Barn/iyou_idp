@@ -58,7 +58,15 @@ short-circuited to the beta gate screen — HTTP 403, template
   (`src-tauri/src/invites.rs`); `satellite_id` defaults to `""` for portable
   tokens. The issuer must be `ADMIN_DID` or listed in `BETA_ACCESS_ALLOWLIST`.
   Use counts are claimed atomically at `airlock:nonce:{nonce}:uses` and must
-  stay `<= max_uses`. On success the issuer DID is recorded on both the session
+  stay `<= max_uses`. The `max_uses` ceiling is **issuer-dependent**:
+  `ADMIN_DID` and `BETA_ACCESS_ALLOWLIST` issuers may spend up to
+  `RFC002_COMMUNITY_MAX_USES = 100` (matching the `iyou_home` Genesis minter),
+  everything else is held to `RFC002_MAX_USES_PER_TOKEN = 4`. Do not move the
+  clamp into `validate_schema`: it runs *before* signature verification, so
+  asking "is this the admin?" there would read a self-declared string and let
+  any caller request the wide budget by forging `issuer_did`. The clamp is
+  `validate_use_ceiling`, ordered signature → authorization → ceiling, and it
+  runs before `consume_use` so a rejected token spends nothing. On success the issuer DID is recorded on both the session
   and `User.beta_invite_issuer_did` / `beta_invite_nonce` /
   `beta_invite_redeemed_at` for Web-of-Trust provenance. `guest`-tier tokens are
   read-only and never admit. Bearer secrets are redacted before logging.
