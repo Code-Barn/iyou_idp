@@ -324,7 +324,11 @@
                 };
 
                 socket.onerror = function(err) {
-                    console.error("WS: Socket Error:", err);
+                    // Expected when iyou_home is not running locally: the
+                    // connection fails and the 4s timer / close handler below
+                    // degrades to the manual fallback. Not an exceptional
+                    // condition, so keep the console quiet.
+                    console.debug("WS: Socket error (expected if iyou_home is not running)", err);
                     window.activeSovereignSocket = null;
                     window.sovereignConnectionLock = "IDLE";
                 };
@@ -359,7 +363,7 @@
                 });
 
                 socket.addEventListener('error', (e) => {
-                    console.error("WS: Socket Error:", e);
+                    console.debug("WS: Socket error (expected if iyou_home is not running)", e);
                     if (cancelled) return;
                     clearTimeout(forceFallback);
                     cancelBtn.classList.add('hidden');
@@ -858,8 +862,13 @@
                     if (!beginResp.ok) throw new Error('Failed to start passkey ceremony');
                     const beginData = await beginResp.json();
 
-                    // Step 2: Convert options for navigator.credentials.get
-                    const publicKeyOptions = beginData.options.publicKey;
+                    // The backend returns { ceremony_id, publicKey: { ... } }.
+                    // Unwrap defensively so a future schema change to an
+                    // `options` envelope cannot regress the handshake silently.
+                    const publicKeyOptions = beginData.publicKey || beginData.options?.publicKey || beginData.options;
+                    if (!publicKeyOptions || typeof publicKeyOptions !== 'object' || !publicKeyOptions.challenge) {
+                        throw new Error('Passkey options missing from server response');
+                    }
                     if (publicKeyOptions.allowCredentials) {
                         publicKeyOptions.allowCredentials = publicKeyOptions.allowCredentials.map(cred => ({
                             ...cred,
@@ -868,8 +877,23 @@
                     }
                     publicKeyOptions.challenge = base64urlToUint8Array(publicKeyOptions.challenge);
 
-                    // Step 3: Invoke browser WebAuthn prompt
-                    const assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
+                    // Step 3: Invoke browser WebAuthn prompt. Cancellation and
+                    // environment limitations surface here and are reported
+                    // inline rather than propagating as uncaught errors.
+                    let assertion;
+                    try {
+                        assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
+                    } catch (credErr) {
+                        resetPasskeyButton();
+                        if (credErr.name === 'NotAllowedError' || credErr.name === 'AbortError') {
+                            showPasskeyNotice('Passkey authentication was cancelled. Please use email sign-in.');
+                        } else if (credErr.name === 'SecurityError') {
+                            showPasskeyNotice('Passkey authentication requires HTTPS.');
+                        } else {
+                            showPasskeyNotice(credErr.message || 'Passkey authentication could not be completed.');
+                        }
+                        return;
+                    }
 
                     // Step 4: Format assertion for server
                     const assertionResponse = {
@@ -909,16 +933,26 @@
                     }
                 } catch (err) {
                     console.error('Passkey auth error:', err);
-                    passkeyBtn.textContent = '🔑 Sign in with Passkey';
-                    passkeyBtn.disabled = false;
-                    // Graceful fallback — show the email form with a message
-                    if (err.name === 'NotAllowedError') {
-                        alert('Passkey authentication was cancelled. Please use email sign-in.');
-                    } else if (err.name === 'SecurityError') {
-                        alert('Passkey authentication requires HTTPS.');
-                    }
+                    resetPasskeyButton();
+                    showPasskeyNotice(err.message || 'Passkey authentication failed. Please use email sign-in.');
                 }
             });
+
+            // Shared UI helpers for the passkey flow
+            const passkeyNoticeEl = document.getElementById('passkey-notice');
+            function showPasskeyNotice(message) {
+                if (!passkeyNoticeEl) return;
+                passkeyNoticeEl.textContent = message;
+                passkeyNoticeEl.classList.remove('hidden');
+                clearTimeout(showPasskeyNotice._timer);
+                showPasskeyNotice._timer = setTimeout(() => {
+                    passkeyNoticeEl.classList.add('hidden');
+                }, 6000);
+            }
+            function resetPasskeyButton() {
+                passkeyBtn.textContent = '🔑 Sign in with Passkey';
+                passkeyBtn.disabled = false;
+            }
         })();
     </script>
     <script>

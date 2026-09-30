@@ -12,8 +12,13 @@
 
   var CACHE_KEY = 'iyou_home_latest_release';
   var GITHUB_API_URL = 'https://api.github.com/repos/Code-Barn/iyou_home/releases/latest';
+  // MIRRORS.txt is fetched through the CORS-friendly GitHub contents API rather
+  // than the raw release `browser_download_url`, which 302s to
+  // objects.githubusercontent.com without CORS headers and turns every fetch()
+  // into a console CORS error. The contents API returns the file base64-encoded.
+  var MIRRORS_API_URL = 'https://api.github.com/repos/Code-Barn/iyou_home/contents/release-artifacts/MIRRORS.txt';
   var IPFS_FALLBACK_URL = 'https://ipfs.io/ipfs/QmUA8mAoo7fTZbG1hwvChbSVbD3trAhACBHjzYQDAoFDQu/';
-  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:bc508b752298f32bf91d2a9b63dec2995c1e2e60&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&ws=https%3A%2F%2Fgithub.com%2FCode-Barn%2Fiyou_home%2Freleases%2Fdownload%2Fv0.2.2%2F';
+  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:cac7e3f47b8dfad383c1c2ec64db8ba615a25d63&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&ws=https%3A%2F%2Fgithub.com%2FCode-Barn%2Fiyou_home%2Freleases%2Fdownload%2Fv0.2.2%2F';
 
   function detectOS() {
     var ua = navigator.userAgent || navigator.platform || '';
@@ -166,6 +171,72 @@
     return result;
   }
 
+  function decodeBase64Utf8(base64) {
+    var binary;
+    if (window.atob) {
+      binary = atob(base64);
+    } else {
+      return null;
+    }
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    try {
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function applyMirrors(mirrors) {
+    var ipfsBtns = modal.querySelectorAll('#dl-ipfs, .dl-btn-ipfs, [data-asset="ipfs"]');
+    var magnetBtns = modal.querySelectorAll('#dl-magnet, .dl-btn-magnet, [data-asset="magnet"]');
+
+    var ipfsUrl = (mirrors && mirrors.IPFS_GATEWAY_URL) || IPFS_FALLBACK_URL;
+    ipfsBtns.forEach(function (el) {
+      el.href = ipfsUrl;
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer');
+    });
+
+    var magnetUrl = (mirrors && mirrors.MAGNET_LINK) || MAGNET_FALLBACK_URI;
+    magnetBtns.forEach(function (el) {
+      el.href = magnetUrl;
+      el.classList.remove('hidden');
+    });
+
+    var torrentBtns = modal.querySelectorAll('#dl-bittorrent, .dl-btn-torrent, [data-asset="torrent"]');
+    torrentBtns.forEach(function (el) {
+      el.dataset.magnet = magnetUrl;
+      el.setAttribute('title', 'Direct .torrent file (Magnet available)');
+    });
+  }
+
+  function fetchMirrorsWithFallback() {
+    // CORS-safe attempt: the GitHub contents API serves MIRRORS.txt as JSON
+    // with Content-Type text/plain (never used) and `content` base64-encoded.
+    // Any redirect from api.github.com still returns with permissive CORS, so
+    // this never trips the browser's CORS error channel.
+    fetch(MIRRORS_API_URL, {
+      headers: { 'Accept': 'application/vnd.github.v3.raw' }
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('Mirrors API error');
+        if (res.headers.get('content-type') && res.headers.get('content-type').indexOf('application/json') !== -1) {
+          return res.json().then(function (json) {
+            if (!json || !json.content) throw new Error('Mirrors content missing');
+            return decodeBase64Utf8(json.content) || '';
+          });
+        }
+        return res.text();
+      })
+      .then(function (txt) {
+        applyMirrors(parseMirrorsTxt(txt));
+      })
+      .catch(function () {
+        applyMirrors(null);
+      });
+  }
+
   function hydrateReleaseAssets(release) {
     if (!release || !Array.isArray(release.assets)) return;
 
@@ -177,7 +248,6 @@
     var rpmAsset = null;
     var winAsset = null;
     var torrentAsset = null;
-    var mirrorsAsset = null;
 
     for (var i = 0; i < assets.length; i++) {
       var a = assets[i];
@@ -188,7 +258,6 @@
       if (a.name.endsWith('.rpm')) rpmAsset = a;
       if (a.name.endsWith('.exe')) winAsset = a;
       if (a.name.endsWith('.torrent')) torrentAsset = a;
-      if (a.name === 'MIRRORS.txt') mirrorsAsset = a;
     }
 
     if (macAsset) {
@@ -253,58 +322,11 @@
       });
     }
 
-    var ipfsBtns = modal.querySelectorAll('#dl-ipfs, .dl-btn-ipfs, [data-asset="ipfs"]');
-    var magnetBtns = modal.querySelectorAll('#dl-magnet, .dl-btn-magnet, [data-asset="magnet"]');
-
-    if (mirrorsAsset && mirrorsAsset.browser_download_url) {
-      fetch(mirrorsAsset.browser_download_url)
-        .then(function (res) {
-          if (!res.ok) throw new Error('Fetch failed');
-          return res.text();
-        })
-        .then(function (txt) {
-          var mirrors = parseMirrorsTxt(txt);
-
-          var ipfsUrl = mirrors.IPFS_GATEWAY_URL || IPFS_FALLBACK_URL;
-          ipfsBtns.forEach(function (el) {
-            el.href = ipfsUrl;
-            el.setAttribute('target', '_blank');
-            el.setAttribute('rel', 'noopener noreferrer');
-          });
-
-          var magnetUrl = mirrors.MAGNET_LINK || MAGNET_FALLBACK_URI;
-          magnetBtns.forEach(function (el) {
-            el.href = magnetUrl;
-            el.classList.remove('hidden');
-          });
-
-          torrentBtns.forEach(function (el) {
-            el.dataset.magnet = magnetUrl;
-            el.setAttribute('title', 'Direct .torrent file (Magnet available)');
-          });
-        })
-        .catch(function () {
-          ipfsBtns.forEach(function (el) {
-            el.href = IPFS_FALLBACK_URL;
-            el.setAttribute('target', '_blank');
-            el.setAttribute('rel', 'noopener noreferrer');
-          });
-          magnetBtns.forEach(function (el) {
-            el.href = MAGNET_FALLBACK_URI;
-            el.classList.remove('hidden');
-          });
-        });
-    } else {
-      ipfsBtns.forEach(function (el) {
-        el.href = IPFS_FALLBACK_URL;
-        el.setAttribute('target', '_blank');
-        el.setAttribute('rel', 'noopener noreferrer');
-      });
-      magnetBtns.forEach(function (el) {
-        el.href = MAGNET_FALLBACK_URI;
-        el.classList.remove('hidden');
-      });
-    }
+    // Mirror mirrors from MIRRORS.txt through the CORS-safe contents API,
+    // which applies the static fallbacks on any failure. The raw release
+    // browser_download_url is NOT fetched here: it redirects to
+    // objects.githubusercontent.com without CORS headers.
+    fetchMirrorsWithFallback();
   }
 
   function fetchLatestRelease() {
