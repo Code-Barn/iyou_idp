@@ -26,6 +26,7 @@ from .views import (
     acknowledge_legal_disclaimer,
     BetaGateView,
     redeem_beta_invite,
+    airlock_sponsor,
 )
 from .views_oauth import OAuthInitiateView, OAuthCallbackView
 from .views_passkeys import (
@@ -56,6 +57,10 @@ urlpatterns = [
     path('logout/', GlobalLogoutView.as_view(), name='global_logout'),
     path('gate/', BetaGateView.as_view(), name='gate'),
     path('gate/redeem/', redeem_beta_invite, name='gate_redeem'),
+    # One-shot, session-only read of the RFC-002 sponsoring DID. The invite edge
+    # is never persisted, so this is the only place it can be observed — and only
+    # once, before the session drops it.
+    path('airlock/sponsor/', airlock_sponsor, name='airlock_sponsor'),
     path('oauth/initiate/<str:provider>/', OAuthInitiateView.as_view(), name='oauth_initiate'),
     path('oauth/callback/<str:provider>/', OAuthCallbackView.as_view(), name='oauth_callback'),
 

@@ -1020,6 +1020,7 @@ All registered URL patterns (as seen by `django.urls`):
 ```
 /                               → LoginPageView (login portal)
 /airlock/                      → redeem_beta_invite (canonical RFC-002 invite link from iyou_home QR)
+/auth/airlock/sponsor/         → airlock_sponsor (one-shot, session-only read of the sponsoring DID)
 /auth/login/                    → LoginPageView (same template)
 /auth/challenge/                → ChallengeView
 /auth/verify/                   → verify_signature
@@ -1075,6 +1076,7 @@ carrying `request.session["beta_access"]` receives HTTP **403** — the
 | GET | `/gate/` | Airlock screen — invite-key + waitlist-DID form (`gate`, `BetaGateView`) |
 | GET, POST | `/gate/redeem/` | Redeem an RFC-002 invite capability token, a one-time key from `BETA_INVITE_KEYS`, or a waitlisted DID; success stamps `session["beta_access"]` and returns to the pending destination (`gate_redeem`) |
 | GET, POST | `/airlock/` | Canonical invite landing published in `iyou_home` QR codes as `?invite=<base64url_token>`; same view as `/gate/redeem/`, but a bare visit renders the form with no error and success defaults to `/` (`airlock`, registered at the top level in `config/urls.py`) |
+| GET | `/auth/airlock/sponsor/` | One-shot, session-only read of the sponsoring DID held by a redeemed invite; HTTP 401 without a redeemed or logged-in session (`airlock_sponsor`) |
 
 Enforcement lives in `_did_passes_gate(request, did)` → `_gate_response()` /
 `_render_beta_gate()` (`auth_bridge/views.py`) and is applied on
@@ -1159,12 +1161,16 @@ if this is refactored:
    `consume_use`, so a `max_uses=250` token is denied without seeding a counter
    that a smaller token reusing the same nonce could later draw on.
 
-On success the issuer is recorded as Web-of-Trust provenance on the session
-(`beta_invite_issuer_did`, `beta_invite_nonce`, `beta_invite_tier`,
-`beta_invite_redeemed_at`) and, once the caller has proven their DID, durably
-on the `User` row (`beta_invite_issuer_did`, `beta_invite_nonce`,
-`beta_invite_redeemed_at`; migration `0008`). Invite submissions are bearer
-secrets and are redacted before they reach the logs.
+On success the sponsoring issuer is held **only in the browser session**, as
+`session["sponsor_did"]`. Nothing about the invitation is written to Postgres:
+the `User.beta_invite_*` columns that used to hold this edge were dropped in
+migration `0009`, because a durable `issuer → user` column is a queryable
+invite graph that turns this node into a subpoena-addressable surveillance
+honeypot — Postgres indexes identity, it does not own the edges between people.
+`GET /auth/airlock/sponsor/` hands the sponsoring DID to the redeeming session
+exactly once and then erases it, so no Web-of-Trust record accumulates here.
+Invite submissions are bearer secrets and are redacted before they reach the
+logs.
 
 `auth_bridge/tests/test_invite_tokens.py` pins the canonicalization against a
 golden vector emitted by the real Rust minter, so any drift in field

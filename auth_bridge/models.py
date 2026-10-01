@@ -66,10 +66,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     show_legal_disclaimer = models.BooleanField(default=True)
     disclaimer_acknowledged_at = models.DateTimeField(null=True, blank=True)
 
-    beta_invite_issuer_did = models.CharField(max_length=255, null=True, blank=True, db_index=True)
-    beta_invite_nonce = models.CharField(max_length=128, null=True, blank=True)
-    beta_invite_redeemed_at = models.DateTimeField(null=True, blank=True)
-
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

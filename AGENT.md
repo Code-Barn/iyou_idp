@@ -66,10 +66,18 @@ short-circuited to the beta gate screen — HTTP 403, template
   asking "is this the admin?" there would read a self-declared string and let
   any caller request the wide budget by forging `issuer_did`. The clamp is
   `validate_use_ceiling`, ordered signature → authorization → ceiling, and it
-  runs before `consume_use` so a rejected token spends nothing. On success the issuer DID is recorded on both the session
-  and `User.beta_invite_issuer_did` / `beta_invite_nonce` /
-  `beta_invite_redeemed_at` for Web-of-Trust provenance. `guest`-tier tokens are
-  read-only and never admit. Bearer secrets are redacted before logging.
+  runs before `consume_use` so a rejected token spends nothing. `guest`-tier
+  tokens are read-only and never admit. Bearer secrets are redacted before
+  logging.
+- **The invite edge is never relational.** On success the sponsoring issuer DID
+  is held ephemerally in the browser session only, as `session["sponsor_did"]`.
+  `User.beta_invite_issuer_did` / `beta_invite_nonce` / `beta_invite_redeemed_at`
+  were dropped in migration `0009` and MUST NOT come back: a durable
+  `issuer → user` column is a queryable invite graph that makes this node a
+  subpoena-addressable surveillance honeypot. **Postgres is for indexing, not
+  ownership.** `GET /auth/airlock/sponsor/` (`airlock_sponsor`) is the only way
+  to observe the edge — it requires an authenticated/redeemed session, returns
+  `{"sponsor_did": ...}` and then erases the value, so a second read is `null`.
 - `SYSTEM_GATE_ENABLED` is injected into all templates via
   `config.context_processors.global_settings`.
 

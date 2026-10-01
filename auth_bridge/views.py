@@ -20,7 +20,7 @@ from django.http import JsonResponse, HttpResponseRedirect, HttpResponseNotAllow
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth import login, logout as django_logout, get_user_model
 from django.shortcuts import render, redirect
 from django.urls import reverse
@@ -122,25 +122,16 @@ def _default_next_for(request) -> str:
 
 def _record_invite_provenance(request, token):
     """
-    Stamp RFC-002 issuer provenance onto the session.
+    Take ephemeral custody of the sponsoring DID for this browser session.
 
-    The Web-of-Trust edge "who admitted this browser" stays attributable for
-    the life of the session even though the invite itself is a bearer secret.
+    The Web-of-Trust edge "who admitted this browser" is deliberately *not*
+    written to Postgres: a durable issuer → user column is a relational invite
+    graph that turns this node into a subpoena-addressable surveillance
+    honeypot. Postgres indexes identity; it does not own the edges between
+    people. The edge lives in the browser session only, is readable exactly once
+    through `airlock_sponsor`, and is erased the moment it is read.
     """
-    request.session['beta_invite_issuer_did'] = token['issuer_did']
-    request.session['beta_invite_nonce'] = token['nonce']
-    request.session['beta_invite_tier'] = token['tier']
-    request.session['beta_invite_redeemed_at'] = int(timezone.now().timestamp())
-
-
-def _attach_invite_provenance(user, token):
-    """Persist RFC-002 issuer provenance on the User for durable audit."""
-    user.beta_invite_issuer_did = token['issuer_did']
-    user.beta_invite_nonce = token['nonce']
-    user.beta_invite_redeemed_at = timezone.now()
-    user.save(
-        update_fields=['beta_invite_issuer_did', 'beta_invite_nonce', 'beta_invite_redeemed_at']
-    )
+    request.session['sponsor_did'] = token.get('issuer_did')
 
 
 def _render_beta_gate(request, did=None, next_url=None, verified_did=None):
@@ -1274,8 +1265,8 @@ def redeem_beta_invite(request):
     link tap works: the canonical ``/airlock/?invite=...`` link published in
     invite QR codes, the ``/gate/redeem/?invite=...`` / ``?t=...`` variants,
     and the gate form's POST. A token must be schema-valid, unexpired, signed
-    by an authorized issuer, and within its use budget; the issuer DID is then
-    recorded on the session and user as Web-of-Trust provenance.
+    by an authorized issuer, and within its use budget; the sponsoring issuer DID
+    is then held ephemerally in the browser session only — never in the database.
 
     Reached with no input at all, it is a neutral landing that just displays
     the manual entry form — a bare ``/airlock/`` tap is not a failed
@@ -1340,8 +1331,6 @@ def redeem_beta_invite(request):
         if pending_did:
             User = get_user_model()
             user, created = User.objects.get_or_create(custodial_did=pending_did, defaults={"email": None})
-            if token is not None:
-                _attach_invite_provenance(user, token)
             user = evaluate_sovereign_admin_posture(user)
 
             if not user.is_active:
@@ -1386,3 +1375,30 @@ def redeem_beta_invite(request):
             did,
         )
     return _render_beta_gate(request, did=did, next_url=next_url)
+
+
+@require_GET
+def airlock_sponsor(request):
+    """
+    One-shot read of the sponsoring DID held by a redeemed invite session.
+
+    RFC-002 redemption deliberately keeps the Web-of-Trust edge out of
+    Postgres, so the sponsoring issuer is parked in the browser session under
+    ``sponsor_did``. A client that wants to attribute its own invite (e.g. to
+    render "invited by …") reads it here, and the value is destroyed on the way
+    out: a second query returns ``null``, so the edge is not durably recoverable
+    from this node even if the session store is later seized.
+
+    Requires an authenticated session — either a logged-in user, or a beta gate
+    opened by a successful redemption. Read-only and GET-only, so no CSRF token
+    is required; it is deliberately not ``csrf_exempt``, since a cross-site form
+    can only ever issue a GET and so cannot reach this handler's side effect.
+    """
+    if not getattr(request.user, "is_authenticated", False) and not _has_beta_session(request):
+        return JsonResponse({"error": "authentication_required"}, status=401)
+
+    sponsor_did = request.session.get("sponsor_did")
+    if "sponsor_did" in request.session:
+        del request.session["sponsor_did"]
+        request.session.modified = True
+    return JsonResponse({"sponsor_did": sponsor_did})

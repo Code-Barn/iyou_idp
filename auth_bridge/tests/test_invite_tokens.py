@@ -31,6 +31,8 @@ from base64 import urlsafe_b64encode
 import base58
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from django.core.exceptions import FieldDoesNotExist
+from django.db import connection
 from django.test import Client as TestClient, RequestFactory, TestCase, override_settings
 from django.urls import reverse
 
@@ -251,9 +253,7 @@ class RedemptionAcceptanceTest(TestCase):
 
         self.assertEqual(resp.status_code, 302)
         self.assertTrue(self.client.session.get("beta_access"))
-        self.assertEqual(self.client.session["beta_invite_issuer_did"], self.issuer_did)
-        self.assertEqual(self.client.session["beta_invite_nonce"], token["nonce"])
-        self.assertEqual(self.client.session["beta_invite_tier"], "member")
+        self.assertEqual(self.client.session["sponsor_did"], self.issuer_did)
 
     def test_base64url_token_via_get_invite_parameter(self):
         token = _mint(self.key, nonce=_nonce())
@@ -285,9 +285,17 @@ class RedemptionAcceptanceTest(TestCase):
 
         self.assertEqual(resp.status_code, 302)
         self.assertTrue(self.client.session.get("beta_access"))
-        self.assertEqual(self.client.session["beta_invite_issuer_did"], _did_of(delegator))
+        self.assertEqual(self.client.session["sponsor_did"], _did_of(delegator))
 
-    def test_provenance_persisted_on_user_after_verified_did(self):
+    def test_redemption_writes_no_invite_edge_to_the_database(self):
+        """
+        Beta access is granted to the session; Postgres learns nothing about it.
+
+        A durable `issuer → user` column is a queryable social graph, so the
+        provenance edge must never reach `auth_bridge_user`. This pins both the
+        model shape and the absence of any legacy `beta_invite_*` attribute left
+        behind on an already-persisted row.
+        """
         pending_did = _did_of(ed25519.Ed25519PrivateKey.generate())
         session = self.client.session
         session["verified_pending_did"] = pending_did
@@ -298,11 +306,24 @@ class RedemptionAcceptanceTest(TestCase):
         resp = self.client.post(self.redeem_url, {"invite_key": json.dumps(token)})
 
         self.assertEqual(resp.status_code, 302)
-        user = User.objects.get(custodial_did=pending_did)
-        self.assertEqual(user.beta_invite_issuer_did, self.issuer_did)
-        self.assertEqual(user.beta_invite_nonce, token["nonce"])
-        self.assertIsNotNone(user.beta_invite_redeemed_at)
+        self.assertIs(self.client.session["beta_access"], True)
+        self.assertEqual(self.client.session["sponsor_did"], self.issuer_did)
         self.assertIsNone(self.client.session.get("verified_pending_did"))
+
+        user = User.objects.get(custodial_did=pending_did)
+        user.refresh_from_db()
+        for field in ("beta_invite_issuer_did", "beta_invite_nonce", "beta_invite_redeemed_at"):
+            with self.assertRaises(FieldDoesNotExist):
+                User._meta.get_field(field)
+            self.assertFalse(hasattr(user, field))
+
+        columns = {
+            column.name
+            for column in connection.introspection.get_table_description(
+                connection.cursor(), User._meta.db_table
+            )
+        }
+        self.assertFalse({c for c in columns if c.startswith("beta_invite")})
 
     def test_guest_tier_does_not_admit(self):
         token = _mint(self.key, tier="guest", nonce=_nonce())
@@ -661,7 +682,7 @@ class LegacyRedemptionTest(TestCase):
             resp = self.client.post(self.redeem_url, {"invite_key": "INVITE-BETA-001"})
         self.assertEqual(resp.status_code, 302)
         self.assertTrue(self.client.session.get("beta_access"))
-        self.assertIsNone(self.client.session.get("beta_invite_issuer_did"))
+        self.assertIsNone(self.client.session.get("sponsor_did"))
 
     def test_static_invite_key_via_get(self):
         with override_settings(BETA_INVITE_KEYS=["INVITE-BETA-001"]):
@@ -747,9 +768,10 @@ class AirlockEndToEndTest(TestCase):
         self.assertEqual(redeem.status_code, 302)
         self.assertTrue(self.client.session.get("beta_access"))
         self.assertIn("_auth_user_id", self.client.session)
+        self.assertEqual(self.client.session["sponsor_did"], _did_of(self.key))
         user = User.objects.get(custodial_did=self.member_did)
-        self.assertEqual(user.beta_invite_issuer_did, _did_of(self.key))
-        self.assertEqual(user.beta_invite_nonce, token["nonce"])
+        user.refresh_from_db()
+        self.assertFalse(hasattr(user, "beta_invite_issuer_did"))
 
         # The redeemed session now clears the airlock on the next ingress.
         from auth_bridge.views import _did_passes_gate
@@ -818,8 +840,7 @@ class CanonicalAirlockRouteTest(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertEqual(resp["Location"], "/")
         self.assertIs(self.client.session["beta_access"], True)
-        self.assertEqual(self.client.session["beta_invite_issuer_did"], self.issuer_did)
-        self.assertEqual(self.client.session["beta_invite_nonce"], token["nonce"])
+        self.assertEqual(self.client.session["sponsor_did"], self.issuer_did)
 
     def test_explicit_next_is_honoured(self):
         token = _mint(self.key, nonce=_nonce())
@@ -877,3 +898,90 @@ class CanonicalAirlockRouteTest(TestCase):
         request = RequestFactory().get("/")
         request.session = self.client.session
         self.assertTrue(_did_passes_gate(request, "did:key:z6Mkstranger"))
+
+
+@override_settings(SYSTEM_GATE_ENABLED=True, BETA_INVITE_KEYS=[])
+class SponsorEphemeralQueryTest(TestCase):
+    """
+    `GET /auth/airlock/sponsor/` — the one-shot read of the invite edge.
+
+    Because the sponsor edge is deliberately absent from Postgres, this
+    endpoint is the only place it can be observed, and only by the session that
+    redeemed it. It must hand over the DID exactly once and erase it, so no
+    durable Web-of-Trust record accumulates on this node.
+    """
+
+    def setUp(self):
+        self.client = TestClient()
+        self.key = ed25519.Ed25519PrivateKey.generate()
+        self.issuer_did = _did_of(self.key)
+        self.settings_ctx = override_settings(ADMIN_DID=self.issuer_did, BETA_ACCESS_ALLOWLIST=[])
+        self.settings_ctx.enable()
+        self.addCleanup(self.settings_ctx.disable)
+        cache.clear()
+        self.redeem_url = reverse("auth_bridge:gate_redeem")
+        self.sponsor_url = reverse("auth_bridge:airlock_sponsor")
+
+    def test_route_is_under_the_auth_prefix(self):
+        self.assertEqual(self.sponsor_url, "/auth/airlock/sponsor/")
+
+    def test_unauthenticated_session_is_refused(self):
+        resp = self.client.get(self.sponsor_url)
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json(), {"error": "authentication_required"})
+
+    def test_redeemed_session_reads_then_forgets_the_sponsor(self):
+        token = _mint(self.key, nonce=_nonce())
+        self.assertEqual(
+            self.client.post(self.redeem_url, {"invite_key": json.dumps(token)}).status_code, 302
+        )
+
+        first = self.client.get(self.sponsor_url)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json(), {"sponsor_did": self.issuer_did})
+
+        second = self.client.get(self.sponsor_url)
+        self.assertEqual(second.status_code, 200)
+        self.assertIsNone(second.json()["sponsor_did"])
+        self.assertNotIn("sponsor_did", self.client.session)
+
+    def test_reading_the_sponsor_does_not_consume_beta_access(self):
+        token = _mint(self.key, nonce=_nonce())
+        self.client.post(self.redeem_url, {"invite_key": json.dumps(token)})
+
+        self.client.get(self.sponsor_url)
+
+        self.assertIs(self.client.session["beta_access"], True)
+
+    def test_legacy_key_redemption_reports_no_sponsor(self):
+        with override_settings(BETA_INVITE_KEYS=["INVITE-BETA-001"]):
+            self.assertEqual(
+                self.client.post(self.redeem_url, {"invite_key": "INVITE-BETA-001"}).status_code, 302
+            )
+
+        resp = self.client.get(self.sponsor_url)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.json()["sponsor_did"])
+
+    def test_reading_the_sponsor_persists_nothing_to_the_user_table(self):
+        pending_did = _did_of(ed25519.Ed25519PrivateKey.generate())
+        session = self.client.session
+        session["verified_pending_did"] = pending_did
+        session.save()
+
+        token = _mint(self.key, nonce=_nonce())
+        self.assertEqual(
+            self.client.post(self.redeem_url, {"invite_key": json.dumps(token)}).status_code, 302
+        )
+
+        resp = self.client.get(self.sponsor_url)
+
+        self.assertEqual(resp.json(), {"sponsor_did": self.issuer_did})
+        user = User.objects.get(custodial_did=pending_did)
+        user.refresh_from_db()
+        self.assertNotIn(self.issuer_did, " ".join(str(v) for v in vars(user).values()))
+        self.assertFalse(hasattr(user, "beta_invite_nonce"))
+
+    def test_post_is_not_allowed(self):
+        self.assertEqual(self.client.post(self.sponsor_url).status_code, 405)
