@@ -829,6 +829,155 @@
         init();
         initTabs();
 
+        // ─── Email OTP Engine (Tab 2) ──────────────────────────────────
+        (function initEmailOtp() {
+            const stepA = document.getElementById('otp-step-a');
+            const stepB = document.getElementById('otp-step-b');
+            const emailInput = document.getElementById('otp-email');
+            const codeInput = document.getElementById('otp-code');
+            const sendBtn = document.getElementById('send-otp-btn');
+            const verifyBtn = document.getElementById('verify-otp-btn');
+            const changeEmailBtn = document.getElementById('change-email-btn');
+            const resendBtn = document.getElementById('resend-otp-btn');
+            const targetEmailSpan = document.getElementById('otp-target-email');
+            const stepAError = document.getElementById('otp-step-a-error');
+            const stepBError = document.getElementById('otp-step-b-error');
+
+            if (!stepA || !stepB || !sendBtn || !verifyBtn) return;
+
+            let pendingEmail = '';
+
+            function showStepAError(msg) {
+                stepAError.textContent = msg;
+                stepAError.classList.remove('hidden');
+            }
+            function hideStepAError() {
+                stepAError.textContent = '';
+                stepAError.classList.add('hidden');
+            }
+            function showStepBError(msg) {
+                stepBError.textContent = msg;
+                stepBError.classList.remove('hidden');
+            }
+            function hideStepBError() {
+                stepBError.textContent = '';
+                stepBError.classList.add('hidden');
+            }
+
+            async function requestChallenge(email) {
+                hideStepAError();
+                hideStepBError();
+                sendBtn.disabled = true;
+                const originalText = sendBtn.innerHTML;
+                sendBtn.innerHTML = '<span>Sending code…</span>';
+
+                try {
+                    const resp = await fetch("{% url 'auth_bridge:email_challenge' %}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': window.csrfToken,
+                        },
+                        body: JSON.stringify({
+                            email: email,
+                            next_url: currentNextUrl || '',
+                        }),
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok || !data.success) {
+                        throw new Error(data.error || 'Failed to dispatch verification code.');
+                    }
+                    pendingEmail = email;
+                    targetEmailSpan.textContent = email;
+                    stepA.classList.add('hidden');
+                    stepB.classList.remove('hidden');
+                    codeInput.value = '';
+                    codeInput.focus();
+                } catch (err) {
+                    showStepAError(err.message || 'Error requesting verification code.');
+                } finally {
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML = originalText;
+                }
+            }
+
+            sendBtn.addEventListener('click', () => {
+                const email = (emailInput.value || '').trim();
+                if (!email) {
+                    showStepAError('Please enter a valid email address.');
+                    return;
+                }
+                requestChallenge(email);
+            });
+
+            emailInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendBtn.click();
+                }
+            });
+
+            changeEmailBtn.addEventListener('click', () => {
+                hideStepBError();
+                stepB.classList.add('hidden');
+                stepA.classList.remove('hidden');
+                emailInput.focus();
+            });
+
+            resendBtn.addEventListener('click', () => {
+                if (pendingEmail) {
+                    requestChallenge(pendingEmail);
+                }
+            });
+
+            async function verifyCode(email, otp) {
+                hideStepBError();
+                verifyBtn.disabled = true;
+                const originalText = verifyBtn.innerHTML;
+                verifyBtn.innerHTML = '<span>Verifying…</span>';
+
+                try {
+                    const resp = await fetch("{% url 'auth_bridge:email_verify' %}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': window.csrfToken,
+                        },
+                        body: JSON.stringify({
+                            email: email,
+                            otp: otp,
+                        }),
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok || !data.success) {
+                        throw new Error(data.error || 'Verification failed. Please check the code.');
+                    }
+                    const shouldShowDisclaimer = (data.show_legal_disclaimer !== false) && (!data.user || data.user.show_legal_disclaimer !== false);
+                    onAuthSuccess(data.redirect_url, shouldShowDisclaimer);
+                } catch (err) {
+                    showStepBError(err.message || 'Verification error.');
+                    verifyBtn.disabled = false;
+                    verifyBtn.innerHTML = originalText;
+                }
+            }
+
+            verifyBtn.addEventListener('click', () => {
+                const otp = (codeInput.value || '').trim();
+                if (!otp || otp.length < 6) {
+                    showStepBError('Please enter the 6-digit code.');
+                    return;
+                }
+                verifyCode(pendingEmail, otp);
+            });
+
+            codeInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    verifyBtn.click();
+                }
+            });
+        })();
+
         // ─── WebAuthn Passkey Authentication (Tab 2) ────────────────────
         (function initPasskeyAuth() {
             const passkeyBtn = document.getElementById('passkey-auth-btn');

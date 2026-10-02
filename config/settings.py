@@ -89,6 +89,8 @@ env = environ.Env(
     OAUTH_APPLE_CLIENT_SECRET=(str, ""),
     OAUTH_GITHUB_CLIENT_ID=(str, ""),
     OAUTH_GITHUB_CLIENT_SECRET=(str, ""),
+    EMAIL_BACKEND=(str, "django.core.mail.backends.console.EmailBackend"),
+    DEFAULT_FROM_EMAIL=(str, "noreply@iyou.me"),
 )
 
 # Load .env file so env vars take effect during development
@@ -112,6 +114,8 @@ IDP_BASE_URL = env("IDP_BASE_URL")
 IDP_WUN_URL = env("IDP_WUN_URL")
 IDP_HOME_URL = env("IDP_HOME_URL")
 IDP_HOME_WS_URL = env("IDP_HOME_WS_URL")
+EMAIL_BACKEND = env("EMAIL_BACKEND")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 
 # Tier-1 managed-identity did:web namespace. Peer instances override this with
 # their own authority (e.g. did:web:hub.community.org) so managed users are

@@ -18,7 +18,7 @@
   // into a console CORS error. The contents API returns the file base64-encoded.
   var MIRRORS_API_URL = 'https://api.github.com/repos/Code-Barn/iyou_home/contents/release-artifacts/MIRRORS.txt';
   var IPFS_FALLBACK_URL = 'https://ipfs.io/ipfs/QmUA8mAoo7fTZbG1hwvChbSVbD3trAhACBHjzYQDAoFDQu/';
-  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:6656bea4131bb570624ab6b39ea67fe2fbbff711&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&ws=https%3A%2F%2Fgithub.com%2FCode-Barn%2Fiyou_home%2Freleases%2Fdownload%2Fv0.2.2%2F';
+  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:a8e1d1fee596f8f7e9cf0cba56633747073bb4f4&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&ws=https%3A%2F%2Fgithub.com%2FCode-Barn%2Fiyou_home%2Freleases%2Fdownload%2Fv0.2.2%2F';
 
   function detectOS() {
     var ua = navigator.userAgent || navigator.platform || '';

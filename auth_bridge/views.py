@@ -30,6 +30,8 @@ from urllib.parse import urlparse, parse_qs, urlencode, quote_plus
 
 from django.contrib import messages
 from django.conf import settings as django_settings
+from django.core.mail import send_mail
+import secrets
 
 from .models import User
 from .backend import evaluate_sovereign_admin_posture
@@ -877,73 +879,218 @@ def check_challenge_status(request, challenge_id):
 @require_POST
 def managed_login(request):
     """
-    Tier 1 Managed Convenience — JIT email/password authentication.
-
-    - Context Extraction & Sanitization: extract next_url and sanitize with _is_safe_public_redirect.
-    - Credential Validation & JIT User Creation: validate inputs, verify password or JIT create user.
-    - Security Posture & Gate Interlocking: evaluate_sovereign_admin_posture and check Sovereign Airlock Gate.
-    - Session Establishment: login(request, user, backend="auth_bridge.backend.DIDAuthBackend").
-    - GDPR Disclaimer Interlocking: divert to legal disclaimer if user.show_legal_disclaimer is True.
-    - OIDC Handshake Continuity: execute _build_oidc_redirect if OIDC parameters exist, else redirect to next_url.
+    DEPRECATED: Direct password ingress is disabled.
+    Managed convenience authentication requires verified email proof-of-control
+    via ChallengeEmailView and VerifyEmailView.
     """
-    # 1. Context Extraction & Sanitization
     raw_next = request.POST.get('next', '').strip() or request.GET.get('next', '').strip() or DEFAULT_NEXT_URL
     next_url = raw_next if _is_safe_public_redirect(raw_next) else DEFAULT_NEXT_URL
+    logger.warning("DEPRECATED: POST /auth/managed-login/ invoked. Direct password ingress is disabled.")
 
-    email = request.POST.get('email', '').strip().lower()
-    password = request.POST.get('password', '').strip()
-
-    # 2. Credential Validation & JIT User Creation
-    if not email or not password:
-        messages.error(request, 'Email and password are required.')
-        return redirect(f"{reverse('auth_bridge:login')}?tab=managed&next={quote_plus(next_url)}")
-
-    try:
-        user = User.objects.get(email__iexact=email)
-        # Existing user — verify password
-        if not user.check_password(password):
-            messages.error(request, 'Invalid email or password.')
-            return redirect(f"{reverse('auth_bridge:login')}?tab=managed&next={quote_plus(next_url)}")
-        if not user.is_active:
-            messages.error(request, 'Account is disabled.')
-            return redirect(f"{reverse('auth_bridge:login')}?tab=managed&next={quote_plus(next_url)}")
-    except User.DoesNotExist:
-        # JIT create new user cleanly without username kwarg
-        did = generate_custodial_did()
-        user = User.objects.create(
-            email=email.strip().lower(),
-            custodial_did=did,
-            account_tier=1,
-            is_active=True,
+    if request.headers.get("accept") == "application/json" or request.content_type == "application/json":
+        return JsonResponse(
+            {"error": "Password login is deprecated. Please authenticate using email verification code.", "deprecated": True},
+            status=400,
         )
-        user.set_password(password)
-        user.save()
-        logger.info("JIT USER CREATED: email=%s did=%s", email, did)
+    messages.error(request, "Password login is deprecated. Please authenticate using email verification code.")
+    return redirect(f"{reverse('auth_bridge:login')}?tab=managed&next={quote_plus(next_url)}")
 
-    # 3. Security Posture & Gate Interlocking
-    evaluate_sovereign_admin_posture(user)
-    gate_resp = _gate_response(request, user.custodial_did, next_url)
-    if gate_resp is not None:
-        return gate_resp
 
-    # 4. Session Establishment
-    login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
+@method_decorator(csrf_exempt, name="dispatch")
+class ChallengeEmailView(View):
+    """
+    POST /auth/email/challenge/
+    Accepts {"email": "...", "next_url": "..."}.
+    Validates and normalizes email, generates 6-digit cryptographic OTP and 32-byte token,
+    stores in Redis cache (300s TTL), and dispatches challenge via send_mail.
+    """
 
-    # 5. GDPR Disclaimer Interlocking
-    if user.show_legal_disclaimer:
-        request.session['post_disclaimer_redirect'] = next_url
+    def post(self, request):
         try:
-            disclaimer_base = reverse('auth_bridge:legal_disclaimer')
+            data = json.loads(request.body.decode("utf-8") or "{}") if request.body else request.POST.dict()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({"error": "Invalid JSON payload"}, status=400)
+
+        raw_email = data.get("email", "")
+        if not raw_email or not isinstance(raw_email, str):
+            return JsonResponse({"error": "Email is required"}, status=400)
+
+        email = raw_email.strip().lower()
+        if "@" not in email or email.startswith("@") or email.endswith("@"):
+            return JsonResponse({"error": "Invalid email address"}, status=400)
+
+        raw_next = data.get("next_url") or data.get("next") or ""
+        next_url = raw_next if _is_safe_public_redirect(raw_next) else DEFAULT_NEXT_URL
+
+        otp = "".join(secrets.choice("0123456789") for _ in range(6))
+        token = secrets.token_urlsafe(32)
+
+        cache_payload = {
+            "otp": otp,
+            "token": token,
+            "next_url": next_url,
+            "email": email,
+        }
+        cache.set(f"email_otp:{email}", json.dumps(cache_payload), timeout=300)
+        cache.set(f"email_otp_token:{token}", email, timeout=300)
+
+        subject = f"Your iYou verification code: {otp}"
+        message = (
+            f"Your iYou verification code is: {otp}\n\n"
+            f"This code will expire in 5 minutes.\n\n"
+            f"If you did not request this code, you can safely ignore this email.\n"
+        )
+        html_message = (
+            f"<div style='font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;'>"
+            f"<h2 style='color: #111827; margin-bottom: 16px;'>iYou Identity Verification</h2>"
+            f"<p style='color: #4b5563; font-size: 15px;'>Your verification code is:</p>"
+            f"<div style='background: #f3f4f6; border-radius: 8px; padding: 16px; text-align: center; margin: 24px 0;'>"
+            f"<span style='font-size: 32px; font-weight: 700; letter-spacing: 6px; font-family: monospace; color: #4f46e5;'>{otp}</span>"
+            f"</div>"
+            f"<p style='color: #6b7280; font-size: 13px;'>This code will expire in 5 minutes.</p>"
+            f"<p style='color: #9ca3af; font-size: 12px;'>If you did not request this verification, no action is required.</p>"
+            f"</div>"
+        )
+        from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@iyou.me")
+
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=from_email,
+                recipient_list=[email],
+                html_message=html_message,
+                fail_silently=False,
+            )
         except Exception:
-            disclaimer_base = reverse('legal_disclaimer')
-        return HttpResponseRedirect(f"{disclaimer_base}?next={quote_plus(next_url)}")
+            logger.exception("Failed to dispatch email OTP to %s", email)
 
-    # 6. OIDC Handshake Continuity
-    redirect_url = _build_oidc_redirect(next_url, user)
-    if redirect_url is None:
-        redirect_url = next_url
+        logger.info("EMAIL OTP DISPATCHED: email=%s", email)
+        return JsonResponse({"success": True, "message": "Verification code dispatched."})
 
-    return HttpResponseRedirect(redirect_url)
+
+@method_decorator(csrf_exempt, name="dispatch")
+class VerifyEmailView(View):
+    """
+    POST /auth/email/verify/ (and GET for magic link redemption)
+    Accepts {"email": "...", "otp": "..."} or {"token": "..."}.
+    Validates against Redis cache (single-use), resolves or provisions User,
+    enforces unusable password, establishes session, and returns OIDC/next redirect.
+    """
+
+    def get(self, request):
+        token = request.GET.get("token", "").strip()
+        email = request.GET.get("email", "").strip().lower()
+        otp = request.GET.get("otp", "").strip()
+        return self._verify(request, email=email, otp=otp, token=token, is_get=True)
+
+    def post(self, request):
+        try:
+            data = json.loads(request.body.decode("utf-8") or "{}") if request.body else request.POST.dict()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({"error": "Invalid JSON payload"}, status=400)
+
+        email = data.get("email", "").strip().lower()
+        otp = data.get("otp", "").strip()
+        token = data.get("token", "").strip()
+        return self._verify(request, email=email, otp=otp, token=token, is_get=False)
+
+    def _verify(self, request, email: str, otp: str, token: str, is_get: bool):
+        if not token and not (email and otp):
+            return JsonResponse({"error": "Email and OTP or token are required."}, status=400)
+
+        if token and not email:
+            resolved_email = cache.get(f"email_otp_token:{token}")
+            if not resolved_email:
+                return JsonResponse({"error": "Invalid or expired verification token."}, status=400)
+            email = resolved_email.strip().lower()
+
+        cached_raw = cache.get(f"email_otp:{email}")
+        if not cached_raw:
+            return JsonResponse({"error": "Verification code expired or not found."}, status=400)
+
+        cached = json.loads(cached_raw) if isinstance(cached_raw, str) else cached_raw
+
+        matched = False
+        if token and "token" in cached:
+            if hmac.compare_digest(token, cached["token"]):
+                matched = True
+        elif otp and "otp" in cached:
+            if hmac.compare_digest(otp, cached["otp"]):
+                matched = True
+
+        if not matched:
+            return JsonResponse({"error": "Invalid verification code."}, status=400)
+
+        # Single-use semantics: delete cache keys on match
+        cache.delete(f"email_otp:{email}")
+        if "token" in cached:
+            cache.delete(f"email_otp_token:{cached['token']}")
+
+        next_url = cached.get("next_url") or DEFAULT_NEXT_URL
+        if not _is_safe_public_redirect(next_url):
+            next_url = DEFAULT_NEXT_URL
+
+        # Resolve User by email: update existing or provision new
+        user = User.objects.filter(email=email).first()
+        if user:
+            user.email_verified = True
+            if not user.email_verified_at:
+                user.email_verified_at = timezone.now()
+            user.set_unusable_password()
+            user.save(update_fields=["email_verified", "email_verified_at", "password", "updated_at"])
+            logger.info("EMAIL OTP LOGIN: user resolved email=%s did=%s", email, user.custodial_did)
+        else:
+            did = generate_custodial_did()
+            user = User.objects.create(
+                email=email,
+                custodial_did=did,
+                account_tier="managed_free",
+                email_verified=True,
+                email_verified_at=timezone.now(),
+                is_active=True,
+            )
+            user.set_unusable_password()
+            user.save()
+            logger.info("EMAIL OTP USER PROVISIONED: email=%s did=%s", email, did)
+
+        # Security Posture & Gate Interlocking
+        user = evaluate_sovereign_admin_posture(user)
+        gate_resp = _gate_response(request, user.custodial_did, next_url)
+        if gate_resp is not None:
+            return gate_resp
+
+        # Session Establishment
+        login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
+
+        # GDPR Legal Disclaimer Interlocking
+        if user.show_legal_disclaimer:
+            request.session["post_disclaimer_redirect"] = next_url
+
+        # OIDC Handshake Continuity
+        redirect_url = _build_oidc_redirect(next_url, user)
+        if redirect_url is None:
+            redirect_url = next_url if _is_safe_public_redirect(next_url) else getattr(django_settings, "IDP_WUN_URL", DEFAULT_NEXT_URL)
+
+        if is_get:
+            if user.show_legal_disclaimer:
+                disclaimer_base = reverse("auth_bridge:legal_disclaimer")
+                return HttpResponseRedirect(f"{disclaimer_base}?next={quote_plus(next_url)}")
+            return HttpResponseRedirect(redirect_url)
+
+        return JsonResponse({
+            "success": True,
+            "redirect_url": redirect_url,
+            "show_legal_disclaimer": getattr(user, "show_legal_disclaimer", True),
+            "user": {
+                "email": user.email,
+                "did": user.custodial_did,
+                "email_verified": user.email_verified,
+                "account_tier": user.account_tier,
+                "is_authenticated": True,
+                "show_legal_disclaimer": getattr(user, "show_legal_disclaimer", True),
+            },
+        })
 
 
 @method_decorator(csrf_exempt, name='dispatch')

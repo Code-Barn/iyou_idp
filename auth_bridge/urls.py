@@ -27,6 +27,8 @@ from .views import (
     BetaGateView,
     redeem_beta_invite,
     airlock_sponsor,
+    ChallengeEmailView,
+    VerifyEmailView,
 )
 from .views_oauth import OAuthInitiateView, OAuthCallbackView
 from .views_passkeys import (
@@ -52,6 +54,10 @@ urlpatterns = [
     path('admin/did-verify/', custom_admin_verify, name='admin_did_verify'),
     path('admin/did-dashboard/',       custom_admin_dashboard,    name='admin_did_dashboard'),
     path('managed-login/',             managed_login,             name='managed_login'),
+    path('email/challenge/',           ChallengeEmailView.as_view(), name='email_challenge'),
+    path('email/verify/',              VerifyEmailView.as_view(),    name='email_verify'),
+    path('auth/email/challenge/',      ChallengeEmailView.as_view()),
+    path('auth/email/verify/',         VerifyEmailView.as_view()),
     path('mobile-verify/',             mobile_verify_signature,  name='mobile_verify'),
     path('challenge-status/<str:challenge_id>/', check_challenge_status, name='challenge_status'),
     path('logout/', GlobalLogoutView.as_view(), name='global_logout'),
