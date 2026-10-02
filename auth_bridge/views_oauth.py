@@ -49,6 +49,7 @@ from urllib.parse import urlencode
 import requests
 from django.conf import settings
 from django.contrib.auth import login
+from auth_bridge.resilient_cache import cache
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
@@ -419,7 +420,7 @@ class OAuthCallbackView(View):
         # strengthen their anti-Sybil posture with an OS-enclave hardware
         # key assertion before the session is established.
 
-        return self._complete_login(request, user)
+        return self._complete_login(request, user, provider)
 
     # ── back-channel HTTP helpers ─────────────────────────────────────────
 
@@ -502,13 +503,18 @@ class OAuthCallbackView(View):
 
     # ── session finalisation ──────────────────────────────────────────────
 
-    def _complete_login(self, request: Any, user: Any) -> HttpResponse:
+    def _complete_login(self, request: Any, user: Any, provider: str = "") -> HttpResponse:
         from .views import _gate_response
         gate_resp = _gate_response(request, user.custodial_did)
         if gate_resp is not None:
             return gate_resp
 
         login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
+        if not provider:
+            provider = request.session.get(SESSION_KEY_OAUTH_PROVIDER, "oauth")
+        auth_method = f"oauth:{provider}"
+        request.session["auth_method"] = auth_method
+        cache.set(f"user_auth_method:{user.id}", auth_method, 86400)
 
         pending_next = request.session.pop(SESSION_KEY_OAUTH_NEXT, None)
 

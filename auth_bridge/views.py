@@ -477,6 +477,8 @@ def verify_signature(request):
                         if user.is_active:
                             user.backend = "django.contrib.auth.backends.ModelBackend"
                             login(request, user)
+                            request.session["auth_method"] = "did:websocket"
+                            cache.set(f"user_auth_method:{user.id}", "did:websocket", 86400)
                             cache.delete(challenge)
                             redirect_url = next_url if _is_safe_public_redirect(next_url) else DEFAULT_NEXT_URL
                             response_data = {
@@ -510,6 +512,8 @@ def verify_signature(request):
 
                 user.backend = "django.contrib.auth.backends.ModelBackend"
                 login(request, user)
+                request.session["auth_method"] = "did:websocket"
+                cache.set(f"user_auth_method:{user.id}", "did:websocket", 86400)
 
                 cache.delete(challenge)
 
@@ -564,6 +568,8 @@ def verify_signature(request):
 
         user.backend = 'django.contrib.auth.backends.ModelBackend'
         login(request, user)
+        request.session["auth_method"] = "did:websocket"
+        cache.set(f"user_auth_method:{user.id}", "did:websocket", 86400)
 
         # Bypass the OIDC consent page: generate an auth code right here
         redirect_url = _build_oidc_redirect(next_url, user)
@@ -862,6 +868,8 @@ def check_challenge_status(request, challenge_id):
 
     user.backend = 'django.contrib.auth.backends.ModelBackend'
     login(request, user)
+    request.session["auth_method"] = "did:oob_qr"
+    cache.set(f"user_auth_method:{user.id}", "did:oob_qr", 86400)
 
     redirect_url = _build_oidc_redirect(next_url, user)
     if redirect_url is None:
@@ -1062,6 +1070,8 @@ class VerifyEmailView(View):
 
         # Session Establishment
         login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
+        request.session["auth_method"] = "otp:email"
+        cache.set(f"user_auth_method:{user.id}", "otp:email", 86400)
 
         # GDPR Legal Disclaimer Interlocking
         if user.show_legal_disclaimer:
@@ -1340,12 +1350,21 @@ class SovereignAuthorizeView(AuthorizeView):
     authorize_endpoint_class = SovereignAuthorizeEndpoint
 
     def get(self, request, *args, **kwargs):
-        if getattr(request.user, "is_authenticated", False) and request.user.is_sovereign:
-            logger.warning(
-                "SOVEREIGN GATE: blocking OIDC front-channel issuance for graduated DID %s",
-                request.user.custodial_did,
-            )
-            return JsonResponse({'error': 'access_denied', 'error_description': 'Graduated sovereign identities must authenticate directly with their own DID.'}, status=403)
+        if getattr(request.user, "is_authenticated", False):
+            auth_method = request.session.get("auth_method", "")
+            if auth_method in ("password", "unverified"):
+                logger.warning(
+                    "OIDC GATE: blocking code issuance for unverified/password session: user=%s auth_method=%s",
+                    request.user.custodial_did,
+                    auth_method,
+                )
+                return JsonResponse(
+                    {
+                        "error": "access_denied",
+                        "error_description": "Legacy password or unverified authentication is not permitted for OIDC issuance.",
+                    },
+                    status=403,
+                )
 
         if getattr(request.user, "is_authenticated", False):
             gate_resp = _gate_response(request, request.user.custodial_did)
@@ -1485,6 +1504,8 @@ def redeem_beta_invite(request):
                 return _render_beta_gate(request, did=pending_did, next_url=next_url)
 
             login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
+            request.session["auth_method"] = "did:websocket"
+            cache.set(f"user_auth_method:{user.id}", "did:websocket", 86400)
             logger.info("SYSTEM GATE: auto-login granted after invite redemption for verified DID %s", pending_did)
 
             if getattr(user, "show_legal_disclaimer", True):

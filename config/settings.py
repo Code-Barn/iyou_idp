@@ -314,6 +314,7 @@ SITE_URL = IDP_BASE_URL
 OIDC_USERINFO = "auth_bridge.oidc.custom_userinfo_claims"
 OIDC_IDTOKEN_PROCESSING_HOOK = "auth_bridge.oidc.custom_idtoken_processing_hook"
 OIDC_IDTOKEN_SUB_GENERATOR = "auth_bridge.oidc.custom_sub_generator"
+OIDC_EXTRA_SCOPE_CLAIMS = "auth_bridge.oidc.CustomScopeClaims"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Tier 1 Managed Convenience — OAuth2 Provider Configuration

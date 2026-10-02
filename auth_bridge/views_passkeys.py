@@ -27,6 +27,7 @@ import uuid
 from typing import Any
 
 from django.contrib.auth import login
+from auth_bridge.resilient_cache import cache
 from django.db import IntegrityError
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils import timezone
@@ -48,7 +49,6 @@ from .passkeys import (
     extract_user_handle,
     rebuild_attested_credential,
 )
-from .views import cache
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +221,8 @@ def passkey_authenticate_complete(request: HttpRequest) -> HttpResponse:
         return gate_resp
 
     login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
+    request.session["auth_method"] = "webauthn:passkey"
+    cache.set(f"user_auth_method:{user.id}", "webauthn:passkey", 86400)
     logger.info("PASSKEY LOGIN: did=%s via passkey", user.custodial_did)
     return JsonResponse({
         "status": "authenticated",

@@ -188,6 +188,9 @@ class GraduationHappyPathTest(GraduationBaseTestCase):
     def test_graduated_did_is_blocked_from_front_channel_issuance(self) -> None:
         user, vault_private_key = self._make_user()
         self.client.force_login(user)
+        session = self.client.session
+        session["auth_method"] = "unverified"
+        session.save()
         export_payload, client_ephemeral = self._export(user)
         recovered_seed = self._unseal(user.custodial_did, export_payload, client_ephemeral)
         local_identity = Ed25519PrivateKey.from_private_bytes(recovered_seed)

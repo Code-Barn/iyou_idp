@@ -734,18 +734,22 @@ The Vault deletion executes **inside** the transaction: any Vault failure
 rolls back the promotion entirely (`502 vault_shred_failed`,
 `is_sovereign` stays `False`, managed key preserved).
 
-### 16.3 Post-Graduation Front-Channel Lockout
+### 16.3 Post-Graduation Front-Channel OIDC Delegation
 
-`SovereignAuthorizeView.get()` checks `request.user.is_sovereign` before any
-code issuance and returns:
+Graduated sovereign identities (`is_sovereign=True`) are permitted to mint front-channel
+OIDC authorization codes and establish satellite sessions when authenticated via verified
+cryptographic presentations (Tier 3 loopback WebSocket `did:websocket` or Tier 2 out-of-band
+mobile QR `did:oob_qr`).
 
-```json
-{"error": "access_denied", "error_description": "Graduated sovereign identities must authenticate directly with their own DID."}
-```
+`SovereignAuthorizeView.get()` guards against unverified or legacy credential ingress. Code issuance
+fails closed with HTTP 403 (`access_denied`) only if an identity attempts front-channel OIDC authorization
+under an unverified session or legacy password session (`auth_method in ("password", "unverified")`).
 
-Graduated DIDs can no longer mint IdP OIDC sessions; satellites must verify
-the self-custodied DID directly. The `sub` claim remains the canonical
-`custodial_did` (`custom_sub_generator`).
+When authenticated cryptographically, `custom_id_token_claims` and `custom_userinfo_claims` emit:
+- `sub`: pinned to the canonical sovereign DID (`user.custodial_did`)
+- `account_tier`: `"sovereign"`
+- `amr`: `["did:websocket"]` or `["did:oob_qr"]`
+- `email_verified`: asserted proof-of-control state
 
 ---
 
