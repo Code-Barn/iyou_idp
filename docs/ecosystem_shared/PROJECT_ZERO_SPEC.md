@@ -4,7 +4,7 @@
 
 **Hub:** `omni_social`
 **Status:** Living document — canonical reference for Project Zero across the iyou_ ecosystem.
-**Last updated:** 2026-08-22
+**Last updated:** 2026-10-02
 **Reference implementations:** `iyou_home` (Rust/Tauri enclave), `iyou_wun` (Trust Lens client)
 
 ---
@@ -28,6 +28,8 @@ Project Zero is the sovereign identity protocol implemented in `iyou_home` (zero
 | Pivoting from one alias to a peer's other identities | Minimal projection — responses never carry `peer_id`, `disclosed_aliases`, receipts, or timestamps |
 | Root-seed / key-material exposure over the bridge | Secret Adjacency Guard — alias queries load only `contacts.json`, never `vault.json`; air-gap guard blocks Level 0 targets fail-closed (§5.1) |
 | Anchor de-anonymization via public pickers or signing traffic | Air-Gap Invariant on Level 0 (§3.2) |
+| Coerced voting / vote-selling via a persistent "voting persona" | Dynamic Ephemeral L2 Burners (§3.4) — no pre-tagged voting identity, per-challenge derivation, nullifier-only double-vote prevention |
+| Genealogical fraud resolved by centralized PII custody | Lineage & Kinship Attestation Cards (§4.4) — proof-of-kinship gating over Port 9001, zero stored PII |
 | Loopback interception | TLS termination (`wss://home.iyou.me:9001`), PNA pre-flight handling; cert pinning tracked as SEC-006 |
 
 ### 1.3 Non-Goals
@@ -107,6 +109,109 @@ Derivation Index #0     Derivation Index #1        Derivation Index #2+
 | Corrupt-file auto-quarantine | A store file that fails to parse MUST NOT be silently overwritten; it is renamed `{filename}.corrupt_{timestamp}.bak` (up to 5 newest retained) and an explicit error is surfaced |
 | Key containment | Frontends and bridge clients receive only `did:key:` strings and `nostr_pubkey_hex` values — never seeds or signing keys |
 
+### 3.4 Dynamic Ephemeral L2 Burners
+
+Level 2 personas (§3.2) have a second, non-optional mode of use: **ephemeral ballot personas**. When a user casts a ballot on a sensitive referendum or a controversial vote, the persona that signs the vote is derived on demand, used exactly once, and retired. This is the coercion-resistance contract of Project Zero: a voter who can be observed once is not protected, so the identity that touches the ledger MUST NOT be an identity the voter has been observed to use before.
+
+#### 3.4.1 Prohibition on Pre-Tagged Voting Personas
+
+A persistent, semantically-reserved voting identity is **forbidden**. Implementations MUST NOT:
+
+1. Reserve, pre-provision, or hand out any profile whose `profile_id`, `profile_name`, or metadata marks it as a voting/governance identity (e.g. `profile_id: "vote"`, `"governance"`, `"ballot"`, a `role: "voter"` field, or a dedicated vault namespace).
+2. Expose a "voting identity" or "voting persona" entry in any persona picker, profile manager, `get_profile` projection, or onboarding flow.
+3. Reuse a single Level 2 persona across two or more independent challenges, referendums, or polls.
+4. Derive burners ahead of time in a pre-provisioned pool or batch. A static set of pre-minted keys is a static identifier set and re-creates the tracking surface this section exists to remove.
+
+Rationale (coercion model): a dedicated voting persona is simultaneously a **coercion surface** (a party who observes it once can prove the holder's position in every later ballot, and can threaten exposure) and a **correlation vector** (participation becomes a durable, cross-referendum behavioural identifier). Plausible deniability requires that no retained artifact ties a ballot to a reusable identity.
+
+#### 3.4.2 Derivation Policy — `derivation_index = max + 1`
+
+Ephemeral burners extend the standard derivation path (§3.1) with a monotonic, non-caller-supplied index:
+
+```
+derivation_index = max(existing derivation_index in vault) + 1
+```
+
+Normative rules:
+
+| Rule | Requirement |
+|:---|:---|
+| **On-demand only** | The index MUST be computed inside the enclave at the moment the challenge is presented. Callers MUST NOT supply, hint, or reserve the index. |
+| **Monotonic** | Indices MUST increase strictly and MUST NOT be reused, decremented, or recycled after `remove_profile`. A retired burner's index stays burned. |
+| **Reserved-range exclusion** | The allocator MUST skip any index inside the structural deletion guard set (§3.3) — index `0` (Level 0 anchor) and index `1` (Level 1 public persona) MUST never be allocated to a burner. |
+| **Atomic allocation** | Read-max, allocate, and write MUST occur under a single writer lock; concurrent bridge requests MUST NOT observe or produce colliding indices. |
+| **Naming** | Ephemeral profiles MUST be labelled with the challenge digest only (e.g. `ephemeral-<first 8 hex of SHA-256(challenge)>`) so that no plaintext referendum title or topic is retained at rest. |
+| **Single use** | One burner MAY be derived per `challenge`. The enclave MUST reject a second derivation attempt for the same `challenge` — re-use is a policy violation, not a recoverable error. |
+| **Retirement** | The burner MUST be retired (`remove_profile`, non-reserved profile) no later than challenge close plus the enforcement grace window. Its keypair MUST be discarded, not archived. |
+
+#### 3.4.3 Double-Vote Prevention — Cryptographic Nullifier
+
+Double-vote prevention MUST be enforced **exclusively** by the per-challenge cryptographic nullifier. It MUST NOT be enforced by burner identity, DID uniqueness, or any ledger-side record of a previously seen persona:
+
+```
+nullifier = SHA-256(utf8(holder_did) || utf8(challenge))     →  64 lowercase hex chars
+```
+
+| Property | Requirement |
+|:---|:---|
+| **Inputs** | `holder_did` is the holder's stable identifier at the tier the governance engine trusts (Level 0 anchor for Inner-Circle ballots; Level 1 public persona otherwise). `challenge` is the canonical contest digest issued by the governance engine. |
+| **Domain separation** | `challenge` MUST be unique per contest and MUST already bind the poll identifier and option-set hash. `challenge` MUST NOT contain, and MUST NOT be derived from, any burner value, `derivation_index`, profile id, or persona name. |
+| **Ledger rule** | The ledger counts **distinct nullifiers per challenge**. A duplicate nullifier is a rejected double-vote attempt: the submission MUST be refused and MUST NOT overwrite, replace, or annotate the original tally entry. |
+| **No burner linkage** | The ledger MUST NOT persist the burner DID alongside the nullifier in any queryable index, MUST NOT resolve burner DIDs toward the holder, and MUST NOT accept an `alsoKnownAs` / controller relationship on the burner DID document. Burner DID documents MUST NOT be published to a resolver. |
+
+**Unlinkability guarantee.** The nullifier is a pure function of `(holder_did, challenge)` and is mathematically independent of which persona signed the ballot. The public ledger surface therefore consists of:
+
+- a **burner DID** committing to the vote selection (`option_id`) — the only per-ballot artifact, minted for that challenge alone; and
+- a **nullifier** proving exactly one ballot per holder per contest.
+
+From these two values an observer can conclude "one ballot was cast on this contest by a holder of this DID" and nothing further. The observer cannot determine the burner's `derivation_index`, its profile name, whether the holder owns other L2 personas, whether this burner participated in earlier referendums, or whether the burner is related to the holder's Level 1 public persona. This is what makes a burner useless as a tracking key and gives the holder **plausible deniability**: denying a specific ballot produces no contradiction with any retained state.
+
+**Linkability caveat (normative, sensitive ballots).** `SHA-256(holder_did || challenge)` is deterministic and unsalted; an adversary holding a candidate set of holder DIDs and the published `challenge` can recompute the nullifier and re-attach the ballot to a named identity. Therefore, for referendums and votes designated **sensitive** by the governance engine:
+
+1. `challenge` MUST be constructed with a per-contest random salt that is **withheld until the tally is sealed**, or the engine MUST accept a commit-reveal disclosure; and
+2. the ledger MUST NOT publish `challenge` — or the salt — before close, so nullifiers are unlinkable during the voting window.
+
+Non-sensitive ballots MAY publish `challenge` in the clear and MAY use the unsalted baseline nullifier.
+
+#### 3.4.4 Bridge Flow (Port 9001)
+
+Ephemeral burner derivation is a **user-gated** frame — the gate is not optional, and MUST NOT be downgraded to the headless `OMNI_SIGN_REQUEST` path (§5.4). Headless derivation would remove human consent from the coercion-resistance chain and defeat the purpose of §3.4.
+
+```json
+// Request — user-gated
+{"type": "DERIVE_EPHEMERAL_BURNER",
+ "purpose": "referendum",
+ "challenge": "sha256:<contest digest>",
+ "single_use": true}
+
+// Response — burner minted, never persisted beyond the challenge window
+{"type": "ephemeral_burner_derived", "profile": {
+    "profile_id": "ephemeral-a1b2c3d4",
+    "derivation_index": 7,
+    "did": "did:key:z6Mk...",
+    "nostr_pubkey_hex": "<64-hex>",
+    "level": 2,
+    "expires_at": 1760000000,
+    "nullifier": "<64-hex>"
+}}
+```
+
+Sequence:
+
+1. Satellite (`iyou_wun`, `iyou_poly`) evaluates the poll's sensitivity flag and requests `DERIVE_EPHEMERAL_BURNER` with the engine-issued `challenge`.
+2. Enclave acquires `PopupGuard`, presents the consent modal, and displays the contest digest (never the engine's private state).
+3. On approval the enclave allocates `max + 1`, derives the Ed25519/secp256k1 pair locally, computes the nullifier, and returns the frame.
+4. Satellite constructs the kind `1112` vote envelope and submits it signed by the burner.
+5. Enclave retires the burner at challenge close.
+
+| Invariant | Rule |
+|:---|:---|
+| Consent before derivation | Derivation MUST occur only after explicit user approval; refusal MUST leave no allocated index and no profile |
+| Level 0 air-gap | A burner MUST NOT be derivable while the vault is unloadable; the frame fails closed exactly as §5.1 requires |
+| Single-use enforcement | A repeat `DERIVE_EPHEMERAL_BURNER` for an already-consumed `challenge` MUST be refused |
+| Index monotonicity | Allocated indices MUST never collide with a live profile, even under concurrent requests |
+| No persistence of ballots | The enclave MUST NOT write the burner↔ballot association to `vault.json`, `contacts.json`, or any audit log |
+
 ---
 
 ## 4. Trust Tiers & Selective Disclosure Cards
@@ -159,6 +264,95 @@ Serialization notes:
 1. Validate the cryptographic signature with `did_rust::verify_vc`.
 2. Extract subject DID and disclosed aliases.
 3. Upsert into `contacts.json` (match on canonical `peer_id`; preserve original `created_at`, refresh `updated_at`).
+
+### 4.4 Lineage & Kinship Attestation Cards (`KinshipAttestation`)
+
+Selective disclosure extends from trust circles (§4.1–§4.3) to **genealogical access**. A genealogy registry such as `iyou_name` must be able to gate access to a living family branch — while refusing to become a custodian of legal identity. `KinshipAttestation` is the credential that closes that gap: it proves *structural membership in a lineage*, carrying **no personally identifiable information at all**.
+
+#### 4.4.1 W3C Verifiable Credential Schema
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://iyou.me/credentials/kinship/v1"
+  ],
+  "type": ["VerifiableCredential", "KinshipAttestation"],
+  "issuer": "did:key:z6Mk...branch_anchor_did",
+  "issuanceDate": "2026-10-02T00:00:00Z",
+  "expirationDate": "2027-10-02T00:00:00Z",
+  "credentialSubject": {
+    "id": "did:key:z6Mk...holder_did",
+    "parent_did": "did:key:z6Mk...immediate_parent_did",
+    "root_ancestor_id": "urn:iyou:tree:8f2c...root",
+    "branch_id": "obrien-mayo-1911",
+    "generation_depth": 2
+  },
+  "credentialSchema": {
+    "id": "https://iyou.me/schemas/kinship-v1.json",
+    "type": "JsonSchemaValidator2018"
+  },
+  "proof": {
+    "type": "Ed25519Signature2018",
+    "created": "2026-10-02T00:00:00Z",
+    "verificationMethod": "did:key:z6Mk...branch_anchor_did#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z58DAdFfa9SkqZMVPxAQpic7ndTn21..."
+  }
+}
+```
+
+| Claim | Type | Required | Semantics |
+|:---|:---|:---|:---|
+| `parent_did` | `did:key` string | Yes | Immediate ancestor's DID within the branch. One hop up the attested lineage — never the holder's own legal identity. |
+| `root_ancestor_id` | opaque string (`urn:`) | Yes | Stable identifier of the tree root that anchors the whole attested lineage. All cards for one tree share this value; it is the correlation root a verifier chains to. |
+| `branch_id` | slug string | Yes | Stable, human-auditable branch designation (e.g. `obrien-mayo-1911`). Selects **which living branch** the holder may reach. |
+| `generation_depth` | integer ≥ 0 | Yes | Hops from the branch anchor to the holder. `0` = the anchor itself; `1` = child; `2` = grandchild; `3+` = outside the default family-adjacent scope. |
+| `credentialSubject.id` | `did:key` string | Yes | The holder's DID. Distinct from the issuer; possession is proven at presentation time. |
+
+**Issuer model — branch anchors.** The issuer MUST be the `branch_id`'s **Branch Anchor**: the eldest attested living member of that branch, or a Level 0/Level 1 holder already holding a valid `KinshipAttestation` for the same `root_ancestor_id`. Satellites MUST NOT mint lineage credentials — an issuer that can mint can also fabricate, and a satellite that can fabricate needs custody of exactly the PII this design removes.
+
+**Chain of trust.** A verifier MAY accept an intermediate issuer rather than the anchor, provided it resolves the issuer's own `KinshipAttestation` up to the same `root_ancestor_id`. Recursion MUST be bounded by `MAX_CHAIN_DEPTH = 4`; a chain that exceeds the bound MUST be rejected, not truncated. Anchors MUST remain verifiable while offline — every hop is a self-contained, independently signature-checkable credential, so no live call to the anchor is required.
+
+#### 4.4.2 Zero-PII Gating Rule
+
+`iyou_name` gates access to a **living tree branch** by challenging for a proof of kinship over the Port 9001 bridge and evaluating it locally.
+
+**Satellite obligations:**
+
+1. The satellite MUST request a Verifiable Presentation containing a `KinshipAttestation` through the **Port 9001 signature bridge** (`POLY_CREDENTIAL_REQUEST` / `sign_credential`, §5.3) and MUST evaluate the gate predicate itself, locally.
+2. The satellite MUST NOT request, accept, parse, log, or store legal names, dates or places of birth, government/national ID numbers, addresses, phone numbers, or any other cleartext PII — neither in the challenge, nor in the credential, nor in any optional profile field. Requesting PII to prove kinship defeats the credential.
+3. The satellite MUST persist only the **decision**, never the proof:
+
+   ```json
+   {"branch_id": "obrien-mayo-1911", "decision": "grant", "evaluated_at": 1760000000, "policy": "kinship:generation_depth<=2"}
+   ```
+
+   No `holder_did`, no `parent_did`, no `root_ancestor_id`, no VC bytes, no signature. The record is indistinguishable between two holders of the same branch.
+
+4. The satellite MUST NOT forward `parent_did`, `root_ancestor_id`, or the raw credential to third parties, analytics, or shared logging.
+
+**Canonical gate predicate** — family-adjacent access to a living branch:
+
+```
+generation_depth <= 2        (from the branch anchor)
+AND branch_id == requested_branch_id
+AND credential is unexpired, unrevoked, and signature-valid
+```
+
+`generation_depth <= 2` admits the anchor, children, and grandchildren: the tier a living-branch view needs for direct-line descendant records, while excluding distant cousins and unrelated collaborators. This bound is the policy knob a branch sets for itself; it MUST be enforced as an integer comparison, never as a heuristic.
+
+**Verifier obligations** (enclave-side):
+
+| Invariant | Rule |
+|:---|:---|
+| Signature validation | `did_rust::verify_vc` MUST succeed for every hop; an unsigned or invalid proof MUST be refused |
+| Fail closed | Absent, malformed, expired, revoked, or over-depth credentials MUST result in denial — never in a partial grant |
+| Freshness | An expired `expirationDate` MUST be rejected; revocation MUST be honoured immediately on the branch's revocation credential / `kind:9112` revocation notice |
+| Anchor binding | The issuer MUST resolve to a holder of the declared `branch_id` under the same `root_ancestor_id`; an issuer claiming an unrelated branch MUST be refused |
+| No minting | The enclave MUST NOT issue `KinshipAttestation` credentials on a satellite's behalf (§4.4.1) |
+
+**Threat disposition:** genealogy fraud (impostors claiming descent to harvest inheritance, medical, or custody records) is answered by a cryptographic proof whose *only* payload is graph position. Fraud is prevented by the signature chain; privacy is preserved because the verifiable predicate — depth and branch — carries no name to steal.
 
 ---
 
@@ -300,6 +494,7 @@ New implementations MUST emit only canonical names.
 ## 6. Nostr Federation Surface
 
 - **Persona selection:** events SHOULD be signed by the Level 1 Public Persona by default. Kind `1` (short text), `1111` (threaded comment), and `30023` (long-form/poll) all originate from Level 1 unless explicitly overridden.
+- **Ballot signing:** kind `1112` vote envelopes originate from Level 1 by default; on sensitive referendums and controversial votes they MUST originate from a single-use ephemeral L2 burner per §3.4, with double-vote prevention carried entirely by the nullifier.
 - **Double-broadcast topology** (local relay `ws://127.0.0.1:9003`, project relay, global relays) is defined in `OMNI_SOCIAL_PROTOCOL_V2.md` §4.1.
 - **Kind `9112`** (trust attestation, `iyou_safe`) interacts with the Web-of-Trust graph; Project Zero's contact enclave remains the local source of truth for trust tiers and is not published wholesale.
 - **XMPP mapping:** JID localparts derive from `nostr_pubkey_hex`; by default the **Level 1** key is used (see `roadmaps/XMPP_MESH_COMMUNICATIONS.md`).
@@ -316,6 +511,10 @@ New implementations MUST emit only canonical names.
 | did_rust serialization drift across consumers | Commit-hash pinning — SEC-003 |
 | Popup concurrency | `PopupGuard` serializes approval modals; concurrent credential requests MUST NOT trample each other |
 | Harvesting economics | Frame caps + exact-match + echo isolation make bulk contact-graph extraction cost-prohibitive |
+| Coerced ballot disclosure | Ephemeral burners + withheld `challenge` salt for sensitive votes (§3.4) — a ballot cannot be re-attributed to a retained persona |
+| Nullifier determinism / vote-selling | Sensitive-ballot salt rule (§3.4.3); unsanctioned nullifier reuse is the only accepted double-vote signal |
+| Genealogical PII exfiltration from `iyou_name` | Zero-PII gating rule (§4.4.2) — decision-only persistence, no legal name / DoB / government ID ever requested or stored |
+| Lineage forgery | Bounded signature chain to `root_ancestor_id`; issuer-may-not-mint rule makes fabricated ancestry unusable |
 
 See `strategy/SECURITY_HARDENING.md` for the full roadmap.
 
@@ -331,6 +530,12 @@ Implementations claiming Project Zero conformance MUST satisfy:
 4. **Trust round-trip:** contacts serialize/deserialize preserving tiers, including legacy alias tolerance (ref: `contacts.rs` persistence tests).
 5. **Client hygiene:** satellite Trust Lens implementations MUST keep alias caches in-memory only — never persisted (ref: `iyou_wun/static/js/bridge_client.js`).
 6. **DOM contract:** badge slots expose `data-pubkey` attributes and wire `trust_lens.js` on DOMContentLoaded (ref: `iyou_wun/apps/core/tests/test_views.py::Trust Lens DOM contract`).
+7. **Ephemeral burner allocation:** `derivation_index` for a burner equals `max(live indices) + 1`, never collides with indices `0`/`1`, stays strictly monotonic across retire cycles, and is identical under concurrent requests (ref: `vault.rs` allocator tests).
+8. **Single-use enforcement:** a second `DERIVE_EPHEMERAL_BURNER` carrying an already-consumed `challenge` is refused; no profile or index is created on refusal (ref: `bridge.rs` gated-flow tests).
+9. **Nullifier determinism:** `nullifier == SHA-256(holder_did || challenge)` yields 64 lowercase hex chars, is independent of `derivation_index` and `profile_id`, and the ledger rejects a duplicate nullifier for the same challenge without mutating the tally entry.
+10. **No voting-persona reservation:** no profile id, profile name, or metadata field anywhere in the vault may be reserved for governance/voting semantics; `get_profile` projections MUST NOT offer a voting-identity slot (§3.4.1).
+11. **Kinship gate denial default:** `iyou_name` denies a branch on absent, malformed, expired, revoked, or over-`MAX_CHAIN_DEPTH` `KinshipAttestation` presentations, and its persistence layer stores only `{branch_id, decision, evaluated_at, policy}`.
+12. **Zero-PII gate:** no `KinshipAttestation` claim, presentation, or challenge carries or requests `birthDate`, `birthPlace`, `nationality`, `documentNumber`, or equivalent PII — parallel to `DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md` §3.2.
 
 UI badge configuration reference (`iyou_wun/static/js/trust_lens.js`):
 
@@ -356,6 +561,7 @@ BADGE_CONFIG = {
 | `sign_credential` | User-gated | C→S | W3C VC issuance |
 | `POLY_CREDENTIAL_REQUEST` → `POLY_CREDENTIAL_PRESENTATION` | User-gated | C→S / S→C | Credential sharing handshake |
 | `OMNI_SIGN_REQUEST` | Headless | C→S | Governance vote envelope (Kind 1112) |
+| `DERIVE_EPHEMERAL_BURNER` → `ephemeral_burner_derived` | User-gated | C→S / S→C | Single-use ballot burner for sensitive votes (§3.4). Never headless. |
 | `INVARIANT_ALERT_PUSH` | Server Push | S→C | Broadcasts Amber/Crimson invariant violations to satellite HUDs |
 | `error` | Any | S→C | Uniform error frame |
 
@@ -377,6 +583,10 @@ BADGE_CONFIG = {
 | **Pre-gate query** | Bridge request answered inline without approval modal or key access |
 | **Secret Adjacency Guard** | Policy that alias queries load only `contacts.json`, never vault/key material |
 | **Selective Disclosure Card** | Signed VC binding a subject DID + chosen aliases under a trust tier |
+| **Ephemeral L2 Burner** | Single-use Level 2 persona derived on demand (`max + 1`) for one challenge, then retired; no voting persona is ever pre-tagged (§3.4) |
+| **Nullifier** | `SHA-256(holder_did \|\| challenge)` — the sole double-vote prevention mechanism, independent of the persona that cast the ballot |
+| **Branch Anchor** | Issuer of `KinshipAttestation` cards for one `branch_id`; eldest attested living member or an already-attested holder under the same `root_ancestor_id` |
+| **KinshipAttestation** | Zero-PII VC asserting `parent_did`, `root_ancestor_id`, `branch_id`, `generation_depth` — proof of lineage position with no legal identity (§4.4) |
 | **PopupGuard** | Concurrency lock serializing approval modals for gated flows |
 
 ## References
@@ -385,5 +595,7 @@ BADGE_CONFIG = {
 - `ecosystem_shared/LONG_TERM_AUTH_TOPOLOGY.md` — 3-tier architecture blueprint (did_rust / iyou_home / iyou_mobile)
 - `AUTH_FLOW_SPECIFICATION.md` — OIDC PKCE flows consuming the bridge
 - `strategy/SECURITY_HARDENING.md` — SEC-001 through SEC-008
+- `specs/DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md` — DEP-204 L2 burner derivation under a dependent path; zero-PII attestation pattern that §4.4 mirrors
+- `strategy/ECOSYSTEM_VISION_AND_DUAL_ENTITY_CHARTER.md` — dual-entity architecture and brand charter
 - `iyou_home/src-tauri/src/{vault,contacts,bridge}.rs` — normative implementation
 - `iyou_wun/static/js/{trust_lens,bridge_client}.js` — client-side Trust Lens pattern

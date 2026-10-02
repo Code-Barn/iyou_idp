@@ -68,7 +68,7 @@ The Layer 0 drawer inverts its chroma between color schemes to remain intentiona
               class="text-xs text-slate-400 hover:text-white dark:text-slate-600 dark:hover:text-slate-900 px-2 py-0.5 rounded bg-slate-800/80 dark:bg-slate-200 dark:hover:bg-slate-300 transition"
               onclick="closeEcosystemBar(event)">✕ Close</button>
     </div>
-    <!-- 19-App Links Flow (per-app colors + dark variants) -->
+    <!-- 20-App Links Flow (per-app colors + dark variants) -->
   </div>
   <div class="h-2 w-full bg-{color}-600 dark:bg-{color}-500 cursor-pointer flex justify-center items-center select-none" onclick="toggleEcosystemBar(event)">
     <div class="w-8 h-1 bg-{color}-200 dark:bg-{color}-900 rounded-full opacity-80"></div>
@@ -336,7 +336,7 @@ To optimize performance and eliminate loading high-res square master assets (~51
   This ensures satellites that haven't generated `logo_square_sm.png` yet safely resolve to `logo_square.png` without displaying a broken image box.
 
 ### 3.7 Unified Standard Header — Deprecation of PRESERVE_LAYER_1_APPS
-All 19 satellite applications now receive the standardized canonical `_standard_header.html` from `generate_templates.py` — no custom exceptions are preserved. The domain badge (`APP_METADATA.badge`) provides the per-app semantic classification.
+All 20 applications (19 relying-party satellites + sovereign hub) now receive the standardized canonical `_standard_header.html` from `generate_templates.py` — no custom exceptions are preserved. The domain badge (`APP_METADATA.badge`) provides the per-app semantic classification.
 
 `PRESERVE_LAYER_1_APPS` is formally deprecated and cleared across all generator and synchronization tooling:
 
@@ -348,22 +348,47 @@ PRESERVE_LAYER_1_APPS = set()
 - **`iyou_poly`**: Removed from preserve set; now renders the `CONSENSUS ENGINE` badge via the canonical header.
 - **`iyou_name`**: Removed from preserve set; now renders the `SOVEREIGN` badge via the canonical header.
 
-The `--skip-header` flag is retained only for local debugging/development workflows, but all 19 satellite applications in the sovereign mesh strictly adhere to this universal Layer 1 header contract.
+The `--skip-header` flag is retained only for local debugging/development workflows, but all 20 applications in the sovereign mesh strictly adhere to this universal Layer 1 header contract.
 
 ---
 
-## 4. Layer 2: Application Sub-Navigation Contract (`_nav.html`)
+## 4. Layer 2: Application Ribbon Standards (`_nav.html`)
 
-Satellites that implement a custom Layer 2 navigation ribbon (`_nav.html`) MUST obey the same horizontal width contract as Layer 1:
+Satellites that implement a custom Layer 2 navigation ribbon (`_nav.html`) MUST obey the sovereign presentation tier contract:
 
-### 4.1 Width & Scaffolding Contract
-- All navigation items and controls MUST be wrapped inside a single scroll-locked container:
-  ```html
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between">
-  ```
-- Layer 2 **MUST NEVER** stretch to full browser width. It must remain column-aligned with the Layer 1 header and Layer 0 drawer on all viewports.
-- The `<nav>` element itself may carry its own surface styling (e.g. `border-b border-slate-200 dark:border-gray-800/80 bg-white/70 dark:bg-[#070A10]/70 backdrop-blur-sm`), but the inner scaffolding wrapper above is mandatory and fixed.
-- Canonical reference implementation: `iyou_poly/templates/includes/_nav.html`.
+### 4.1 Root Viewport Guard (Rule 4.1)
+All satellite `<body>` tags in `base.html` MUST include `overflow-x-clip w-full max-w-full`:
+```html
+<body class="min-h-screen flex flex-col pt-1 overflow-x-clip w-full max-w-full bg-slate-50 dark:bg-[#080B11] text-slate-900 dark:text-slate-100 antialiased transition-colors duration-200">
+```
+This hardens the root layout against horizontal touch-pan drift and prevents unconstrained ribbons from forcing page blowout on small viewports.
+
+### 4.2 Zero Redundancy (Rule 4.2)
+Layer 2 navigation ribbons **MUST OMIT** duplicate brand names, app titles, and geographic scope badges handled by Layer 1. Layer 1's `#geo-scope-trigger-btn` and brand descriptor already establish the jurisdictional context. Layer 2 real estate is strictly reserved for application-specific workspaces, feeds, and command controls.
+
+### 4.3 Mobile Ribbon Overflow (Rule 4.3)
+Navigation bars exceeding viewport width must use `overflow-x-auto no-scrollbar flex items-center gap-1.5` with `shrink-0` pills:
+```html
+<nav class="border-b border-slate-200/80 dark:border-gray-800/80 bg-white/70 dark:bg-[#070A10]/70 backdrop-blur-sm" aria-label="Application Ribbon">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex items-center justify-start h-12 overflow-x-auto no-scrollbar py-2 gap-1.5 sm:gap-2">
+      <!-- Navigation Pills with shrink-0 -->
+    </div>
+  </div>
+</nav>
+```
+Layer 2 **MUST NEVER** use an unconstrained, non-wrapping `justify-between` flex container on mobile viewports. Pills must carry `shrink-0` to protect against flex-shrink compression.
+
+### 4.4 Progressive Text Truncation (Rule 4.4)
+Secondary navigation verbs and prefixes should use `hidden sm:inline` to preserve horizontal density on micro-screens while retaining clarity on desktop displays:
+```html
+<a href="{% url 'chamber-feed' %}" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-mono font-medium ...">
+  <span class="hidden sm:inline">Active </span>Chambers
+</a>
+<a href="{% url 'proposal-foundry' %}" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-mono font-medium ...">
+  <span class="hidden sm:inline">Proposal </span>Foundry
+</a>
+```
 
 ---
 
@@ -402,7 +427,7 @@ The Persona Enclave quick-switcher is fully decoupled into `templates/includes/_
   >
     <!-- Public Profile Direct Action -->
     <div class="px-2 py-1.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
-      <a href="https://wun.iyou.me/{{ user_display_label|default:user.username }}" target="_blank" class="flex items-center justify-between text-xs text-slate-700 dark:text-slate-200 hover:text-violet-500 dark:hover:text-violet-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition font-mono">
+      <a href="https://{% if request.geographic_scope %}{{ request.geographic_scope }}.{% endif %}wun.iyou.me/{{ user_display_label|default:user.username }}" target="_blank" class="flex items-center justify-between text-xs text-slate-700 dark:text-slate-200 hover:text-violet-500 dark:hover:text-violet-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition font-mono">
         <span class="flex items-center gap-1.5">👤 <span>View Public Profile</span></span>
         <span class="text-[10px] text-slate-400">↗</span>
       </a>

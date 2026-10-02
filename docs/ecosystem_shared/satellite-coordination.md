@@ -1,7 +1,7 @@
 # Satellite Coordination Index
 
 **Hub:** `omni_social`
-**Last synced:** 2026-09-17
+**Last synced:** 2026-10-02
 
 Each satellite repo has a `TODO.md` in its root, orchestrated from this central hub.
 Edit tasks here first, then propagate to the satellite repos via their agents.
@@ -72,6 +72,19 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | Ecosystem bar gap drift | iyou_name | Resolved | Scoped reset applied 2026-07-14 |
 | Bootstrap→Tailwind eval | iyou_name | Potential | Not committed — pending decision |
 
+### Geographic Locality Subdomains & TLS
+
+- **Authoritative DNS Wildcard Resolution:** 1984.is authoritative DNS already wildcard-resolves `*.iyou.me` at any depth to `89.127.234.121` under RFC 1034 / RFC 4592. No per-locality DNS records are required.
+- **Let's Encrypt & RFC 6125 Constraints:** Let's Encrypt HTTP-01 challenges do not issue wildcard certificates (`*.app.iyou.me`), causing wildcard ACME orders to stall indefinitely. Furthermore, RFC 6125 restricts x509 wildcard certificates to a single label depth (`*.app.iyou.me` matches only `us.<app>.iyou.me`, not multi-tier scopes like `dkc.il.us.<app>.iyou.me`).
+- **Production Standard (Multi-SAN HTTP-01):** The working production standard is explicit Multi-SAN HTTP-01 certificates (established by `iyou_clar`, now standardizing across `poly` and `wun`). Helm chart values must define explicit hierarchy SANs (`<app>.iyou.me`, `us.<app>.iyou.me`, `il.us.<app>.iyou.me`, `dkc.il.us.<app>.iyou.me`) under both `ingress.hosts` and `ingress.tls.hosts`, paired with a Traefik `IngressRoute` matching `HostRegexp('{subdomain:[a-z0-9.-]+}.<app>.iyou.me')`.
+
+| Ticket | Target Repo | Status | Notes |
+|:---|:---|:---|:---|
+| Multi-SAN HTTP-01 Ingress & RTL Routing | iyou_clar | ✅ Production Reference | Operational reference in `k3s_vm/apps/iyou-clar/values.yaml`: explicit SANs for `clar`, `us.clar`, `il.us.clar`, `dkc.il.us.clar`. |
+| Multi-SAN HTTP-01 Ingress & RTL Routing | iyou_poly | In Progress | Standardize Multi-SAN HTTP-01 in Helm values, replacing stalling `*.poly.iyou.me` wildcard HTTP-01 entry; retain `apps.core.middleware.GeographicRoutingMiddleware`. |
+| Multi-SAN HTTP-01 Ingress & RTL Routing | iyou_wun | In Progress | Standardize Multi-SAN HTTP-01 in Helm values and onboard canonical `GeographicRoutingMiddleware` with `geo_data.py`. |
+| Multi-SAN HTTP-01 Ingress & RTL Routing | all geo satellites | Backlog | Apply Multi-SAN HTTP-01 hierarchy to `play`, `talk`, `life`, `safe`, `stay`, `walk`, `help`. |
+
 ### Security (see `docs/strategy/SECURITY_HARDENING.md`)
 
 | Ticket | Target Repo | Status | Notes |
@@ -83,16 +96,49 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | SEC-005 | iyou_home | Open | Polling → Push migration (WebSocket/SSE). |
 | SEC-006 | iyou_home | Open | DNS hijack mitigation — cert pinning for wss://home.iyou.me:9001. |
 
+### DYNAMIC-L2-VOTING — Dynamic Ephemeral L2 Burners (Coercion-Resistant Governance)
+
+Canonical spec: `PROJECT_ZERO_SPEC.md` §3.4 (+ §6 ballot signing, Appendix A frame). Enclave bridge derives a single-use burner on demand; double-vote prevention is carried exclusively by `nullifier = SHA-256(holder_did || challenge)`, keeping the ledger vote unlinkable from any persistent L2 social profile.
+
+| Ticket | Target Repo | Status | Notes |
+|---|---|---|---|
+| DLV-101 — `max + 1` burner allocator | iyou_home | Open | `derivation_index = max(live indices) + 1` under single writer lock; monotonic, never reuses a retired index, skips reserved `0`/`1`. |
+| DLV-102 — `DERIVE_EPHEMERAL_BURNER` frame | iyou_home | Open | User-gated only — MUST NOT be exposed on the headless `OMNI_SIGN_REQUEST` path. Fail-closed on vault load, `PopupGuard`-serialized, single-use per `challenge`. |
+| DLV-103 — Non-persistence guarantee | iyou_home | Open | Burner↔ballot association MUST NOT land in `vault.json`, `contacts.json`, or any audit log. Keypair discarded, not archived, at challenge close. |
+| DLV-104 — Nullifier computation | iyou_home, iyou_poly | Open | `SHA-256(holder_did \|\| challenge)` → 64 lowercase hex; independent of `derivation_index`/`profile_id`. Engine counts distinct nullifiers per challenge; duplicates refused without mutating the tally entry. |
+| DLV-105 — Sensitive-ballot salt rule | iyou_poly | Open | Per-contest random salt withheld until the tally is sealed (or commit-reveal). `challenge` MUST NOT be published pre-close for votes flagged sensitive. |
+| DLV-106 — Ephemeral selection UX | iyou_wun | Open | Sensitivity flag → ephemeral ballot persona; zero pre-tagged "voting persona" picker entry anywhere in the profile manager. |
+| DLV-107 — Ledger linkability audit | iyou_poly | Open | Assert ledger stores no burner-DID↔nullifier index, resolves no burner DID toward the holder, and rejects any `alsoKnownAs`/controller binding on an ephemeral burner DID document. |
+| DLV-108 — Conformant test vectors | iyou_home, iyou_poly | Open | Implement `PROJECT_ZERO_SPEC.md` §8 items 7–10 (allocator determinism under concurrency, single-use refusal, nullifier determinism, no reserved voting-persona field). |
+
+### NAME-KINSHIP-GATE — Lineage & Kinship Attestation Gating (`iyou_name`)
+
+Canonical spec: `PROJECT_ZERO_SPEC.md` §4.4. `KinshipAttestation` VCs (`parent_did`, `root_ancestor_id`, `branch_id`, `generation_depth`) gate access to a living tree branch over the Port 9001 bridge — proof of kinship without a single byte of centralized PII.
+
+| Ticket | Target Repo | Status | Notes |
+|---|---|---|---|
+| NKG-101 — `KinshipAttestation` issuance | iyou_home | Open | Signed by the `branch_id` Branch Anchor (or an already-attested holder under the same `root_ancestor_id`). Enclave MUST NOT mint on a satellite's behalf. |
+| NKG-102 — Bounded chain verification | iyou_home | Open | Resolve issuer → `root_ancestor_id` with `MAX_CHAIN_DEPTH = 4`; over-depth chains rejected, not truncated. Every hop independently signature-checkable so anchors verify offline. |
+| NKG-103 — Zero-PII gate predicate | iyou_name | Open | `generation_depth <= 2` ∧ matching `branch_id` ∧ valid/unexpired/unrevoked proof. Integer comparison, never heuristic. Fail closed on absent, malformed, expired, revoked, or over-depth presentations. |
+| NKG-104 — Port 9001 challenge wiring | iyou_name | Open | Challenge for the VP via `POLY_CREDENTIAL_REQUEST` / `sign_credential`; evaluate locally, never proxy to a third party. |
+| NKG-105 — Decision-only persistence | iyou_name | Open | Store `{branch_id, decision, evaluated_at, policy}` only. No `holder_did`, `parent_did`, `root_ancestor_id`, VC bytes, or signature persisted or forwarded to logs/analytics. |
+| NKG-106 — Branch/anchor management surface | iyou_name | Open | Anchor appointment, branch slug stability, and `kind:9112` revocation notice handling for living-branch scopes. |
+| NKG-107 — PII-request prohibition sweep | iyou_name | Open | No legal name, date/place of birth, government ID, address, or phone may be requested by the gate — audit the branch-access flow end to end. |
+| NKG-108 — Conformant test vectors | iyou_home, iyou_name | Open | Implement `PROJECT_ZERO_SPEC.md` §8 items 11–12 (deny-default matrix, zero-PII claim surface). |
+
 ### Protocol Integrity & Governance Specifications
 
 | Specification / Plan | Path | Status | Core Focus |
 |:---|:---|:---|:---|
+| **Canonical Geographic Routing Spec** | [`specs/CANONICAL_GEOGRAPHIC_ROUTING_SPEC.md`](specs/CANONICAL_GEOGRAPHIC_ROUTING_SPEC.md) | Canonical Living Spec (SPEC-008) | Multi-tier geographic subdomain routing (`dkc.il.us.<app>.iyou.me`), RTL token evaluation against ISO-3166-1 / US postal codes, leading-dot `ALLOWED_HOSTS`, Traefik `HostRegexp` IngressRoute, and Multi-SAN HTTP-01 TLS standard. |
+| **Project Zero Specification** | [`PROJECT_ZERO_SPEC.md`](PROJECT_ZERO_SPEC.md) | Canonical Living Spec | Tiered derivation (anchor / public persona / burners), Trust Lens selective disclosure cards, and the two coercion-resistance extensions: §3.4 Dynamic Ephemeral L2 Burners (`DYNAMIC-L2-VOTING`) and §4.4 `KinshipAttestation` lineage gating (`NAME-KINSHIP-GATE`). Port 9001 wire contract. |
 | **Omni-Social Peer Federation Spec** | [`OMNI_SOCIAL_PEER_FEDERATION_SPEC.md`](OMNI_SOCIAL_PEER_FEDERATION_SPEC.md) | Canonical Living Spec | Open federation standard: DID key derivation, secretless PKCE, Nostr wire registry (kinds 0, 1, 1063, 1111, 1112, 30023, 10002), Blossom BUD-01 3-tier storage failover, and autonomous peer hub deployment (`hub.community.org`). |
 | **Developer Translation Manual** | [`DEVELOPER_TRANSLATION_MANUAL.md`](DEVELOPER_TRANSLATION_MANUAL.md) | Canonical Living Manual | Comprehensive developer guide: UI layout hierarchy (Layer 0, Layer 1, Layer 2), Local Signature Bridge wire contract (port 9001: `OMNI_SIGN_REQUEST`, `RESOLVE_PEER_ALIASES`, `SYNC_TO_HOME_REQUEST`), XMPP JID sanitization rules (`{nostr_pubkey_hex}@{domain}`), and 8-step satellite onboarding. |
 | **Protocol Integrity & Post-Mortem Governance** | [`PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`](strategy/PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md) | Canonical Living Spec | Long-term North Star for existential risk mitigation, Perpetual Purpose Trust legal shielding, client-side invariant verification engine, Merkle vote root domain separation, temporal drift guards ($\pm 900\text{s}$), dead-man key decay, and hydra relay federation. |
 | **Immediate Integrity Execution Plan** | [`IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`](strategy/IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md) | Active Execution Blueprint | Tactical sprint rollout: Phase 1 near-term zero-cost engineering (Invariant Alert hook specs `INVARIANT_ALERT_PUSH`, read-only database guards, fail-closed bridge checks), Phase 2 entity ring-fencing & Purpose Trust charter drafting, Phase 3 automated key decay & community witnesses. |
 | **Dependent Identity & Graduation Spec** | [`DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`](specs/DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md) | Canonical Living Spec | Parent-stewarded minors: client-side Web-of-Trust graph distance replaces intrusive cloud age verification; `iyou_home` enclave child subkey derivation (`m/iyou/dependent/<index>`); zero-PII `DependentTokenSlot` age-bracket VCs signed by parent DID; 5-year Trust Ladder (Stages 1–3); Sovereign Graduation zero-loss key export; automated restorative intervention (`iyou_safe` → `iyou_talk` COGS/POGS routing). |
 | **Universal Profile Metadata & Cross-Satellite Sync (RFC-006)** | [`specs/RFC-006-universal-profile-metadata.md`](specs/RFC-006-universal-profile-metadata.md) | Canonical Living Spec (Implemented v0.2.2) | Universal profile metadata (handle, display name, avatar, banner, bio, nip05); `SET_PROFILE_METADATA` ingress & `profile_sync` Port 9001 broadcast; Level 0 air-gap enforcement; canonical `.mesh-user-handle` / `.mesh-user-avatar` reactive DOM hydration without reload. |
+| **Ecosystem Vision & Dual-Entity Charter** | [`strategy/ECOSYSTEM_VISION_AND_DUAL_ENTITY_CHARTER.md`](strategy/ECOSYSTEM_VISION_AND_DUAL_ENTITY_CHARTER.md) | Canonical Living Charter | Defines Perpetual Purpose Trust vs. Byers Brands LLC separation, OMNI mythos, moderation posture, and launch perimeter roadmap. |
 
 ---
 
@@ -164,4 +210,4 @@ Roadmap for `OMNI-DEP-GRAD-SPEC-V1` (`docs/specs/DEPENDENT_IDENTITY_AND_GRADUATI
 ## Sync Status
 
 - **Shared spec propagation** (`scripts/sync_ecosystem_specs.py`): Fully synchronized. All 21 repos carry identical copies of `AUTH_FLOW_SPECIFICATION.md`, `OMNI_SOCIAL_AUTH_STANDARDIZATION.md`, `PROJECT_ZERO_SPEC.md`, `OMNI_SOCIAL_PEER_FEDERATION_SPEC.md`, `DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`, `RFC-006-universal-profile-metadata.md`, `DEVELOPER_TRANSLATION_MANUAL.md`, `satellite-coordination.md`, `LONG_TERM_AUTH_TOPOLOGY.md`, `STANDARD_UI_SPECIFICATION.md`, `PROTOCOL_INTEGRITY_AND_POST_MORTEM_GOVERNANCE.md`, `IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`, `_persona_enclave.html`, and `auth_pkce.py` under `docs/ecosystem_shared/`.
-- **Last sync:** 2026-09-19
+- **Last sync:** 2026-10-02
