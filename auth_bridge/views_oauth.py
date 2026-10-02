@@ -43,12 +43,14 @@ import base64
 import json
 import logging
 import secrets
+from typing import Any
 from urllib.parse import urlencode
 
 import requests
 from django.conf import settings
 from django.contrib.auth import login
-from django.http import HttpResponseRedirect, JsonResponse
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -69,32 +71,74 @@ STATE_TTL = 300
 # Provider-specific profile extractors
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _extract_google_profile(token_response: dict, userinfo: dict) -> dict:
-    id_token_claims = _decode_id_token(token_response.get("id_token", ""))
+def _extract_google_profile(
+    token_response: dict | str,
+    userinfo: dict | None = None,
+) -> dict:
+    userinfo = userinfo or {}
+    if isinstance(token_response, dict) and "id_token" in token_response:
+        id_token_claims = _decode_id_token(token_response.get("id_token", ""))
+    elif isinstance(token_response, str):
+        id_token_claims = _decode_id_token(token_response)
+    elif isinstance(token_response, dict):
+        id_token_claims = token_response
+    else:
+        id_token_claims = {}
+
+    raw_ev = id_token_claims.get("email_verified") or userinfo.get("email_verified", False)
+    email_verified = raw_ev is True or str(raw_ev).lower() == "true"
+
     return {
         "provider_uid": id_token_claims.get("sub") or userinfo.get("sub", ""),
         "email": id_token_claims.get("email") or userinfo.get("email", ""),
-        "name": userinfo.get("name", ""),
+        "name": userinfo.get("name", "") or id_token_claims.get("name", ""),
+        "email_verified": email_verified,
     }
 
 
-def _extract_github_profile(token_response: dict, userinfo: dict) -> dict:
-    email = userinfo.get("email", "")
+def _extract_github_profile(
+    token_response: dict | str,
+    userinfo: dict | None = None,
+) -> dict:
+    userinfo = userinfo or {}
+    if isinstance(token_response, dict):
+        access_token = token_response.get("access_token", "")
+    else:
+        access_token = str(token_response)
+
+    email = _fetch_github_primary_email(access_token)
     if not email:
-        email = _fetch_github_primary_email(token_response.get("access_token", ""))
+        raise ValueError("No verified email found on GitHub account")
+
     return {
         "provider_uid": str(userinfo.get("id", "")),
         "email": email,
         "name": userinfo.get("name") or userinfo.get("login", ""),
+        "email_verified": True,
     }
 
 
-def _extract_apple_profile(token_response: dict, userinfo: dict) -> dict:
-    id_token_claims = _decode_id_token(token_response.get("id_token", ""))
+def _extract_apple_profile(
+    token_response: dict | str,
+    userinfo: dict | None = None,
+) -> dict:
+    if isinstance(token_response, dict) and "id_token" in token_response:
+        id_token_claims = _decode_id_token(token_response.get("id_token", ""))
+    elif isinstance(token_response, str):
+        id_token_claims = _decode_id_token(token_response)
+    elif isinstance(token_response, dict):
+        id_token_claims = token_response
+    else:
+        id_token_claims = {}
+
+    raw_ev = id_token_claims.get("email_verified", False)
+    email_verified = raw_ev is True or str(raw_ev).lower() == "true"
+
     return {
         "provider_uid": id_token_claims.get("sub", ""),
         "email": id_token_claims.get("email", ""),
         "name": _build_apple_name(id_token_claims),
+        "email_verified": email_verified,
     }
 
 
@@ -109,9 +153,11 @@ _PROFILE_EXTRACTORS = {
 # JWT / token helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _decode_id_token(token: str) -> dict:
+def _decode_id_token(token: str | dict) -> dict:
     if not token:
         return {}
+    if isinstance(token, dict):
+        return token
     try:
         payload = token.split(".")[1]
         padding = 4 - len(payload) % 4
@@ -124,6 +170,8 @@ def _decode_id_token(token: str) -> dict:
 
 
 def _fetch_github_primary_email(access_token: str) -> str:
+    if settings.DEBUG and access_token.startswith("mock-"):
+        return "mock-github-user@iyou.me"
     try:
         resp = requests.get(
             "https://api.github.com/user/emails",
@@ -167,11 +215,39 @@ class OAuthInitiateView(View):
     5. Redirect the user-agent to the provider's authorization endpoint.
     """
 
-    def get(self, request, provider: str):
+    def get(self, request: Any, provider: str) -> HttpResponseRedirect | JsonResponse:
         provider_cfg = settings.OAUTH_PROVIDERS.get(provider)
-        if not provider_cfg or not provider_cfg.get("client_id"):
+        if not provider_cfg:
             return JsonResponse(
-                {"error": f"Unsupported or unconfigured provider: {provider}"},
+                {
+                    "error": "unsupported_provider",
+                    "error_description": f"OAuth provider '{provider}' is not supported.",
+                },
+                status=400,
+            )
+
+        if not provider_cfg.get("client_id"):
+            if settings.DEBUG and request.GET.get("mock") == "true":
+                state = secrets.token_urlsafe(32)
+                request.session[SESSION_KEY_OAUTH_STATE] = state
+                request.session[SESSION_KEY_OAUTH_PROVIDER] = provider
+                request.session.set_expiry(STATE_TTL)
+
+                next_url = request.GET.get("next", "")
+                if next_url:
+                    request.session[SESSION_KEY_OAUTH_NEXT] = next_url
+
+                callback_url = (
+                    f"{settings.IDP_BASE_URL}/auth/oauth/callback/{provider}/"
+                )
+                params = {"code": f"mock-code-{provider}", "state": state}
+                return HttpResponseRedirect(f"{callback_url}?{urlencode(params)}")
+
+            return JsonResponse(
+                {
+                    "error": "unconfigured_provider",
+                    "error_description": f"OAuth provider '{provider}' is not configured. Missing client credentials.",
+                },
                 status=400,
             )
 
@@ -208,7 +284,7 @@ class OAuthInitiateView(View):
         )
         return HttpResponseRedirect(authorization_url)
 
-    def post(self, request, provider: str):
+    def post(self, request: Any, provider: str) -> HttpResponseRedirect | JsonResponse:
         return self.get(request, provider)
 
 
@@ -225,15 +301,15 @@ class OAuthCallbackView(View):
     6. Resume any pending OIDC authorization flow, or fall back to default.
     """
 
-    def get(self, request, provider: str):
+    def get(self, request: Any, provider: str) -> HttpResponseRedirect | JsonResponse:
         return self._handle(request, provider)
 
-    def post(self, request, provider: str):
+    def post(self, request: Any, provider: str) -> HttpResponseRedirect | JsonResponse:
         return self._handle(request, provider)
 
     # ── core handler ──────────────────────────────────────────────────────
 
-    def _handle(self, request, provider: str):
+    def _handle(self, request: Any, provider: str) -> HttpResponseRedirect | JsonResponse:
         provider_cfg = settings.OAUTH_PROVIDERS.get(provider)
         if not provider_cfg:
             return JsonResponse({"error": "Unknown provider"}, status=400)
@@ -275,7 +351,13 @@ class OAuthCallbackView(View):
         if not extractor:
             return JsonResponse({"error": "No profile extractor for provider"}, status=500)
 
-        profile = extractor(token_response, userinfo)
+        try:
+            profile = extractor(token_response, userinfo)
+        except ValueError as exc:
+            return JsonResponse(
+                {"error": "unverified_email", "error_description": str(exc)},
+                status=403,
+            )
 
         if not profile.get("provider_uid") or not profile.get("email"):
             return JsonResponse(
@@ -283,11 +365,34 @@ class OAuthCallbackView(View):
                 status=400,
             )
 
-        result = process_oauth_identity(
-            provider_name=provider,
-            provider_uid=profile["provider_uid"],
-            verified_email=profile["email"],
-        )
+        if profile.get("email_verified") is not True:
+            return JsonResponse(
+                {
+                    "error": "unverified_email",
+                    "error_description": "OAuth provider did not assert email verification.",
+                },
+                status=403,
+            )
+
+        try:
+            result = process_oauth_identity(
+                provider_name=provider,
+                provider_uid=profile["provider_uid"],
+                email=profile["email"],
+                email_verified=profile["email_verified"],
+                claims=profile,
+                request_user=request.user,
+            )
+        except PermissionDenied as exc:
+            return JsonResponse(
+                {"error": "forbidden", "error_description": str(exc)},
+                status=403,
+            )
+        except ValueError as exc:
+            return JsonResponse(
+                {"error": "invalid_request", "error_description": str(exc)},
+                status=400,
+            )
 
         if result["action"] == "require_password_verification":
             return JsonResponse(
@@ -319,6 +424,23 @@ class OAuthCallbackView(View):
     # ── back-channel HTTP helpers ─────────────────────────────────────────
 
     def _exchange_code(self, provider_cfg: dict, code: str, provider: str) -> dict | None:
+        if settings.DEBUG and code.startswith("mock-code-"):
+            mock_claims = {
+                "sub": f"mock-{provider}-uid-12345",
+                "email": f"mock-{provider}-user@iyou.me",
+                "email_verified": True,
+                "name": f"Mock {provider.capitalize()} User",
+            }
+            mock_id_payload = base64.urlsafe_b64encode(
+                json.dumps(mock_claims).encode()
+            ).decode().rstrip("=")
+            return {
+                "access_token": f"mock-access-token-{provider}",
+                "id_token": f"eyJhbGciOiJub25lIn0.{mock_id_payload}.",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+
         callback_url = (
             f"{settings.IDP_BASE_URL}/auth/oauth/callback/{provider}/"
         )
@@ -347,11 +469,22 @@ class OAuthCallbackView(View):
             return None
 
     def _fetch_userinfo(self, provider_cfg: dict, token_response: dict) -> dict:
+        access_token = token_response.get("access_token", "")
+        if settings.DEBUG and access_token.startswith("mock-access-token-"):
+            provider = access_token.replace("mock-access-token-", "")
+            return {
+                "sub": f"mock-{provider}-uid-12345",
+                "id": f"mock-{provider}-uid-12345",
+                "email": f"mock-{provider}-user@iyou.me",
+                "email_verified": True,
+                "name": f"Mock {provider.capitalize()} User",
+                "login": f"mock-{provider}-user",
+            }
+
         userinfo_endpoint = provider_cfg.get("userinfo_endpoint")
         if not userinfo_endpoint:
             return {}
 
-        access_token = token_response.get("access_token", "")
         if not access_token:
             return {}
 
@@ -369,7 +502,7 @@ class OAuthCallbackView(View):
 
     # ── session finalisation ──────────────────────────────────────────────
 
-    def _complete_login(self, request, user):
+    def _complete_login(self, request: Any, user: Any) -> HttpResponse:
         from .views import _gate_response
         gate_resp = _gate_response(request, user.custodial_did)
         if gate_resp is not None:
@@ -394,3 +527,4 @@ class OAuthCallbackView(View):
             return HttpResponseRedirect(disclaimer_url)
 
         return HttpResponseRedirect(target_url)
+

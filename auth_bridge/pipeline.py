@@ -22,7 +22,11 @@ and Sybil attacks by enforcing email-anchored identity resolution.
 """
 
 import logging
+from typing import Any
+
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
+from django.utils import timezone
 
 from .models import FederatedIdentity
 
@@ -31,41 +35,67 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
-def process_oauth_identity(provider_name: str, provider_uid: str, verified_email: str):
-    """
-    Handles inbound OAuth profile matching with email anti-collision
-    and security password verification walls.
+def process_oauth_identity(
+    provider_name: str,
+    provider_uid: str,
+    email: str = "",
+    email_verified: bool = False,
+    claims: dict | None = None,
+    request_user: Any = None,
+    **kwargs: Any,
+) -> dict:
+    if not email and "verified_email" in kwargs:
+        email = kwargs["verified_email"]
 
-    Three-way resolution:
-    1. Existing social link → direct login (identity already federated)
-    2. Email match with existing account → require password verification
-       if account has a usable password (prevents account takeover)
-    3. No match → create new user with custodial DID
+    if not email_verified:
+        raise PermissionDenied("OAuth provider did not assert email verification.")
 
-    Returns dict with:
-        - action: "login" | "require_password_verification"
-        - user: User instance (on login)
-        - user_id, email, pending_provider, pending_uid (on require_password_verification)
-    """
+    email = email.strip().lower()
+    if not email:
+        raise ValueError("Missing email address for OAuth identity resolution.")
+
     fed_identity = FederatedIdentity.objects.filter(
         provider=provider_name,
         provider_user_id=provider_uid,
     ).first()
 
     if fed_identity:
+        user = fed_identity.user
+        if not user.email_verified:
+            user.email_verified = True
+            if not user.email_verified_at:
+                user.email_verified_at = timezone.now()
+            user.save(update_fields=["email_verified", "email_verified_at"])
         logger.info(
             "OAUTH MATCH: existing federated identity for %s provider=%s uid=%s",
-            fed_identity.user.email, provider_name, provider_uid,
+            user.email,
+            provider_name,
+            provider_uid,
         )
-        return {"action": "login", "user": fed_identity.user}
+        return {"action": "login", "user": user}
 
-    existing_user = User.objects.filter(email=verified_email).first()
+    existing_user = User.objects.filter(email=email).first()
 
     if existing_user:
+        is_sovereign = bool(
+            existing_user.is_sovereign or existing_user.account_tier == "sovereign"
+        )
+        if is_sovereign:
+            is_authenticated = getattr(request_user, "is_authenticated", False)
+            if not (is_authenticated and str(request_user.id) == str(existing_user.id)):
+                logger.warning(
+                    "OAUTH SOVEREIGN REJECT: attempted merge into sovereign account %s without cryptographic session",
+                    existing_user.email,
+                )
+                raise PermissionDenied(
+                    "Cannot link external OAuth provider to sovereign identity without cryptographic authorization."
+                )
+
         if existing_user.has_usable_password():
             logger.info(
                 "OAUTH GUARDRAIL: password verification required for %s provider=%s",
-                verified_email, provider_name,
+                email,
+                provider_name,
             )
             return {
                 "action": "require_password_verification",
@@ -75,18 +105,33 @@ def process_oauth_identity(provider_name: str, provider_uid: str, verified_email
                 "pending_uid": provider_uid,
             }
 
-        FederatedIdentity.objects.create(
+        existing_user.set_unusable_password()
+        if not existing_user.email_verified:
+            existing_user.email_verified = True
+            if not existing_user.email_verified_at:
+                existing_user.email_verified_at = timezone.now()
+        existing_user.save()
+
+        FederatedIdentity.objects.get_or_create(
             user=existing_user,
             provider=provider_name,
-            provider_user_id=provider_uid,
+            defaults={"provider_user_id": provider_uid},
         )
         logger.info(
-            "OAUTH AUTO-LINK: linked %s to %s (no usable password)",
-            provider_name, verified_email,
+            "OAUTH AUTO-LINK: linked %s to %s",
+            provider_name,
+            email,
         )
         return {"action": "login", "user": existing_user}
 
-    new_user = User.objects.create_user(email=verified_email)
+    new_user = User.objects.create_user(
+        email=email,
+        email_verified=True,
+        email_verified_at=timezone.now(),
+    )
+    new_user.set_unusable_password()
+    new_user.save()
+
     FederatedIdentity.objects.create(
         user=new_user,
         provider=provider_name,
@@ -94,12 +139,18 @@ def process_oauth_identity(provider_name: str, provider_uid: str, verified_email
     )
     logger.info(
         "OAUTH NEW USER: created %s with %s federated identity",
-        verified_email, provider_name,
+        email,
+        provider_name,
     )
     return {"action": "login", "user": new_user}
 
 
-def confirm_password_and_link(user_id: str, password: str, provider_name: str, provider_uid: str):
+def confirm_password_and_link(
+    user_id: str,
+    password: str,
+    provider_name: str,
+    provider_uid: str,
+) -> dict:
     """
     After require_password_verification, the user provides their password.
     This function validates it and completes the federation link.

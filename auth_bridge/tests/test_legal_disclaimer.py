@@ -294,7 +294,7 @@ class LegalDisclaimerFlowAndRoutingTest(TestCase):
         self.assertTrue(user.show_legal_disclaimer)
 
         with patch("auth_bridge.views_oauth.OAuthCallbackView._exchange_code", return_value={"access_token": "mock"}), \
-             patch("auth_bridge.views_oauth.OAuthCallbackView._fetch_userinfo", return_value={"sub": "12345", "email": "oauth_disclaimer@iyou.me"}):
+             patch("auth_bridge.views_oauth.OAuthCallbackView._fetch_userinfo", return_value={"sub": "12345", "email": "oauth_disclaimer@iyou.me", "email_verified": True}):
 
             session = self.client.session
             session["oauth_state"] = "valid-state"
@@ -320,7 +320,7 @@ class LegalDisclaimerFlowAndRoutingTest(TestCase):
         self.assertFalse(user.show_legal_disclaimer)
 
         with patch("auth_bridge.views_oauth.OAuthCallbackView._exchange_code", return_value={"access_token": "mock"}), \
-             patch("auth_bridge.views_oauth.OAuthCallbackView._fetch_userinfo", return_value={"sub": "54321", "email": "oauth_bypassed@iyou.me"}):
+             patch("auth_bridge.views_oauth.OAuthCallbackView._fetch_userinfo", return_value={"sub": "54321", "email": "oauth_bypassed@iyou.me", "email_verified": True}):
 
             session = self.client.session
             session["oauth_state"] = "valid-state"
