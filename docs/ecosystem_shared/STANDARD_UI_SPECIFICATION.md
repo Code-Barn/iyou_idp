@@ -159,7 +159,7 @@ All Layer 1 headers across the ecosystem share one mandatory width and spacing c
 - **Enlarged Brand Logo**: Responsive squircle brand stamp `class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-sm border border-slate-200 dark:border-slate-800 shrink-0 group-hover:scale-105 transition-transform duration-150"` (44px–48px rendering slot, matching `logo_square_sm.png` dual-asset hierarchy, scaled up from previous 32-36px).
 - **Responsive Geo-Scope Capsule vs. Brandmark Descriptor Pill Interchange**:
   - When **Authenticated** (`{% if user.is_authenticated or request.user.is_authenticated %}`): Renders the interactive Geographic Scope Capsule wrapped in `<div class="relative inline-block text-left shrink-0" id="geo-scope-container">`, with compact pill button (`#geo-scope-trigger-btn`), pulsing status dot (`shrink-0`), responsive label `<span id="geo-scope-display-label" class="hidden sm:inline font-bold uppercase tracking-wider text-[10px]">` (label hidden on micro-screens to prevent overflow, showing only icon and pulse indicator), and interactive popover ladder modal.
-  - When **Unauthenticated** (`{% else %}`): Renders the static Brandmark Descriptor Pill (`<div id="brand-descriptor-pill" class="inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">__APP_DESCRIPTOR__</div>`). Because the unauthenticated header contains minimal right-side controls ("Sovereign Key Required" capsule + "Authenticate" button), the brand descriptor pill fits comfortably across all viewport widths down to 320px without requiring breakpoint hiding or `xs:` responsive rules.
+  - When **Unauthenticated** (`{% else %}`): Renders the static Brandmark Descriptor Pill (`<div id="brand-descriptor-pill" class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">__APP_DESCRIPTOR__</div>`). On compact mobile viewports (<640px / `sm:`), the descriptor pill is pruned (`hidden sm:inline-flex`) to preserve the 320px/375px horizontal width budget alongside the brand lockup and authentication controls.
 - **Mobile Action Pruning**: Direct action links `[ ⚙️ Edit ]` and `Sign Out` use `hidden md:inline-flex` so they are pruned from the primary header on smaller screens (below `md:` / 768px). Mobile users access profile editing and session termination via the Persona Enclave dropdown flyout or mobile bottom navigation dock.
 - **Persona Micro-Truncation**: Active persona handle (`#active-persona-display-name`) incorporates granular breakpoint clamps: `truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[140px]`.
 - Data-visualization viewports (`name`, `draw`, `spot`) may permit full-bleed `<main class="w-full">`, but headers and footers **MUST** strictly remain `max-w-7xl mx-auto`.
@@ -207,7 +207,7 @@ The canonical `_standard_header.html` provides (all slots visible in both authen
      {% else %}
        <!-- Brandmark Descriptor Pill (Unauthenticated Session) -->
        <div id="brand-descriptor-pill"
-            class="inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">
+            class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">
          __APP_DESCRIPTOR__
        </div>
      {% endif %}
@@ -257,7 +257,7 @@ A rounded monospace pill (`#brand-descriptor-pill`) rendered inline in the unaut
 
 ```html
 <div id="brand-descriptor-pill"
-     class="inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">
+     class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">
   __APP_DESCRIPTOR__
 </div>
 ```
@@ -292,15 +292,15 @@ When no active session exists, the standard header renders a two-part authentica
 
 ```html
 <!-- Logged-Out Canonical Poly Flow -->
-<div class="flex items-center gap-2 text-xs">
+<div class="flex items-center gap-1.5 sm:gap-2 text-xs shrink-0">
   <!-- Soft Capsule Indicator -->
-  <div class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300">
-    <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
-    <span class="italic text-xs text-slate-600 dark:text-slate-400">Sovereign Key Required</span>
+  <div class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 shrink-0">
+    <span class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+    <span class="hidden sm:inline italic text-xs text-slate-600 dark:text-slate-400">Sovereign Key Required</span>
   </div>
   <!-- Solid Vibrant Authenticate Button -->
-  <a href="{% url 'oidc_authentication_init' %}" class="px-3 py-1.5 rounded-lg bg-{color}-600 hover:bg-{color}-700 text-white font-medium text-xs shadow-sm transition-all flex items-center gap-1.5">
-    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <a href="{% url 'oidc_authentication_init' %}" class="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-{color}-600 hover:bg-{color}-700 text-white font-medium text-xs shadow-sm transition-all flex items-center gap-1 sm:gap-1.5 shrink-0">
+    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
     </svg>
     <span>Authenticate</span>
@@ -308,14 +308,14 @@ When no active session exists, the standard header renders a two-part authentica
 </div>
 ```
 
-- **Capsule**: `rounded-full` amber border/bg (`border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300`), italic text, `w-2.5 h-2.5` amber-500 dot.
-- **Authenticate Button**: Solid `px-3 py-1.5 rounded-lg bg-{color}-600 hover:bg-{color}-700 text-white font-medium text-xs shadow-sm` with key SVG icon (`w-3.5 h-3.5`) and `gap-1.5`.
+- **Capsule**: `rounded-full` amber border/bg (`border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 shrink-0`), responsive padding (`px-2 sm:px-3 py-1 sm:py-1.5`), amber-500 dot (`w-2 h-2 sm:w-2.5 sm:h-2.5 shrink-0`), and responsive italic text (`hidden sm:inline`) ensuring the status indicator dot remains visible on micro-screens while freeing ~150px of horizontal width.
+- **Authenticate Button**: Solid `px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-{color}-600 hover:bg-{color}-700 text-white font-medium text-xs shadow-sm shrink-0` with key SVG icon (`w-3.5 h-3.5 shrink-0`) and `gap-1 sm:gap-1.5`.
 
 ### 3.5 Outline Theme Toggle (☀ Light / ☾ Dark)
-The `#theme-toggle` button uses the `block dark:hidden` / `hidden dark:block` pattern to show the correct icon per mode without JavaScript class toggling:
+The `#theme-toggle` button uses the `block dark:hidden` / `hidden dark:block` pattern to show the correct icon per mode without JavaScript class toggling, with mandatory `shrink-0` to protect against flex-shrink compression:
 
 ```html
-<button id="theme-toggle" type="button" class="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition focus:outline-none" aria-label="Toggle theme">
+<button id="theme-toggle" type="button" class="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition focus:outline-none shrink-0" aria-label="Toggle theme">
   <svg id="icon-sun" class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
     <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
   </svg>
@@ -529,9 +529,9 @@ To prevent awkward footer floating on sparse or empty views, satellites must enf
 
 1. **Viewport Coverage (`<body>`)**:
    ```html
-   <body class="flex flex-col min-h-screen bg-slate-50 dark:bg-[#080B11] text-slate-900 dark:text-slate-100 antialiased transition-colors duration-200">
+   <body class="min-h-screen flex flex-col overflow-x-clip bg-slate-50 dark:bg-[#080B11] text-slate-900 dark:text-slate-100 antialiased transition-colors duration-200">
    ```
-   `<body class="flex flex-col min-h-screen ...">` guarantees that the root layout shell expands to at least 100% of the viewport height.
+   `<body class="min-h-screen flex flex-col overflow-x-clip ...">` guarantees that the root layout shell expands to at least 100% of the viewport height and prevents horizontal swipe drift or blowout on micro-screens.
 
 2. **Main Expansion (`<main>`)**:
    ```html
@@ -563,10 +563,13 @@ The outer footer container uses the ecosystem's glassmorphic translucent surface
   - `py-10`: Provides balanced vertical breathing room across all screen sizes.
 - **Inner Container**: `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center justify-center text-center">` aligns all metadata along the central axis.
 
-### 8.3 Mascot Image Block
-Every satellite showcases its companion mascot using dual light and dark PNG assets with smooth hover interactions:
+### 8.3 Mascot Image Block & 3-Tier Fallback Hierarchy
+Every satellite showcases its companion identity using a structured 3-tier presentation hierarchy:
+
+#### Tier 1: Dedicated Mascot Illustration (Dual Light/Dark PNGs)
+For satellites with registered mascots in `APP_MASCOTS` (e.g. `iyou_poly`, `iyou_hive`):
 ```html
-<!-- Prominent Mascot Presentation -->
+<!-- Prominent Mascot Presentation (Tier 1) -->
 <div class="relative group mb-4">
   <!-- Light Mode Mascot -->
   <img 
@@ -582,11 +585,33 @@ Every satellite showcases its companion mascot using dual light and dark PNG ass
   />
 </div>
 ```
+
+#### Tier 2: Typographic Glyph Block
+For satellites with approved iconographic glyphs in `APP_GLYPHS` (e.g. `iyou_baba` 🏷️):
+```html
+<!-- Prominent Mascot Presentation (Tier 2 Glyph Block) -->
+<div class="relative group mb-4">
+  <div class="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl bg-{color}-500/10 dark:bg-{color}-500/20 border border-{color}-500/20 dark:border-{color}-500/40 flex items-center justify-center text-3xl sm:text-4xl shadow-md group-hover:scale-105 transition-transform duration-200 select-none">
+    <span>{glyph}</span>
+  </div>
+</div>
+```
+
+#### Tier 3: Square Logo Fallback
+For satellites without custom mascot illustrations or glyphs:
+```html
+<!-- Prominent Mascot Presentation (Tier 3 Logo Fallback) -->
+<div class="relative group mb-4">
+  <img 
+    src="{% static 'img/logo_square.png' %}" 
+    alt="{slug}" 
+    class="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover shadow-md border border-slate-200 dark:border-gray-800 group-hover:scale-105 transition-transform duration-200 select-none" 
+    onerror="this.onerror=null;this.src='{% static 'img/logo_square_sm.png' %}';"
+  />
+</div>
+```
+
 - **Wrapper**: `<div class="relative group mb-4">` establishes the hover coordinate context.
-- **Light Mode Image**: `{% static 'img/{slug}_mascot_light.png' %}`:
-  - Responsive classes: `block dark:hidden`, `h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover shadow-md border border-slate-200 dark:border-transparent group-hover:scale-105 transition-transform duration-200`.
-- **Dark Mode Image**: `{% static 'img/{slug}_mascot_dark.png' %}`:
-  - Responsive classes: `hidden dark:block`, `h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-cover shadow-lg border border-transparent dark:border-gray-800 group-hover:scale-105 transition-transform duration-200`.
 - **Accessibility Invariant**: Both light and dark `<img>` tags MUST define descriptive `alt` attributes (e.g. `alt="Polly the Consensus Parrot"`).
 - **Placement Invariant**: Mascot assets MUST reside strictly within `<footer>` and are strictly forbidden inside navigation headers (`<nav>`).
 
@@ -598,7 +623,7 @@ The brand lockup presents the dual-tone ecosystem app identity alongside version
   <div class="flex items-center justify-center gap-1.5 font-bold tracking-tight">
     <span class="text-slate-400 dark:text-slate-500">iyou</span><span class="text-{color}-600 dark:text-{color}-400 font-bold tracking-tight">_{slug}</span>
     <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-{color}-100 dark:bg-{color}-950/60 text-{color}-700 dark:text-{color}-300 border border-{color}-200 dark:border-{color}-800/60 ml-1">
-      v2.0 Greenfield
+      v1.0
     </span>
   </div>
   <p class="text-xs font-mono text-slate-500 dark:text-slate-400">
