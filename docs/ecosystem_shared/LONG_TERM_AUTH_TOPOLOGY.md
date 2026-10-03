@@ -1,13 +1,15 @@
 # Long-Term Authentication Topology
 
 **Hub:** `omni_social`
-**Last updated:** 2026-08-22
+**Last updated:** 2026-10-02
 
 ---
 
 ## 3-Tier Cryptographic Architecture Blueprint
 
 This document defines the long-term sovereign identity network architecture, unifying the core cryptographic library (`did_rust`), the desktop loopback gateway (`iyou_home`), and the native mobile application (`iyou_mobile`) into a cohesive, anti-Sybil identity mesh managed by the central identity provider (`iyou_idp`).
+
+For user account tiers, mobility lifecycle, and ingress invariants across devices (Tier 1 Managed Convenience, Tier 2 Mobile Authenticator, Tier 3 Desktop Enclave), see the canonical companion specification **[`MULTI_TIER_IDENTITY_LIFECYCLE.md`](MULTI_TIER_IDENTITY_LIFECYCLE.md)** (`OMNI-AUTH-TIERS-V2`).
 
 ---
 
@@ -209,11 +211,51 @@ All cross-tier communication uses JSON serialization via `did_rust`:
 
 ### OIDC Integration Points
 
-| Flow | Initiation | Verification | Session |
-|:---|:---|:---|:---|
-| Desktop PKCE | `iyou_home` WebView | `iyou_idp` token endpoint | Local encrypted storage |
-| Mobile QR Handshake | `iyou_home` browser loopback | `iyou_idp` DID resolution | Ephemeral session token |
-| Mobile OIDC PKCE | `iyou_mobile` browser | `iyou_idp` token endpoint | Secure Enclave-bound key |
+| Flow | Initiation | Verification | Session | AMR Claim |
+|:---|:---|:---|:---|:---|
+| Desktop Enclave (Tier 3) | `iyou_home` WebView / WebSocket (`ws://127.0.0.1:9001`) | `iyou_idp` loopback bridge verification | Sovereign OIDC session | `["did:websocket"]` |
+| Mobile QR Handshake (Tier 2) | `iyou_mobile` camera / deep link | `iyou_idp` ephemeral nonce verification | Sovereign OIDC session | `["did:oob_qr"]` |
+| Passkey Assertion (Tier 1) | Browser WebAuthn API | `iyou_idp` FIDO2 attestation | Managed OIDC session | `["webauthn:passkey"]` |
+| Email OTP (Tier 1) | Browser email challenge | `iyou_idp` HMAC-signed OTP verification | Managed OIDC session | `["otp:email"]` |
+| OAuth2 Federation (Tier 1) | Upstream provider redirect | `iyou_idp` token exchange | Managed OIDC session | `["oauth:<provider>"]` |
+
+#### Front-Channel OIDC Delegation Without Key Escrow
+
+A cornerstone of the long-term topology is decoupling front-channel OIDC issuance from central key custody:
+- **Zero Key Escrow for Sovereign Ingress:** Tier 2 (`iyou_mobile` QR) and Tier 3 (`iyou_home` WebSocket) logins mint standard OIDC authorization codes for relying party satellites (`iyou_wun`, `iyou_poly`, `iyou_talk`, etc.) through `iyou_idp` without server-side key escrow.
+- **Protocol Flow:** The user's hardware enclave (desktop local loopback on port 9001 or mobile Secure Enclave / StrongBox via camera challenge) cryptographically signs an ephemeral challenge nonce issued by `iyou_idp`. Once verified, `iyou_idp` generates a standard authorization code.
+- **Satellite Interoperability:** Satellite applications consume standard OIDC PKCE tokens without needing platform-specific DID verification libraries or direct socket connections to client devices. The `sub` claim is permanently pinned to the canonical sovereign DID (`user.custodial_did`), with `account_tier: "sovereign"`.
+
+### AMR (Authentication Method Reference) Claim Standard
+
+The OIDC `amr` claim (RFC 8176) is embedded in both the signed ID Token and the `/oauth2/userinfo/` endpoint response (under scopes `openid` and `profile`). It asserts the exact authentication mechanism and assurance level:
+
+* **Tier 3 (Desktop Sovereign Enclave):** `["did:websocket"]` — Cryptographic challenge signed over local WebSocket loopback (`ws://127.0.0.1:9001`) by `iyou_home`.
+* **Tier 2 (Mobile Hardware Authenticator):** `["did:oob_qr"]` — Cryptographic challenge signed out-of-band by `iyou_mobile` using keys sealed in Secure Enclave or StrongBox.
+* **Tier 1 (Managed Convenience):**
+  - Passkeys: `["webauthn:passkey"]` — FIDO2 hardware credential assertion.
+  - Email OTP: `["otp:email"]` — Ephemeral one-time password verified via email.
+  - OAuth2 Federation: `["oauth:google"]`, `["oauth:github"]`, `["oauth:apple"]` — Delegated assertion from trusted upstream identity providers.
+
+**Fail-Closed Authorization Gate:** Graduated sovereign accounts (`is_sovereign=True`) are prohibited from authorizing sessions using unverified or legacy password methods. `SovereignAuthorizeView` checks the session `auth_method`; if it evaluates to `"password"` or `"unverified"`, code issuance terminates with HTTP 403 `access_denied`.
+
+### Multi-Email Locker Pattern
+
+To prevent identity pre-claiming across the federated mesh, Omni-Social implements the **Email Locker** architectural pattern:
+- **Mesh Anti-Preclaiming Invariant:** In traditional distributed networks, attackers pre-register known target email addresses on unvisited satellite origins to hijack handles or establish conflicting identity anchors. In the Omni-Social federation, email addresses are locked to the authenticated DID (`did:key` or custodial `did:web`).
+- **Cryptographic Binding:** An authenticated DID can bind multiple verified email addresses (e.g., primary, personal, work, service routing aliases) into its locker. Each address is validated via challenge-response OTP by `iyou_idp` and anchored in a W3C `EmailOwnershipCredential` issued by `did:web:iyou.me`.
+- **Global Resolution & Conflict Rejection:** When any satellite or service encounters an email, it validates against the canonical DID locker index. An email bound to an existing DID cannot be claimed, registered, or usurped by any other identity across any federation origin.
+- **Selective Privacy Disclosure:** Multiple emails reside in the user's local enclave locker (`iyou_home`). The user may disclose a `work` address to professional satellites (`iyou_clar`, `iyou_dev`) while projecting an `alias` or purely pseudonymous DID identity to social satellites (`iyou_wun`, `iyou_blog`), without exposing the underlying mailbox cluster.
+
+### Identity Lifecycle & Cross-Tier Ingress Invariants
+
+Account authentication tiers, cross-device mobility, and post-graduation transitions are specified canonically in **[`MULTI_TIER_IDENTITY_LIFECYCLE.md`](MULTI_TIER_IDENTITY_LIFECYCLE.md)** (`OMNI-AUTH-TIERS-V2`):
+1. **Tier 3 <-> Tier 2 Parity:** A user holding a self-custodied `did:key` must be able to authenticate seamlessly via Tier 3 (loopback) on desktop or Tier 2 (QR scan) on mobile without database mutations.
+2. **Post-Graduation Ingress:** Graduation shreds the Vault-held private seed and converts the account tier to `sovereign`. Post-graduation ingress MUST support:
+   - Tier 3 WebSocket verification.
+   - Tier 2 Mobile QR verification.
+   - Hardware-bound Passkey assertion (WebAuthn), asserting identity without server-side key escrow.
+3. **Zero Cleartext Passwords:** No tier may persist cleartext or hashed passwords in PostgreSQL. All user records enforce `set_unusable_password()`.
 
 ---
 
@@ -230,6 +272,7 @@ All cross-tier communication uses JSON serialization via `did_rust`:
 
 ## References
 
+- `docs/ecosystem_shared/MULTI_TIER_IDENTITY_LIFECYCLE.md` — Multi-Tier Identity Lifecycle & Cross-Device Mobility Spec (OMNI-AUTH-TIERS-V2)
 - `docs/AUTH_FLOW_SPECIFICATION.md` — Current PKCE flow documentation
 - `docs/OMNI_SOCIAL_AUTH_STANDARDIZATION.md` — 4 Federation Rules
 - `docs/strategy/SECURITY_HARDENING.md` — Security hardening roadmap
