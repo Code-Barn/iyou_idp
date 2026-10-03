@@ -10,15 +10,10 @@
 
   if (!modal) return;
 
-  var CACHE_KEY = 'iyou_home_latest_release';
+  var CACHE_KEY = 'iyou_home_latest_release_v2';
   var GITHUB_API_URL = 'https://api.github.com/repos/Code-Barn/iyou_home/releases/latest';
-  // MIRRORS.txt is fetched through the CORS-friendly GitHub contents API rather
-  // than the raw release `browser_download_url`, which 302s to
-  // objects.githubusercontent.com without CORS headers and turns every fetch()
-  // into a console CORS error. The contents API returns the file base64-encoded.
-  var MIRRORS_API_URL = 'https://api.github.com/repos/Code-Barn/iyou_home/contents/release-artifacts/MIRRORS.txt';
   var IPFS_FALLBACK_URL = 'https://ipfs.io/ipfs/QmUA8mAoo7fTZbG1hwvChbSVbD3trAhACBHjzYQDAoFDQu/';
-  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:a8e1d1fee596f8f7e9cf0cba56633747073bb4f4&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&ws=https%3A%2F%2Fgithub.com%2FCode-Barn%2Fiyou_home%2Freleases%2Fdownload%2Fv0.2.2%2F';
+  var MAGNET_FALLBACK_URI = 'magnet:?xt=urn:btih:6656bea4131bb570624ab6b39ea67fe2fbbff711&dn=iyou-home_0.2.2&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&ws=https%3A%2F%2Fgithub.com%2FCode-Barn%2Fiyou_home%2Freleases%2Fdownload%2Fv0.2.2%2F';
 
   function detectOS() {
     var ua = navigator.userAgent || navigator.platform || '';
@@ -98,7 +93,7 @@
   }
 
   function copyToClipboard(text, onSuccess, onFallback) {
-    if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(function () {
         if (onSuccess) onSuccess();
       })["catch"](function () {
@@ -132,20 +127,59 @@
     }
   }
 
+  function showMagnetCopied(el) {
+    if (!el) return;
+    if (el.dataset.copying === 'true') return;
+    el.dataset.copying = 'true';
+
+    var origHtml = el.innerHTML;
+    var origTitle = el.getAttribute('title') || '';
+    var origClasses = el.className;
+
+    el.innerHTML = '<span>✓ Copied Magnet Link!</span>';
+    el.classList.add('bg-emerald-100', 'text-emerald-800', 'border-emerald-300');
+    el.classList.remove('bg-gray-100', 'text-gray-700');
+    el.setAttribute('title', 'Copied Magnet Link!');
+
+    setTimeout(function () {
+      el.innerHTML = origHtml;
+      el.className = origClasses;
+      if (origTitle) {
+        el.setAttribute('title', origTitle);
+      } else {
+        el.removeAttribute('title');
+      }
+      delete el.dataset.copying;
+    }, 2000);
+  }
+
   document.addEventListener('click', function (e) {
+    var magnetBtn = e.target.closest('#dl-magnet, .dl-btn-magnet, [data-asset="magnet"]');
+    if (magnetBtn) {
+      e.preventDefault();
+      var magnetUri = magnetBtn.getAttribute('href') || magnetBtn.href || MAGNET_FALLBACK_URI;
+      copyToClipboard(
+        magnetUri,
+        function () {
+          showMagnetCopied(magnetBtn);
+        },
+        function () {
+          showMagnetCopied(magnetBtn);
+        }
+      );
+      return;
+    }
+
     var link = e.target.closest('.dl-link');
     if (!link) return;
 
     var magnetUri = (link.href && link.href.indexOf('magnet:') === 0) ? link.href : link.getAttribute('data-magnet');
-
     if (magnetUri) {
       e.preventDefault();
       copyToClipboard(
         magnetUri,
         function () {
-          var orig = link.textContent;
-          link.textContent = 'Copied!';
-          setTimeout(function () { link.textContent = orig; }, 2000);
+          showMagnetCopied(link);
         },
         function () {
           window.location.href = magnetUri;
@@ -153,89 +187,6 @@
       );
     }
   });
-
-  function parseMirrorsTxt(text) {
-    var result = {};
-    if (!text) return result;
-    var lines = text.split(/\r?\n/);
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].trim();
-      if (!line || line.indexOf('#') === 0) continue;
-      var eqIdx = line.indexOf('=');
-      if (eqIdx !== -1) {
-        var key = line.slice(0, eqIdx).trim();
-        var val = line.slice(eqIdx + 1).trim();
-        result[key] = val;
-      }
-    }
-    return result;
-  }
-
-  function decodeBase64Utf8(base64) {
-    var binary;
-    if (window.atob) {
-      binary = atob(base64);
-    } else {
-      return null;
-    }
-    var bytes = new Uint8Array(binary.length);
-    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    try {
-      return new TextDecoder('utf-8').decode(bytes);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function applyMirrors(mirrors) {
-    var ipfsBtns = modal.querySelectorAll('#dl-ipfs, .dl-btn-ipfs, [data-asset="ipfs"]');
-    var magnetBtns = modal.querySelectorAll('#dl-magnet, .dl-btn-magnet, [data-asset="magnet"]');
-
-    var ipfsUrl = (mirrors && mirrors.IPFS_GATEWAY_URL) || IPFS_FALLBACK_URL;
-    ipfsBtns.forEach(function (el) {
-      el.href = ipfsUrl;
-      el.setAttribute('target', '_blank');
-      el.setAttribute('rel', 'noopener noreferrer');
-    });
-
-    var magnetUrl = (mirrors && mirrors.MAGNET_LINK) || MAGNET_FALLBACK_URI;
-    magnetBtns.forEach(function (el) {
-      el.href = magnetUrl;
-      el.classList.remove('hidden');
-    });
-
-    var torrentBtns = modal.querySelectorAll('#dl-bittorrent, .dl-btn-torrent, [data-asset="torrent"]');
-    torrentBtns.forEach(function (el) {
-      el.dataset.magnet = magnetUrl;
-      el.setAttribute('title', 'Direct .torrent file (Magnet available)');
-    });
-  }
-
-  function fetchMirrorsWithFallback() {
-    // CORS-safe attempt: the GitHub contents API serves MIRRORS.txt as JSON
-    // with Content-Type text/plain (never used) and `content` base64-encoded.
-    // Any redirect from api.github.com still returns with permissive CORS, so
-    // this never trips the browser's CORS error channel.
-    fetch(MIRRORS_API_URL, {
-      headers: { 'Accept': 'application/vnd.github.v3.raw' }
-    })
-      .then(function (res) {
-        if (!res.ok) throw new Error('Mirrors API error');
-        if (res.headers.get('content-type') && res.headers.get('content-type').indexOf('application/json') !== -1) {
-          return res.json().then(function (json) {
-            if (!json || !json.content) throw new Error('Mirrors content missing');
-            return decodeBase64Utf8(json.content) || '';
-          });
-        }
-        return res.text();
-      })
-      .then(function (txt) {
-        applyMirrors(parseMirrorsTxt(txt));
-      })
-      .catch(function () {
-        applyMirrors(null);
-      });
-  }
 
   function hydrateReleaseAssets(release) {
     if (!release || !Array.isArray(release.assets)) return;
@@ -315,18 +266,50 @@
       });
     }
 
+    const magnetMatch = release.body && release.body.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^\s"'<>]*/);
+    var magnetBtns = modal.querySelectorAll('#dl-magnet, .dl-btn-magnet, [data-asset="magnet"]');
+
+    if (magnetMatch && magnetMatch[0]) {
+      var extractedMagnet = magnetMatch[0];
+      magnetBtns.forEach(function (el) {
+        el.href = extractedMagnet;
+        el.classList.remove('hidden');
+      });
+      torrentBtns.forEach(function (el) {
+        el.dataset.magnet = extractedMagnet;
+        el.setAttribute('title', 'Direct .torrent file (Magnet available)');
+      });
+    } else {
+      magnetBtns.forEach(function (el) {
+        var existingHref = el.getAttribute('href');
+        if (!existingHref || existingHref.indexOf('magnet:') !== 0) {
+          el.href = MAGNET_FALLBACK_URI;
+        }
+        el.classList.remove('hidden');
+      });
+      torrentBtns.forEach(function (el) {
+        var currentHref = el.dataset.magnet || MAGNET_FALLBACK_URI;
+        el.dataset.magnet = currentHref;
+        el.setAttribute('title', 'Direct .torrent file (Magnet available)');
+      });
+    }
+
+    var ipfsBtns = modal.querySelectorAll('#dl-ipfs, .dl-btn-ipfs, [data-asset="ipfs"]');
+    ipfsBtns.forEach(function (el) {
+      var existingHref = el.getAttribute('href');
+      if (!existingHref) {
+        el.href = IPFS_FALLBACK_URL;
+      }
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer');
+    });
+
     if (release.tag_name) {
       var tagBadges = modal.querySelectorAll('#release-version-badge, .release-tag-badge, #release-tag-badge');
       tagBadges.forEach(function (badge) {
         badge.textContent = release.tag_name;
       });
     }
-
-    // Mirror mirrors from MIRRORS.txt through the CORS-safe contents API,
-    // which applies the static fallbacks on any failure. The raw release
-    // browser_download_url is NOT fetched here: it redirects to
-    // objects.githubusercontent.com without CORS headers.
-    fetchMirrorsWithFallback();
   }
 
   function fetchLatestRelease() {
