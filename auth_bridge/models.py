@@ -187,3 +187,29 @@ class IssuedCredential(models.Model):
         if self.expires_at is not None:
             return self.expires_at <= int(timezone.now().timestamp())
         return False
+
+
+class LinkedEmail(models.Model):
+    LABEL_CHOICES = [
+        ("personal", "Personal"),
+        ("work", "Work"),
+        ("alias", "Alias"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="linked_emails",
+    )
+    email = models.EmailField(unique=True, db_index=True)
+    label = models.CharField(max_length=50, choices=LABEL_CHOICES, default="personal")
+    verified_at = models.DateTimeField(auto_now_add=True)
+    is_public = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Linked Email"
+        verbose_name_plural = "Linked Emails"
+
+    def __str__(self) -> str:
+        return f"{self.email} ({self.label}) -> {self.user}"

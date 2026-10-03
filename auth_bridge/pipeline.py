@@ -75,6 +75,17 @@ def process_oauth_identity(
         return {"action": "login", "user": user}
 
     existing_user = User.objects.filter(email=email).first()
+    if not existing_user:
+        from .models import LinkedEmail
+
+        linked_entry = LinkedEmail.objects.filter(email=email).select_related("user").first()
+        if linked_entry:
+            existing_user = linked_entry.user
+            logger.info(
+                "OAUTH MATCH: resolved via LinkedEmail %s -> user %s",
+                email,
+                existing_user.email,
+            )
 
     if existing_user:
         is_sovereign = bool(
