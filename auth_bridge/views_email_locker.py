@@ -244,6 +244,57 @@ class ListLinkedEmailsView(View):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class RemoveLinkedEmailView(View):
+    def get(self, request: HttpRequest, id: uuid.UUID) -> HttpResponse:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "authentication_required"}, status=401)
+
+        linked_email = LinkedEmail.objects.filter(id=id, user=request.user).first()
+        if not linked_email:
+            return JsonResponse({"error": "not_found", "error_description": "Linked email not found."}, status=404)
+
+        vc = issue_email_ownership_credential(request.user, linked_email.email, linked_email.label)
+        return JsonResponse({
+            "success": True,
+            "id": str(linked_email.id),
+            "email": linked_email.email,
+            "label": linked_email.label,
+            "verified_at": linked_email.verified_at.isoformat(),
+            "is_public": linked_email.is_public,
+            "vc": vc,
+        })
+
+    def patch(self, request: HttpRequest, id: uuid.UUID) -> HttpResponse:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "authentication_required"}, status=401)
+
+        linked_email = LinkedEmail.objects.filter(id=id, user=request.user).first()
+        if not linked_email:
+            return JsonResponse({"error": "not_found", "error_description": "Linked email not found."}, status=404)
+
+        try:
+            data = json.loads(request.body.decode("utf-8") or "{}") if request.body else {}
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({"error": "invalid_payload"}, status=400)
+
+        if "is_public" in data:
+            linked_email.is_public = bool(data["is_public"])
+            linked_email.save(update_fields=["is_public"])
+
+        if "label" in data and data["label"] in VALID_LABELS:
+            linked_email.label = data["label"]
+            linked_email.save(update_fields=["label"])
+
+        return JsonResponse({
+            "success": True,
+            "id": str(linked_email.id),
+            "email": linked_email.email,
+            "label": linked_email.label,
+            "is_public": linked_email.is_public,
+        })
+
+    def post(self, request: HttpRequest, id: uuid.UUID) -> HttpResponse:
+        return self.patch(request, id)
+
     def delete(self, request: HttpRequest, id: uuid.UUID) -> HttpResponse:
         if not request.user.is_authenticated:
             return JsonResponse({"error": "authentication_required"}, status=401)
@@ -256,3 +307,27 @@ class RemoveLinkedEmailView(View):
         linked_email.delete()
         logger.info("EMAIL LINK REMOVED: email=%s unlinked from user=%s", email, request.user.custodial_did)
         return JsonResponse({"success": True, "message": "Linked email removed."})
+
+
+LinkedEmailDetailView = RemoveLinkedEmailView
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ExportEmailCredentialView(View):
+    def get(self, request: HttpRequest) -> HttpResponse:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "authentication_required"}, status=401)
+
+        raw_email = request.GET.get("email")
+        if not raw_email or raw_email.strip().lower() == request.user.email.lower():
+            target_email = request.user.email
+            label = "primary"
+        else:
+            target_email = raw_email.strip().lower()
+            linked = LinkedEmail.objects.filter(email=target_email, user=request.user).first()
+            if not linked:
+                return JsonResponse({"error": "not_found", "error_description": "Email not linked to account."}, status=404)
+            label = linked.label
+
+        vc = issue_email_ownership_credential(request.user, target_email, label)
+        return JsonResponse({"success": True, "email": target_email, "label": label, "vc": vc})

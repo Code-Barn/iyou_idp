@@ -1216,10 +1216,18 @@ class LoginPageView(View):
                 if params.get('client_id') and params.get('response_type'):
                     return redirect(next_url)
 
-            # No active OIDC flow — show authenticated dashboard.
+            linked_emails = request.user.linked_emails.all().order_by('-verified_at')
+            passkeys = request.user.passkeys.all().order_by('-created_at')
             context = {
                 'next_url': DEFAULT_NEXT_URL,
                 'user_did': request.user.custodial_did,
+                'custodial_did': request.user.custodial_did,
+                'primary_email': request.user.email,
+                'account_tier': getattr(request.user, 'account_tier', 'managed_free'),
+                'email_verified': getattr(request.user, 'email_verified', False),
+                'email_verified_at': getattr(request.user, 'email_verified_at', None),
+                'linked_emails': linked_emails,
+                'passkeys': passkeys,
                 'home_ws_url': django_settings.IDP_HOME_WS_URL,
                 'wun_url': django_settings.IDP_WUN_URL,
                 'idp_base_url': django_settings.IDP_BASE_URL,

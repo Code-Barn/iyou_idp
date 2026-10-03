@@ -4,15 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sovereign Dashboard</title>
+    <title>Sovereign Identity Dashboard | iyou</title>
+    <link rel="icon" type="image/png" href="{% static 'auth_bridge/img/logo_square.png' %}">
     <link rel="stylesheet" href="{% static 'css/output.css' %}">
     <style>
         .gradient-bg {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #9333ea 100%);
         }
         .dashboard-card {
-            backdrop-filter: blur(10px);
-            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            background: rgba(255, 255, 255, 0.98);
         }
         .logo-stamp {
             position: fixed;
@@ -20,65 +21,431 @@
             right: 2rem;
             width: 120px;
             height: 120px;
-            opacity: 0.15;
+            opacity: 0.12;
             pointer-events: none;
             z-index: 0;
         }
     </style>
 </head>
-<body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+<body class="gradient-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8 text-gray-900 flex justify-center items-start">
     <img src="{% static 'auth_bridge/img/logo_square.png' %}" alt="" class="logo-stamp" aria-hidden="true">
-    <div class="dashboard-card rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
-        <!-- Shield icon -->
-        <div class="mb-4 text-indigo-600">
-            <svg class="w-12 h-12 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M12 2L3 7v5c0 5.25 3.83 10.15 9 11 5.17-.85 9-5.75 9-11V7l-9-5z"/>
-                <path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-        </div>
 
-        <h1 class="text-2xl font-bold text-gray-800 mb-1">Your Sovereign Identity</h1>
-        <p class="text-xs text-gray-500 font-mono truncate mb-6">{{ user_did }}</p>
+    <div class="dashboard-card rounded-3xl shadow-2xl p-6 sm:p-10 max-w-4xl w-full my-auto border border-white/40 space-y-10 relative z-10">
+        
+        <!-- Header & Identity Section -->
+        <header class="border-b border-gray-100 pb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 flex-shrink-0 shadow-sm">
+                    <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                        <path d="M12 2L3 7v5c0 5.25 3.83 10.15 9 11 5.17-.85 9-5.75 9-11V7l-9-5z"/>
+                        <path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2.5 flex-wrap">
+                        <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Sovereign Identity Dashboard</h1>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            {{ account_tier|default:"managed_free" }}
+                        </span>
+                        {% if user.is_sovereign %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            ✓ Sovereign Graduated
+                        </span>
+                        {% endif %}
+                    </div>
+                    <p class="text-xs font-mono text-gray-500 mt-1 break-all flex items-center gap-1.5" title="{{ custodial_did }}">
+                        <span class="text-gray-400">DID:</span> {{ custodial_did }}
+                    </p>
+                </div>
+            </div>
 
-        <p class="text-sm text-gray-600 mb-6">
-            You are authenticated. Access the iyou_ ecosystem below.
-        </p>
+            <!-- Ecosystem Quick Navigation -->
+            <div class="flex items-center gap-3 w-full md:w-auto">
+                <a href="{{ next_url }}" target="_self"
+                   class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all shadow-sm hover:shadow">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                    <span>Enter iyou_home</span>
+                </a>
+                <button type="button" class="open-mobile-download-modal inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="5" y="2" width="14" height="20" rx="2"/>
+                        <line x1="12" y1="18" x2="12" y2="18"/>
+                    </svg>
+                    <span>iyou_mobile</span>
+                </button>
+                <a href="/auth/logout/"
+                   class="inline-flex items-center justify-center p-2.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                   title="Sign Out">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                </a>
+            </div>
+        </header>
 
-        <!-- Desktop iyou_home — navigate inline -->
-        <a href="{{ next_url }}" target="_self"
-           class="inline-flex items-center justify-center gap-2 w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-colors mb-3">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 6h16M4 12h16M4 18h16"/>
-            </svg>
-            Enter iyou_home (Desktop)
-        </a>
+        <!-- Section 1: Multi-Email Locker & Claim Registry -->
+        <section class="space-y-4" id="email-locker-section">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                            <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                        </svg>
+                        Protected Identity &amp; Email Locker
+                    </h2>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                        Protect secondary email addresses from squatting, enable unified OAuth login, and export W3C Verifiable Credentials.
+                    </p>
+                </div>
+                <button type="button" id="open-claim-email-btn"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-semibold transition-colors border border-indigo-200 shadow-sm self-start sm:self-auto">
+                    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                    </svg>
+                    Claim &amp; Lock Additional Email
+                </button>
+            </div>
 
-        <!-- Mobile signer -->
-        <button class="open-mobile-download-modal inline-flex items-center justify-center gap-2 w-full px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm font-medium transition-colors mb-8">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="5" y="2" width="14" height="20" rx="2"/>
-                <line x1="12" y1="18" x2="12" y2="18"/>
-            </svg>
-            Get iyou_mobile
-        </button>
+            <!-- Email Locker Table -->
+            <div class="border border-gray-200 rounded-2xl overflow-hidden shadow-sm bg-white" id="linked-emails-container">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50/80 text-gray-500 font-semibold text-xs uppercase tracking-wider border-b border-gray-200">
+                            <tr>
+                                <th class="py-3 px-4">Email Address</th>
+                                <th class="py-3 px-4">Label</th>
+                                <th class="py-3 px-4">Verified</th>
+                                <th class="py-3 px-4 text-center">Public on Link Deck</th>
+                                <th class="py-3 px-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="linked-emails-tbody" class="divide-y divide-gray-100">
+                            <!-- Primary Email Row -->
+                            <tr class="bg-emerald-50/30 hover:bg-emerald-50/50 transition-colors">
+                                <td class="py-4 px-4 font-semibold text-gray-900 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                    </svg>
+                                    <span>{{ primary_email }}</span>
+                                </td>
+                                <td class="py-4 px-4">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                        Primary / Root
+                                    </span>
+                                </td>
+                                <td class="py-4 px-4 text-xs text-gray-500">
+                                    {% if email_verified_at %}
+                                        {{ email_verified_at|date:"M j, Y, H:i" }}
+                                    {% elif email_verified %}
+                                        Verified
+                                    {% else %}
+                                        Pending
+                                    {% endif %}
+                                </td>
+                                <td class="py-4 px-4 text-center text-xs font-medium text-emerald-700">
+                                    <span class="inline-flex items-center gap-1 bg-emerald-100 px-2 py-0.5 rounded-md text-xs">
+                                        <svg class="w-3 h-3 text-emerald-600" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Root Anchor
+                                    </span>
+                                </td>
+                                <td class="py-4 px-4 text-right">
+                                    <button type="button" data-email="{{ primary_email }}" data-is-primary="true"
+                                            class="export-vc-btn inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors">
+                                        <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd" />
+                                        </svg>
+                                        Export W3C Credential
+                                    </button>
+                                </td>
+                            </tr>
 
-        <!-- Divider -->
-        <div class="border-t border-gray-200 pt-6">
-            <a href="/auth/logout/"
-               class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-500 hover:text-red-600 transition-colors">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-                    <polyline points="16 17 21 12 16 7"/>
-                    <line x1="21" y1="12" x2="9" y2="12"/>
-                </svg>
-                Sign Out
-            </a>
+                            <!-- Secondary Linked Emails -->
+                            {% for item in linked_emails %}
+                            <tr id="linked-email-row-{{ item.id }}" class="border-b border-gray-100 hover:bg-gray-50/70 transition-colors">
+                                <td class="py-4 px-4 font-medium text-gray-900 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                                        <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                                    </svg>
+                                    <span>{{ item.email }}</span>
+                                </td>
+                                <td class="py-4 px-4">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border
+                                        {% if item.label == 'work' %}bg-blue-100 text-blue-800 border-blue-200
+                                        {% elif item.label == 'alias' %}bg-purple-100 text-purple-800 border-purple-200
+                                        {% else %}bg-indigo-100 text-indigo-800 border-indigo-200{% endif %}">
+                                        {{ item.label }}
+                                    </span>
+                                </td>
+                                <td class="py-4 px-4 text-xs text-gray-500">
+                                    {{ item.verified_at|date:"M j, Y, H:i" }}
+                                </td>
+                                <td class="py-4 px-4 text-center">
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" data-email-id="{{ item.id }}" class="email-public-toggle sr-only peer" {% if item.is_public %}checked{% endif %}>
+                                        <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                                    </label>
+                                </td>
+                                <td class="py-4 px-4 text-right space-x-2">
+                                    <button type="button" data-email-id="{{ item.id }}" data-email="{{ item.email }}" data-label="{{ item.label }}"
+                                            class="export-vc-btn inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors">
+                                        <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd" />
+                                        </svg>
+                                        Export W3C Credential
+                                    </button>
+                                    <button type="button" data-email-id="{{ item.id }}" data-email="{{ item.email }}"
+                                            class="remove-email-btn inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors">
+                                        <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                        </svg>
+                                        Remove
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Empty state for secondary emails -->
+                <div id="linked-emails-empty" class="p-6 text-center text-xs text-gray-500 bg-gray-50/50 {% if linked_emails %}hidden{% endif %}">
+                    No secondary emails linked yet. Claim and lock work, personal, or alias addresses to prevent squatting and enable unified smart-merge login.
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Hardware Passkeys (FIDO2 / WebAuthn) -->
+        <section class="space-y-4" id="passkeys-section">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="8" cy="15" r="4"/>
+                            <path d="M10.85 12.15L19 4"/>
+                            <path d="M18 5l2 2"/>
+                            <path d="M15 8l2 2"/>
+                        </svg>
+                        Hardware Passkeys (FIDO2 / WebAuthn)
+                    </h2>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                        Fast, phishing-resistant authentication using Touch ID, Face ID, Windows Hello, or hardware security keys (YubiKey).
+                    </p>
+                </div>
+                <button type="button" id="register-passkey-btn"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-all shadow-sm hover:shadow self-start sm:self-auto">
+                    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                    </svg>
+                    + Register Device Passkey
+                </button>
+            </div>
+
+            <!-- Passkeys Table -->
+            <div class="border border-gray-200 rounded-2xl overflow-hidden shadow-sm bg-white" id="passkeys-container">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50/80 text-gray-500 font-semibold text-xs uppercase tracking-wider border-b border-gray-200">
+                            <tr>
+                                <th class="py-3 px-4">Authenticator Device</th>
+                                <th class="py-3 px-4">Transport</th>
+                                <th class="py-3 px-4">Enrolled On</th>
+                                <th class="py-3 px-4">Last Used</th>
+                            </tr>
+                        </thead>
+                        <tbody id="passkeys-tbody" class="divide-y divide-gray-100">
+                            {% for p in passkeys %}
+                            <tr class="hover:bg-gray-50/70 transition-colors">
+                                <td class="py-4 px-4 font-medium text-gray-900 flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <circle cx="8" cy="15" r="4"/>
+                                            <path d="M10.85 12.15L19 4"/>
+                                            <path d="M18 5l2 2"/>
+                                            <path d="M15 8l2 2"/>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <span class="text-sm font-semibold text-gray-800">Passkey Authenticator</span>
+                                        <p class="text-xs font-mono text-gray-400">ID: {{ p.id }}</p>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-4">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
+                                        {{ p.transports|join:", "|default:"internal" }}
+                                    </span>
+                                </td>
+                                <td class="py-4 px-4 text-xs text-gray-500">
+                                    {{ p.created_at|date:"M j, Y, H:i" }}
+                                </td>
+                                <td class="py-4 px-4 text-xs text-gray-500">
+                                    {% if p.last_used_at %}
+                                        {{ p.last_used_at|date:"M j, Y, H:i" }}
+                                    {% else %}
+                                        <span class="text-gray-400">Never used</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Empty state for passkeys -->
+                <div id="passkeys-empty" class="p-6 text-center text-xs text-gray-500 bg-gray-50/50 {% if passkeys %}hidden{% endif %}">
+                    No hardware passkeys registered yet. Add a passkey for instant, phishing-resistant sign-in with your device.
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Claim & Lock Additional Email Modal -->
+    <div id="claim-email-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 hidden">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 sm:p-8 space-y-6 relative border border-gray-100 animate-fade-in">
+            <div class="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                        <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                            <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-900">Claim &amp; Lock Email</h3>
+                </div>
+                <button type="button" class="close-claim-email-btn text-gray-400 hover:text-gray-600 p-1 rounded-lg">
+                    <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Step 1: Input Email & Label -->
+            <div id="claim-step1-container" class="space-y-4">
+                <div id="claim-step1-error" class="hidden px-4 py-3 rounded-xl text-xs font-semibold bg-red-50 text-red-700 border border-red-200"></div>
+
+                <div>
+                    <label for="claim-email-input" class="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Secondary Email Address
+                    </label>
+                    <input type="email" id="claim-email-input" placeholder="colleague@work.com"
+                           class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm">
+                </div>
+
+                <div>
+                    <label for="claim-label-select" class="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Identity Label
+                    </label>
+                    <select id="claim-label-select"
+                            class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm bg-white">
+                        <option value="personal">Personal</option>
+                        <option value="work">Work</option>
+                        <option value="alias">Alias</option>
+                    </select>
+                </div>
+
+                <div class="pt-2">
+                    <button type="button" id="claim-send-code-btn"
+                            class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-all shadow-sm hover:shadow">
+                        Send Verification Code
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Input OTP Verification Code -->
+            <div id="claim-step2-container" class="space-y-4 hidden">
+                <div id="claim-step2-error" class="hidden px-4 py-3 rounded-xl text-xs font-semibold bg-red-50 text-red-700 border border-red-200"></div>
+
+                <p class="text-xs text-gray-600">
+                    We sent a 6-digit cryptographic verification code to <span id="claim-target-email" class="font-semibold text-gray-900"></span>.
+                </p>
+
+                <div>
+                    <label for="claim-otp-input" class="block text-xs font-semibold text-gray-700 mb-1.5">
+                        6-Digit Verification Code
+                    </label>
+                    <input type="text" id="claim-otp-input" maxlength="6" inputmode="numeric" placeholder="123456"
+                           class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-center text-2xl font-mono tracking-widest">
+                </div>
+
+                <div class="flex items-center gap-3 pt-2">
+                    <button type="button" id="claim-back-btn"
+                            class="w-1/3 py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors">
+                        Back
+                    </button>
+                    <button type="button" id="claim-verify-btn"
+                            class="w-2/3 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-all shadow-sm hover:shadow">
+                        Verify &amp; Lock
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Export W3C Credential Modal -->
+    <div id="vc-export-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 hidden">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-xl w-full p-6 sm:p-8 space-y-6 relative border border-gray-100 animate-fade-in">
+            <div class="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd" />
+                        </svg>
+                        W3C Email Ownership Credential
+                    </h3>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                        Issued for <span id="vc-modal-email" class="font-medium text-gray-800"></span> by <code class="text-indigo-600 font-mono">did:web:iyou.me</code>
+                    </p>
+                </div>
+                <button type="button" class="close-vc-modal-btn text-gray-400 hover:text-gray-600 p-1 rounded-lg">
+                    <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- VC JSON Content -->
+            <pre id="vc-json-content" class="bg-gray-900 text-emerald-400 p-4 rounded-2xl text-xs font-mono overflow-x-auto max-h-80 shadow-inner border border-gray-800"></pre>
+
+            <!-- Modal Action Buttons -->
+            <div class="flex items-center justify-end gap-3 pt-2">
+                <button type="button" id="vc-copy-btn"
+                        class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-semibold transition-colors">
+                    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z" />
+                        <path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v14a1 1 0 01-1 1H3a1 1 0 01-1-1V5z" />
+                    </svg>
+                    Copy JSON-LD
+                </button>
+                <button type="button" id="vc-download-btn"
+                        class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-all shadow-sm hover:shadow">
+                    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                    Download .json
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 max-w-sm pointer-events-none"></div>
 
     <!-- Mobile Download Modal -->
     {% include 'auth_bridge/_mobile_download_modal.html' %}
 
+    <script>
+        window.csrfToken = "{{ csrf_token }}";
+    </script>
     <script src="{% static 'auth_bridge/js/mobile_download_modal.js' %}"></script>
+    <script src="{% static 'auth_bridge/js/email_locker.js' %}"></script>
+    <script src="{% static 'auth_bridge/js/passkeys.js' %}"></script>
 </body>
 </html>
