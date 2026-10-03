@@ -35,7 +35,7 @@ from auth_bridge.credentials import (
     CredentialValidationError,
     validate_age_bracket_vc,
 )
-from auth_bridge.views import cache
+from auth_bridge.resilient_cache import cache
 
 logger = logging.getLogger(__name__)
 

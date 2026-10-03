@@ -198,3 +198,22 @@ class EmailLockerUITest(TestCase):
         url = reverse("auth_bridge:email_link_credential")
         response = self.client.get(url)
         self.assertEqual(response.status_code, 401)
+
+    def test_custom_userinfo_claims_includes_public_emails(self) -> None:
+        from auth_bridge.views import custom_userinfo_claims
+
+        claims = custom_userinfo_claims({}, self.user)
+        self.assertIn("public_emails", claims)
+        self.assertEqual(
+            claims["public_emails"],
+            [{"email": "pseudonym_alias@privacy.org", "label": "alias"}],
+        )
+
+        self.linked_1.is_public = True
+        self.linked_1.save()
+
+        updated_claims = custom_userinfo_claims({}, self.user)
+        self.assertEqual(len(updated_claims["public_emails"]), 2)
+        emails = [item["email"] for item in updated_claims["public_emails"]]
+        self.assertIn("corp_work@enterprise.com", emails)
+        self.assertIn("pseudonym_alias@privacy.org", emails)

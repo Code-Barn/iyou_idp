@@ -34,6 +34,7 @@ from django.core.mail import send_mail
 import secrets
 
 from .models import User
+from .oidc import custom_userinfo_claims as custom_userinfo_claims
 from .backend import evaluate_sovereign_admin_posture
 from .invite_tokens import InviteTokenError, parse_token_input, verify_invite_token
 from .resilient_cache import cache

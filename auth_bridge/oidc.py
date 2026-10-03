@@ -42,6 +42,14 @@ def custom_userinfo_claims(claims: dict, user: Any, request: Any = None) -> dict
     claims["account_tier"] = user.account_tier
     claims["amr"] = [auth_method]
 
+    if hasattr(user, "linked_emails"):
+        claims["public_emails"] = [
+            {"email": e.email, "label": e.label}
+            for e in user.linked_emails.filter(is_public=True)
+        ]
+    else:
+        claims["public_emails"] = []
+
     try:
         lease = user.infra_lease
         if lease.is_lease_valid:
@@ -126,6 +134,7 @@ class CustomScopeClaims(ScopeClaims):
             "account_tier",
             "amr",
             "email_verified",
+            "public_emails",
             "iyou_infra",
         ):
             if key in self.userinfo:
@@ -143,6 +152,7 @@ class CustomScopeClaims(ScopeClaims):
             "amr",
             "email",
             "email_verified",
+            "public_emails",
             "iyou_infra",
         ):
             if key in self.userinfo:
