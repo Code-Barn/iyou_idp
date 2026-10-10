@@ -626,12 +626,12 @@ class EmergencyBypassLockdownTest(TestCase):
 
 
 class SatelliteRosterTest(TestCase):
-    def test_nineteen_satellites_seeded(self):
+    def test_satellites_seeded(self):
         from django.core.management import call_command
         from oidc_provider.models import Client as OIDCClient
 
         call_command("seed_clients")
-        self.assertEqual(OIDCClient.objects.count(), 19)
+        self.assertEqual(OIDCClient.objects.count(), 20)
 
         help_client = OIDCClient.objects.get(client_id="iyou-help-satellite-client")
         self.assertEqual(help_client.name, "iyou_help (Mutual Aid)")
@@ -653,6 +653,18 @@ class SatelliteRosterTest(TestCase):
         self.assertEqual(baba_client.client_type, "public")
         self.assertIn("https://baba.iyou.me/oidc/callback/", baba_client.redirect_uris)
         self.assertIn("http://127.0.0.1:8016/oidc/callback/", baba_client.redirect_uris)
+
+        chat_client = OIDCClient.objects.get(client_id="iyou-chat-satellite-client")
+        self.assertEqual(chat_client.name, "iyou_chat (Messenger)")
+        self.assertEqual(chat_client.client_type, "public")
+        self.assertEqual(chat_client.client_secret, "")
+        self.assertEqual(chat_client.jwt_alg, "RS256")
+        self.assertIn("https://chat.iyou.me/oidc/callback/", chat_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8017/oidc/callback/", chat_client.redirect_uris)
+        self.assertIn("https://chat.iyou.me/", chat_client.post_logout_redirect_uris)
+        self.assertIn("http://127.0.0.1:8017/", chat_client.post_logout_redirect_uris)
+        self.assertEqual(chat_client.scope, ["openid", "profile", "email"])
+        self.assertIn("code", [rt.value for rt in chat_client.response_types.all()])
 
 
 class CacheFallbackTest(TestCase):

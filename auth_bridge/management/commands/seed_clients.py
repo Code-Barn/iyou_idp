@@ -272,11 +272,24 @@ SATELLITES = [
             "http://127.0.0.1:8016/",
         ],
     },
+    {
+        "client_id": "iyou-chat-satellite-client",
+        "name": "iyou_chat (Messenger)",
+        "redirects": [
+            "https://chat.iyou.me/oidc/callback/",
+            "http://127.0.0.1:8017/oidc/callback/",
+            LOCAL_DEV_FALLBACK,
+        ],
+        "post_logout_redirects": [
+            "https://chat.iyou.me/",
+            "http://127.0.0.1:8017/",
+        ],
+    },
 ]
 
 
 class Command(BaseCommand):
-    help = "Provisions fleet-wide OIDC public clients for the 18-satellite ecosystem mesh."
+    help = "Provisions fleet-wide OIDC public clients for the 20-satellite ecosystem mesh."
 
     def handle(self, *args, **options):
         code_response_type, _ = ResponseType.objects.get_or_create(
@@ -333,6 +346,7 @@ class Command(BaseCommand):
                 client.name = sat["name"]
                 client.client_type = "public"
                 client.client_secret = ""
+                client.jwt_alg = "RS256"
                 client.require_consent = False
                 client.reuse_consent = True
                 client._redirect_uris = redirect_uris
