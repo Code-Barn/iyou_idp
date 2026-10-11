@@ -188,14 +188,23 @@ def ed25519_pubkey_from_did(did: str) -> bytes | None:
 
 def _decode_signature(signature: str) -> bytes:
     trimmed = signature.strip()
-    b58 = trimmed[1:] if trimmed.startswith("z") else trimmed
-    try:
-        raw = base58.b58decode(b58)
-    except Exception:
-        raise InviteTokenError("INVITE_INVALID", "Signature is not valid base58")
-    if len(raw) != 64:
-        raise InviteTokenError("INVITE_INVALID", f"Signature must be 64 bytes (got {len(raw)})")
-    return raw
+    candidates = []
+    if trimmed.startswith("z"):
+        candidates.append(trimmed[1:])
+    candidates.append(trimmed)
+
+    last_raw = None
+    for b58 in candidates:
+        try:
+            raw = base58.b58decode(b58)
+            if len(raw) == 64:
+                return raw
+            last_raw = raw
+        except Exception:
+            continue
+    if last_raw is not None:
+        raise InviteTokenError("INVITE_INVALID", f"Signature must be 64 bytes (got {len(last_raw)})")
+    raise InviteTokenError("INVITE_INVALID", "Signature is not valid base58")
 
 
 def verify_token_signature(token: dict[str, Any]) -> None:

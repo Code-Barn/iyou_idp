@@ -296,3 +296,86 @@ class OIDCConsentAndRedirectSanitizationTest(TestCase):
         )
         redirect_url = _build_oidc_redirect(oidc_req, self.user)
         self.assertIsNone(redirect_url)
+
+
+class CanonicalJcsSignatureVerificationTest(TestCase):
+    """
+    Forensic regression tests ensuring RFC 8785 JSON Canonicalization Scheme (JCS)
+    signatures issued by iyou_home / did_rust verify cleanly via Tier 1 Ed25519.
+    """
+
+    def setUp(self):
+        self.client = TestClient()
+        self.live_vp = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiablePresentation"],
+            "holder": "did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND",
+            "challenge": "7edf7d19-392e-4de0-bdc8-0205cbfe6120",
+            "verifiableCredential": [],
+            "issuer": "did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND",
+            "proof": {
+                "type": "Ed25519Signature2018",
+                "verificationMethod": "did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND#keys-1",
+                "proofValue": "6643eb9466e31c81ec31ca2d77ff81dff479f0832b6562463e12850fb241a06a3b57767fee764bc5c797505839e443dd99418adaa6db1b2b6b411eaf8f7de90b",
+            },
+        }
+
+    def test_exact_live_iyou_home_vp_verifies_via_tier1(self):
+        """Live desktop Verifiable Presentation verifies cleanly via Tier 1 Ed25519."""
+        challenge = self.live_vp["challenge"]
+        views_cache.set(challenge, json.dumps({"challenge": challenge, "status": "pending"}), timeout=300)
+
+        resp = self.client.post(
+            reverse("auth_bridge:verify_signature"),
+            data=json.dumps({
+                "verifiable_presentation": self.live_vp,
+                "challenge": challenge,
+            }),
+            content_type="application/json",
+            REMOTE_ADDR="127.0.0.1",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("success"))
+        self.assertEqual(data.get("user", {}).get("did"), self.live_vp["holder"])
+        self.assertTrue(data.get("user", {}).get("is_authenticated"))
+
+    def test_tampered_payload_rejected_under_production_lockdown(self):
+        """Tampered payload with DEBUG=False must return 401."""
+        challenge = "tampered-challenge-nonce"
+        views_cache.set(challenge, json.dumps({"challenge": challenge, "status": "pending"}), timeout=300)
+        vp = dict(self.live_vp, challenge=challenge)
+        vp["proof"] = dict(vp["proof"], proofValue="00" * 64)
+
+        with self.settings(DEBUG=False, ALLOW_EMERGENCY_BYPASS=False, ENABLE_DEV_AUTH_BYPASS=False):
+            resp = self.client.post(
+                reverse("auth_bridge:verify_signature"),
+                data=json.dumps({
+                    "verifiable_presentation": vp,
+                    "challenge": challenge,
+                }),
+                content_type="application/json",
+                REMOTE_ADDR="127.0.0.1",
+            )
+            self.assertEqual(resp.status_code, 401)
+            self.assertEqual(resp.json().get("error"), "Signature verification failed")
+
+    def test_dev_loopback_bypass_when_debug_enabled(self):
+        """Under DEBUG=True, emergency bypass successfully authenticates local loopback."""
+        challenge = "dev-bypass-challenge-nonce"
+        views_cache.set(challenge, json.dumps({"challenge": challenge, "status": "pending"}), timeout=300)
+        vp = dict(self.live_vp, challenge=challenge)
+        vp["proof"] = dict(vp["proof"], proofValue="00" * 64)
+
+        with self.settings(DEBUG=True):
+            resp = self.client.post(
+                reverse("auth_bridge:verify_signature"),
+                data=json.dumps({
+                    "verifiable_presentation": vp,
+                    "challenge": challenge,
+                }),
+                content_type="application/json",
+                REMOTE_ADDR="127.0.0.1",
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(resp.json().get("success"))

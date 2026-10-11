@@ -194,11 +194,17 @@ def _verify_vc_signature_python(vc_obj: dict[str, Any], issuer_did: str) -> bool
             return False
 
         payload = {k: v for k, v in vc_obj.items() if k != "proof"}
-        payload_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        payload_bytes_jcs = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        payload_bytes_legacy = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
         public_key = Ed25519PublicKey.from_public_bytes(pub_bytes)
-        public_key.verify(sig_bytes, payload_bytes)
-        return True
+        for cand_bytes in (payload_bytes_jcs, payload_bytes_legacy):
+            try:
+                public_key.verify(sig_bytes, cand_bytes)
+                return True
+            except Exception:
+                pass
+        return False
     except Exception:
         return False
 

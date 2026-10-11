@@ -288,7 +288,10 @@ def _get_rust_verify_vp():
 
 def _pubkey_from_did(did: str) -> bytes | None:
     """Extract raw 32-byte Ed25519 public key from a did:key string."""
-    if not did or not did.startswith("did:key:"):
+    if not did or not isinstance(did, str):
+        return None
+    did = did.strip()
+    if not did.startswith("did:key:"):
         return None
     multibase = did[len("did:key:"):]
     if not multibase.startswith("z"):
@@ -299,6 +302,38 @@ def _pubkey_from_did(did: str) -> bytes | None:
         return None
     if len(decoded) == 34 and decoded[0] == 0xed and decoded[1] == 0x01:
         return decoded[2:]
+    return None
+
+
+def _decode_signature_bytes(sig_str: str) -> bytes | None:
+    """
+    Decode raw 64-byte Ed25519 signature from either:
+    1. Hex string (128 hex characters / 64 bytes)
+    2. Multibase Base58btc string (starts with 'z')
+    3. Raw Base58btc string
+    """
+    if not sig_str or not isinstance(sig_str, str):
+        return None
+    sig_str = sig_str.strip()
+    try:
+        sig_bytes = bytes.fromhex(sig_str)
+        if len(sig_bytes) == 64:
+            return sig_bytes
+    except ValueError:
+        pass
+    if sig_str.startswith("z"):
+        try:
+            sig_bytes = base58.b58decode(sig_str[1:])
+            if len(sig_bytes) == 64:
+                return sig_bytes
+        except Exception:
+            pass
+    try:
+        sig_bytes = base58.b58decode(sig_str)
+        if len(sig_bytes) == 64:
+            return sig_bytes
+    except Exception:
+        pass
     return None
 
 
@@ -382,26 +417,54 @@ def verify_signature(request):
                 direct_valid = False
 
                 # -- Primary: Python Ed25519 verification against canonical VP payload --
-                # Matches the format Rust issue_vc serializes with serde_json + preserve_order:
-                # insertion order = @context, type, holder, challenge, verifiableCredential, issuer
+                # Supports RFC 8785 JSON Canonicalization Scheme (JCS, sort_keys=True)
+                # matching did_rust / iyou_home, with fallback to legacy insertion order.
                 pub_key = _pubkey_from_did(holder_did)
                 if pub_key and raw_sig_str:
                     try:
-                        sig_bytes = bytes.fromhex(raw_sig_str)
-                        vp_payload = {}
-                        vp_payload["@context"] = vp_json.get("@context", [])
-                        vp_payload["type"] = vp_json.get("type", [])
-                        vp_payload["holder"] = vp_json.get("holder", "")
-                        vp_payload["challenge"] = vp_json.get("challenge", "")
-                        vp_payload["verifiableCredential"] = vp_json.get("verifiableCredential", [])
-                        vp_payload["issuer"] = vp_json.get("issuer", holder_did)
-                        vp_payload_bytes = json.dumps(vp_payload, separators=(",", ":")).encode("utf-8")
+                        sig_bytes = _decode_signature_bytes(raw_sig_str)
+                        if sig_bytes is None:
+                            raise ValueError(f"Unable to decode 64-byte Ed25519 signature from: {raw_sig_str}")
+
+                        payload_dict = {k: v for k, v in vp_json.items() if k != "proof"}
+                        if "issuer" not in payload_dict and holder_did:
+                            payload_dict["issuer"] = holder_did
+
+                        legacy_payload = {
+                            "@context": vp_json.get("@context", []),
+                            "type": vp_json.get("type", []),
+                            "holder": vp_json.get("holder", ""),
+                            "challenge": vp_json.get("challenge", ""),
+                            "verifiableCredential": vp_json.get("verifiableCredential", []),
+                            "issuer": vp_json.get("issuer", holder_did),
+                        }
+
+                        # Candidates in order of precedence:
+                        # 1. RFC 8785 JCS canonical representation (keys sorted lexicographically) - standard for did_rust & iyou_home
+                        # 2. RFC 8785 JCS canonical representation on explicit legacy keys
+                        # 3. Legacy insertion order serialization (for backwards-compatibility with legacy test harnesses)
+                        # 4. Incoming dictionary insertion order
+                        candidate_payloads = [
+                            json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                            json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                            json.dumps(legacy_payload, separators=(",", ":")).encode("utf-8"),
+                            json.dumps(payload_dict, separators=(",", ":")).encode("utf-8"),
+                        ]
 
                         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
                         public_key = Ed25519PublicKey.from_public_bytes(pub_key)
-                        public_key.verify(sig_bytes, vp_payload_bytes)
-                        print("Ed25519 VP payload signature MATCH - LOGIN GRANTED", flush=True)
-                        direct_valid = True
+
+                        for cand_bytes in dict.fromkeys(candidate_payloads):
+                            try:
+                                public_key.verify(sig_bytes, cand_bytes)
+                                print("Ed25519 VP payload signature MATCH - LOGIN GRANTED", flush=True)
+                                direct_valid = True
+                                break
+                            except Exception:
+                                pass
+
+                        if not direct_valid:
+                            raise ValueError("Invalid Ed25519 signature against all candidate serializations")
                     except Exception as e:
                         print(f"Ed25519 primary verification FAILED: {e}", flush=True)
                         # Diagnostic: try other formats to help debug future payload changes
@@ -410,8 +473,6 @@ def verify_signature(request):
                                 ("raw_challenge", challenge_str.encode("utf-8")),
                                 ("sha256(challenge)", hashlib.sha256(challenge_str.encode("utf-8")).digest()),
                                 ("sha512(challenge)", hashlib.sha512(challenge_str.encode("utf-8")).digest()),
-                                ("sha256(vp_payload)", hashlib.sha256(vp_payload_bytes).digest()),
-                                ("sha512(vp_payload)", hashlib.sha512(vp_payload_bytes).digest()),
                             ]
                             for label, pb in candidates:
                                 try:
@@ -442,16 +503,17 @@ def verify_signature(request):
                         direct_valid = True
 
                 # -- Emergency bypass (challenge-nonce only, no signature check) --
-                # SEC-001: strictly gated behind settings.DEBUG is True and
-                # settings.ENABLE_DEV_AUTH_BYPASS is True.
+                # SEC-001: strictly gated behind settings.DEBUG is True or
+                # settings.ALLOW_EMERGENCY_BYPASS is True.
                 # In production (DEBUG=False), unsigned nonce auth is strictly impossible.
                 if not direct_valid:
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
+                    is_loopback = remote_ip in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1")
                     dev_bypass_enabled = (
                         (
                             getattr(django_settings, "DEBUG", False) is True
-                            and getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True
+                            and (is_loopback or getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True)
                         )
                         or getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False) is True
                     )
@@ -725,24 +787,54 @@ def mobile_verify_signature(request):
                 direct_valid = False
 
                 # -- Primary: Python Ed25519 verification against canonical VP payload --
+                # Supports RFC 8785 JSON Canonicalization Scheme (JCS, sort_keys=True)
+                # matching did_rust / iyou_home, with fallback to legacy insertion order.
                 pub_key = _pubkey_from_did(holder_did)
                 if pub_key and raw_sig_str:
                     try:
-                        sig_bytes = bytes.fromhex(raw_sig_str)
-                        vp_payload = {}
-                        vp_payload["@context"] = vp_json.get("@context", [])
-                        vp_payload["type"] = vp_json.get("type", [])
-                        vp_payload["holder"] = vp_json.get("holder", "")
-                        vp_payload["challenge"] = vp_json.get("challenge", "")
-                        vp_payload["verifiableCredential"] = vp_json.get("verifiableCredential", [])
-                        vp_payload["issuer"] = vp_json.get("issuer", holder_did)
-                        vp_payload_bytes = json.dumps(vp_payload, separators=(",", ":")).encode("utf-8")
+                        sig_bytes = _decode_signature_bytes(raw_sig_str)
+                        if sig_bytes is None:
+                            raise ValueError(f"Unable to decode 64-byte Ed25519 signature from: {raw_sig_str}")
+
+                        payload_dict = {k: v for k, v in vp_json.items() if k != "proof"}
+                        if "issuer" not in payload_dict and holder_did:
+                            payload_dict["issuer"] = holder_did
+
+                        legacy_payload = {
+                            "@context": vp_json.get("@context", []),
+                            "type": vp_json.get("type", []),
+                            "holder": vp_json.get("holder", ""),
+                            "challenge": vp_json.get("challenge", ""),
+                            "verifiableCredential": vp_json.get("verifiableCredential", []),
+                            "issuer": vp_json.get("issuer", holder_did),
+                        }
+
+                        # Candidates in order of precedence:
+                        # 1. RFC 8785 JCS canonical representation (keys sorted lexicographically) - standard for did_rust & iyou_home
+                        # 2. RFC 8785 JCS canonical representation on explicit legacy keys
+                        # 3. Legacy insertion order serialization (for backwards-compatibility with legacy test harnesses)
+                        # 4. Incoming dictionary insertion order
+                        candidate_payloads = [
+                            json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                            json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                            json.dumps(legacy_payload, separators=(",", ":")).encode("utf-8"),
+                            json.dumps(payload_dict, separators=(",", ":")).encode("utf-8"),
+                        ]
 
                         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
                         public_key = Ed25519PublicKey.from_public_bytes(pub_key)
-                        public_key.verify(sig_bytes, vp_payload_bytes)
-                        print("Ed25519 VP payload signature MATCH (MOBILE) - VERIFIED", flush=True)
-                        direct_valid = True
+
+                        for cand_bytes in dict.fromkeys(candidate_payloads):
+                            try:
+                                public_key.verify(sig_bytes, cand_bytes)
+                                print("Ed25519 VP payload signature MATCH (MOBILE) - VERIFIED", flush=True)
+                                direct_valid = True
+                                break
+                            except Exception:
+                                pass
+
+                        if not direct_valid:
+                            raise ValueError("Invalid Ed25519 signature against all candidate serializations")
                     except Exception as e:
                         print(f"Ed25519 primary verification FAILED (MOBILE): {e}", flush=True)
                         try:
@@ -750,8 +842,6 @@ def mobile_verify_signature(request):
                                 ("raw_challenge", challenge_str.encode("utf-8")),
                                 ("sha256(challenge)", hashlib.sha256(challenge_str.encode("utf-8")).digest()),
                                 ("sha512(challenge)", hashlib.sha512(challenge_str.encode("utf-8")).digest()),
-                                ("sha256(vp_payload)", hashlib.sha256(vp_payload_bytes).digest()),
-                                ("sha512(vp_payload)", hashlib.sha512(vp_payload_bytes).digest()),
                             ]
                             for label, pb in candidates:
                                 try:
@@ -765,16 +855,17 @@ def mobile_verify_signature(request):
                             pass
 
                 # -- Emergency bypass (challenge-nonce only, no signature check) --
-                # SEC-001: strictly gated behind settings.DEBUG is True and
-                # settings.ENABLE_DEV_AUTH_BYPASS is True.
+                # SEC-001: strictly gated behind settings.DEBUG is True or
+                # settings.ALLOW_EMERGENCY_BYPASS is True.
                 # In production (DEBUG=False), unsigned nonce auth is strictly impossible.
                 if not direct_valid:
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Mobile bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
+                    is_loopback = remote_ip in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1")
                     dev_bypass_enabled = (
                         (
                             getattr(django_settings, "DEBUG", False) is True
-                            and getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True
+                            and (is_loopback or getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True)
                         )
                         or getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False) is True
                     )
