@@ -1051,7 +1051,7 @@ class ChallengeEmailView(View):
             f"<p style='color: #9ca3af; font-size: 12px;'>If you did not request this verification, no action is required.</p>"
             f"</div>"
         )
-        from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@iyou.me")
+        from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "info@iyou.me")
 
         try:
             send_mail(

@@ -145,7 +145,7 @@ class ChallengeLinkEmailView(View):
             f"<p style='color: #6b7280; font-size: 13px;'>This code will expire in 5 minutes.</p>"
             f"</div>"
         )
-        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@iyou.me")
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "info@iyou.me")
 
         try:
             send_mail(
