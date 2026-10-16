@@ -284,7 +284,8 @@ class OIDCAuthorizeFlowTest(TestCase):
         # is affirmatively acknowledged; simulate a user who already consented.
         user = User.objects.get(custodial_did=self.did)
         user.show_legal_disclaimer = False
-        user.save(update_fields=["show_legal_disclaimer"])
+        user.age_bracket = "ADULT"
+        user.save(update_fields=["show_legal_disclaimer", "age_bracket"])
 
         resp = self.client.get(
             reverse("oidc_provider:authorize"),

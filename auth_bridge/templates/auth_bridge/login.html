@@ -129,10 +129,12 @@
     {% include 'auth_bridge/_download_modal.html' %}
     {% include 'auth_bridge/_mobile_download_modal.html' %}
     {% include 'auth_bridge/_legal_disclaimer_modal.html' %}
+    {% include 'auth_bridge/_age_gate_modal.html' %}
 
     <script src="{% static 'auth_bridge/js/download_modal.js' %}"></script>
     <script src="{% static 'auth_bridge/js/mobile_download_modal.js' %}"></script>
     <script src="{% static 'auth_bridge/js/legal_disclaimer.js' %}"></script>
+    <script src="{% static 'auth_bridge/js/age_gate.js' %}"></script>
     <script>
         console.log("LOGIN UI VERSION: 3.0.0 - HANDSHAKE START");
 
@@ -172,9 +174,11 @@
         let iyouSocket = null;
         let isSigningInProgress = false;
 
-        // Navigate the current window inline to the satellite redirect URL (passing through legal disclaimer gate if required).
-        function onAuthSuccess(redirectUrl, shouldShowDisclaimer) {
-            if (shouldShowDisclaimer !== false && typeof window.triggerLegalDisclaimerGate === 'function') {
+        // Navigate the current window inline to the satellite redirect URL (passing through age gate and legal disclaimer gates if required).
+        function onAuthSuccess(redirectUrl, shouldShowDisclaimer, shouldShowAgeGate) {
+            if (shouldShowAgeGate && typeof window.triggerAgeGate === 'function') {
+                window.triggerAgeGate(redirectUrl, shouldShowDisclaimer);
+            } else if (shouldShowDisclaimer !== false && typeof window.triggerLegalDisclaimerGate === 'function') {
                 window.triggerLegalDisclaimerGate(redirectUrl);
             } else {
                 window.location.href = redirectUrl;
@@ -624,7 +628,8 @@
 
                     // Navigate inline to destination (via disclaimer gate if required)
                     const shouldShowDisclaimer = (data.show_legal_disclaimer !== false) && (!data.user || data.user.show_legal_disclaimer !== false);
-                    onAuthSuccess(data.redirect_url, shouldShowDisclaimer);
+                    const shouldShowAgeGate = Boolean(data.show_age_gate || (data.user && data.user.age_bracket === null));
+                    onAuthSuccess(data.redirect_url, shouldShowDisclaimer, shouldShowAgeGate);
                     return { success: true };
                 } else {
                     console.error('Login failed:', data.error);
@@ -780,7 +785,8 @@
                             communityPollId = null;
                             document.getElementById('community-status').textContent = 'Verified! Redirecting…';
                             const shouldShowDisclaimer = (data.show_legal_disclaimer !== false);
-                            onAuthSuccess(data.redirect_url, shouldShowDisclaimer);
+                            const shouldShowAgeGate = Boolean(data.show_age_gate);
+                            onAuthSuccess(data.redirect_url, shouldShowDisclaimer, shouldShowAgeGate);
                         }
                     })
                     .catch(() => { /* keep polling until TTL expires */ });
@@ -953,7 +959,8 @@
                         throw new Error(data.error || 'Verification failed. Please check the code.');
                     }
                     const shouldShowDisclaimer = (data.show_legal_disclaimer !== false) && (!data.user || data.user.show_legal_disclaimer !== false);
-                    onAuthSuccess(data.redirect_url, shouldShowDisclaimer);
+                    const shouldShowAgeGate = Boolean(data.show_age_gate || (data.user && data.user.age_bracket === null));
+                    onAuthSuccess(data.redirect_url, shouldShowDisclaimer, shouldShowAgeGate);
                 } catch (err) {
                     showStepBError(err.message || 'Verification error.');
                     verifyBtn.disabled = false;
@@ -1075,8 +1082,9 @@
                     const completeData = await completeResp.json();
 
                     if (completeResp.ok && completeData.status === 'authenticated') {
-                        // Navigate to redirect URL or default
-                        window.location.href = completeData.redirect_url || '{{ wun_url|escapejs }}';
+                        const shouldShowDisclaimer = (completeData.show_legal_disclaimer !== false);
+                        const shouldShowAgeGate = Boolean(completeData.show_age_gate);
+                        onAuthSuccess(completeData.redirect_url || '{{ wun_url|escapejs }}', shouldShowDisclaimer, shouldShowAgeGate);
                     } else {
                         throw new Error(completeData.error || 'Passkey authentication failed');
                     }

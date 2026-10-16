@@ -228,4 +228,6 @@ def passkey_authenticate_complete(request: HttpRequest) -> HttpResponse:
         "status": "authenticated",
         "did": user.custodial_did,
         "show_legal_disclaimer": user.show_legal_disclaimer,
+        "show_age_gate": user.age_bracket is None,
+        "age_bracket": user.age_bracket,
     })

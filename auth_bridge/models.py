@@ -58,6 +58,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         ("sovereign", "Fully Sovereign (Graduated via iyou_home)"),
     ]
 
+    AGE_BRACKET_CHOICES = [
+        ("U14", "Under 14"),
+        ("U14-U18", "14-17"),
+        ("ADULT", "18+"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True, db_index=True, blank=True, null=True)
     custodial_did = models.CharField(max_length=255, unique=True, db_index=True)
@@ -67,6 +73,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     email_verified_at = models.DateTimeField(null=True, blank=True)
     show_legal_disclaimer = models.BooleanField(default=True)
     disclaimer_acknowledged_at = models.DateTimeField(null=True, blank=True)
+    age_bracket = models.CharField(
+        max_length=16,
+        choices=AGE_BRACKET_CHOICES,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    age_bracket_established_at = models.DateTimeField(null=True, blank=True)
+    parent_guardian_did = models.CharField(max_length=255, null=True, blank=True, db_index=True)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

@@ -50,7 +50,8 @@ AGE_BRACKET_CREDENTIAL_TYPE = "AgeBracketCredential"
 AGE_BRACKET_U14 = "U14"
 AGE_BRACKET_U14_U18 = "U14-U18"
 AGE_BRACKET_U18 = "U18"
-VALID_AGE_BRACKETS = {AGE_BRACKET_U14, AGE_BRACKET_U14_U18, AGE_BRACKET_U18}
+AGE_BRACKET_ADULT = "ADULT"
+VALID_AGE_BRACKETS = {AGE_BRACKET_U14, AGE_BRACKET_U14_U18, AGE_BRACKET_U18, AGE_BRACKET_ADULT}
 
 # Cleartext PII fields prohibited in Zero-PII credential payloads
 DISALLOWED_PII_FIELDS = {
@@ -62,6 +63,8 @@ DISALLOWED_PII_FIELDS = {
     "first_name",
     "last_name",
     "ssn",
+    "month",
+    "year",
 }
 
 # Session permission tiers mapped from ageBracket
@@ -98,6 +101,17 @@ PERMISSION_TIERS: dict[str, dict[str, Any]] = {
         "l2_derivation_permitted": True,
         "autonomous_persona": True,
         "description": "Stage 3 Sovereign Pending (graduation ceremony eligible)",
+    },
+    AGE_BRACKET_ADULT: {
+        "bracket": AGE_BRACKET_ADULT,
+        "stage": 4,
+        "stage_name": "Sovereign Adult",
+        "restricted_kinds": False,
+        "relay_allowlist": False,
+        "l2_contextual_derivation_permitted": True,
+        "l2_derivation_permitted": True,
+        "autonomous_persona": True,
+        "description": "Sovereign Adult (no dependent restrictions)",
     },
 }
 

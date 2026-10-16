@@ -587,12 +587,14 @@ def verify_signature(request):
                     "success": True,
                     "redirect_url": redirect_url,
                     "show_legal_disclaimer": user.show_legal_disclaimer,
+                    "show_age_gate": getattr(user, "age_bracket", None) is None,
                     "user": {
                         "did": user.custodial_did,
                         "is_new_user": created,
                         "is_authenticated": True,
                         "session_id": request.session.session_key,
                         "show_legal_disclaimer": user.show_legal_disclaimer,
+                        "age_bracket": getattr(user, "age_bracket", None),
                     },
                 }
                 print("VERIFY RESPONSE:", json.dumps(response_data), flush=True)
@@ -644,12 +646,14 @@ def verify_signature(request):
             'success': True,
             'redirect_url': redirect_url,
             'show_legal_disclaimer': user.show_legal_disclaimer,
+            'show_age_gate': getattr(user, 'age_bracket', None) is None,
             'user': {
                 'did': user.custodial_did,
                 'is_new_user': created,
                 'is_authenticated': True,
                 'session_id': request.session.session_key,
                 'show_legal_disclaimer': user.show_legal_disclaimer,
+                'age_bracket': getattr(user, 'age_bracket', None),
             }
         }
         print("VERIFY RESPONSE:", json.dumps(response_data), flush=True)
@@ -1181,6 +1185,10 @@ class VerifyEmailView(View):
             redirect_url = next_url if _is_safe_public_redirect(next_url) else getattr(django_settings, "IDP_WUN_URL", DEFAULT_NEXT_URL)
 
         if is_get:
+            if getattr(user, "age_bracket", None) is None:
+                request.session["post_age_gate_redirect"] = next_url
+                age_gate_base = reverse("auth_bridge:age_gate")
+                return HttpResponseRedirect(f"{age_gate_base}?next={quote_plus(next_url)}")
             if user.show_legal_disclaimer:
                 disclaimer_base = reverse("auth_bridge:legal_disclaimer")
                 return HttpResponseRedirect(f"{disclaimer_base}?next={quote_plus(next_url)}")
@@ -1190,11 +1198,13 @@ class VerifyEmailView(View):
             "success": True,
             "redirect_url": redirect_url,
             "show_legal_disclaimer": getattr(user, "show_legal_disclaimer", True),
+            "show_age_gate": getattr(user, "age_bracket", None) is None,
             "user": {
                 "email": user.email,
                 "did": user.custodial_did,
                 "email_verified": user.email_verified,
                 "account_tier": user.account_tier,
+                "age_bracket": getattr(user, "age_bracket", None),
                 "is_authenticated": True,
                 "show_legal_disclaimer": getattr(user, "show_legal_disclaimer", True),
             },
@@ -1416,6 +1426,100 @@ def acknowledge_legal_disclaimer(request):
     })
 
 
+def compute_age_bracket(month: int, year: int) -> str:
+    now = timezone.now()
+    age = now.year - year - (1 if now.month < month else 0)
+    if age < 14:
+        return "U14"
+    elif age < 18:
+        return "U14-U18"
+    else:
+        return "ADULT"
+
+
+class AgeGateView(View):
+    def get(self, request):
+        if not getattr(request.user, "is_authenticated", False):
+            next_url = request.GET.get("next", "")
+            login_url = reverse("auth_bridge:login")
+            if next_url:
+                login_url = f"{login_url}?{urlencode({'next': next_url})}"
+            return redirect(login_url)
+
+        next_url = request.GET.get("next") or getattr(django_settings, "IDP_WUN_URL", DEFAULT_NEXT_URL)
+        context = {
+            "next_url": next_url,
+            "user_did": getattr(request.user, "custodial_did", ""),
+            "age_bracket": getattr(request.user, "age_bracket", None),
+            "show_legal_disclaimer": getattr(request.user, "show_legal_disclaimer", True),
+            "wun_url": getattr(django_settings, "IDP_WUN_URL", DEFAULT_NEXT_URL),
+            "idp_base_url": getattr(django_settings, "IDP_BASE_URL", "https://iyou.me"),
+            "current_year": timezone.now().year,
+        }
+        return render(request, "auth_bridge/age_gate.html", context)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class SetAgeBracketView(View):
+    def post(self, request):
+        if not getattr(request.user, "is_authenticated", False):
+            return JsonResponse({"error": "authentication_required", "success": False}, status=401)
+
+        try:
+            data = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            data = request.POST
+
+        try:
+            month = int(data.get("month", 0))
+            year = int(data.get("year", 0))
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "invalid_input", "error_description": "Month and year must be integers.", "success": False}, status=400)
+
+        now = timezone.now()
+        if not (1 <= month <= 12) or not (1900 <= year <= now.year):
+            return JsonResponse({"error": "out_of_range", "error_description": "Invalid month or year.", "success": False}, status=400)
+
+        bracket = compute_age_bracket(month, year)
+        del month
+        del year
+
+        user = request.user
+        user.age_bracket = bracket
+        user.age_bracket_established_at = now
+        user.save(update_fields=["age_bracket", "age_bracket_established_at"])
+
+        next_url = request.session.pop("post_age_gate_redirect", None)
+        if not next_url:
+            next_url = data.get("next_url") or data.get("next") or ""
+        if not _is_safe_public_redirect(next_url):
+            next_url = getattr(django_settings, "IDP_WUN_URL", DEFAULT_NEXT_URL)
+
+        redirect_url = _build_oidc_redirect(next_url, user)
+        if redirect_url is None:
+            redirect_url = next_url if _is_safe_public_redirect(next_url) else getattr(django_settings, "IDP_WUN_URL", DEFAULT_NEXT_URL)
+
+        show_legal_disclaimer = getattr(user, "show_legal_disclaimer", True)
+        if show_legal_disclaimer:
+            request.session["post_disclaimer_redirect"] = next_url
+
+        if bracket == "U14":
+            return JsonResponse({
+                "success": True,
+                "bracket": "U14",
+                "requires_guardian": True,
+                "redirect_url": redirect_url,
+                "show_legal_disclaimer": show_legal_disclaimer,
+            })
+
+        return JsonResponse({
+            "success": True,
+            "bracket": bracket,
+            "redirect_url": redirect_url,
+            "show_legal_disclaimer": show_legal_disclaimer,
+        })
+
+
 class GlobalLogoutView(View):
     """
     Fully clear the IdP session and redirect the user.
@@ -1488,6 +1592,15 @@ class SovereignAuthorizeView(AuthorizeView):
                     urlencode({"next": request.get_full_path()}),
                 )
                 return HttpResponseRedirect(disclaimer_url)
+
+            if not _is_admin_did(request.user.custodial_did) and not getattr(request.user, "is_sovereign", False):
+                if getattr(request.user, "age_bracket", None) is None:
+                    request.session["post_age_gate_redirect"] = request.get_full_path()
+                    age_gate_url = "{}?{}".format(
+                        reverse("auth_bridge:age_gate"),
+                        urlencode({"next": request.get_full_path()}),
+                    )
+                    return HttpResponseRedirect(age_gate_url)
 
         authorize = self.authorize_endpoint_class(request)
 

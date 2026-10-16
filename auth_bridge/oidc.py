@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import logging
 from typing import Any
 
 from auth_bridge.resilient_cache import cache
@@ -20,6 +21,8 @@ from oidc_provider.lib.claims import ScopeClaims
 
 from auth_bridge.models import SovereignInfrastructureLease
 from auth_bridge.tokens import inject_dependent_claims
+
+logger = logging.getLogger(__name__)
 
 
 def custom_userinfo_claims(claims: dict, user: Any, request: Any = None) -> dict:
@@ -41,6 +44,7 @@ def custom_userinfo_claims(claims: dict, user: Any, request: Any = None) -> dict
     claims["email_verified"] = getattr(user, "email_verified", False)
     claims["account_tier"] = user.account_tier
     claims["amr"] = [auth_method]
+    claims["age_bracket"] = getattr(user, "age_bracket", None)
 
     if hasattr(user, "linked_emails"):
         claims["public_emails"] = [
@@ -62,6 +66,11 @@ def custom_userinfo_claims(claims: dict, user: Any, request: Any = None) -> dict
             claims["iyou_infra"] = {"accelerated": False}
     except SovereignInfrastructureLease.DoesNotExist:
         claims["iyou_infra"] = {"accelerated": False}
+
+    try:
+        claims = inject_dependent_claims(claims, user, request=request)
+    except Exception as exc:
+        logger.warning("Could not inject dependent claims into userinfo: %s", exc)
 
     return claims
 
@@ -88,6 +97,7 @@ def custom_id_token_claims(
     id_token["email_verified"] = getattr(user, "email_verified", False)
     id_token["account_tier"] = user.account_tier
     id_token["amr"] = [auth_method]
+    id_token["age_bracket"] = getattr(user, "age_bracket", None)
 
     try:
         lease = user.infra_lease
@@ -136,6 +146,8 @@ class CustomScopeClaims(ScopeClaims):
             "email_verified",
             "public_emails",
             "iyou_infra",
+            "age_bracket",
+            "dep",
         ):
             if key in self.userinfo:
                 dic[key] = self.userinfo[key]
@@ -154,6 +166,8 @@ class CustomScopeClaims(ScopeClaims):
             "email_verified",
             "public_emails",
             "iyou_infra",
+            "age_bracket",
+            "dep",
         ):
             if key in self.userinfo:
                 dic[key] = self.userinfo[key]

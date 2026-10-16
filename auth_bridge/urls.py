@@ -29,6 +29,8 @@ from .views import (
     airlock_sponsor,
     ChallengeEmailView,
     VerifyEmailView,
+    AgeGateView,
+    SetAgeBracketView,
 )
 from .views_oauth import OAuthInitiateView, OAuthCallbackView
 from .views_passkeys import (
@@ -56,6 +58,10 @@ urlpatterns = [
     path('legal-disclaimer/', LegalDisclaimerView.as_view(), name='legal_disclaimer'),
     path('legal-disclaimer/acknowledge/', acknowledge_legal_disclaimer, name='legal_disclaimer_acknowledge'),
     path('disclaimer/acknowledge/', acknowledge_legal_disclaimer, name='disclaimer_acknowledge'),
+    path('age-gate/', AgeGateView.as_view(), name='age_gate'),
+    path('age-gate/set/', SetAgeBracketView.as_view(), name='set_age_bracket'),
+    path('auth/age-gate/', AgeGateView.as_view()),
+    path('auth/age-gate/set/', SetAgeBracketView.as_view()),
 
     path('admin/did-login/', custom_admin_login, name='admin_did_login'),
     path('admin/did-verify/', custom_admin_verify, name='admin_did_verify'),

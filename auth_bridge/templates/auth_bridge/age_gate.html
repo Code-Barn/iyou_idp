@@ -1,0 +1,36 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Age-Appropriate Safety Defaults</title>
+    <link rel="stylesheet" href="{% static 'css/output.css' %}">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.2s ease-out;
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+    {% include 'auth_bridge/_age_gate_modal.html' %}
+    {% include 'auth_bridge/_legal_disclaimer_modal.html' %}
+
+    <script src="{% static 'auth_bridge/js/legal_disclaimer.js' %}"></script>
+    <script src="{% static 'auth_bridge/js/age_gate.js' %}"></script>
+    <script>
+        window.currentNextUrl = '{{ next_url|escapejs }}';
+        window.shouldShowDisclaimer = {{ show_legal_disclaimer|yesno:"true,false" }};
+        document.addEventListener('DOMContentLoaded', function() {
+            window.triggerAgeGate(window.currentNextUrl, window.shouldShowDisclaimer);
+        });
+    </script>
+</body>
+</html>

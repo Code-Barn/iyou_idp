@@ -290,6 +290,10 @@ class SovereignAirlockGateTest(TestCase):
             )
             self.assertEqual(ack.status_code, 200)
 
+            guest_user = User.objects.get(custodial_did=self.did)
+            guest_user.age_bracket = "ADULT"
+            guest_user.save(update_fields=["age_bracket"])
+
             # 7. Front-channel authorize now yields OIDC code without signing again
             authorize = self.client.get(
                 reverse("oidc_provider:authorize"),
@@ -522,6 +526,7 @@ class DisclaimerAuthorizeGateTest(TestCase):
             email="disclaimer_admin@iyou.me",
             custodial_did=self.admin_did,
             show_legal_disclaimer=True,
+            age_bracket="ADULT",
         )
 
     def _authorize(self):
