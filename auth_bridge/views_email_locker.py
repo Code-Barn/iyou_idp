@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import uuid
 from typing import Any
@@ -178,7 +179,8 @@ class VerifyLinkEmailView(View):
             return JsonResponse({"error": "invalid_payload", "error_description": "Invalid JSON payload."}, status=400)
 
         email = data.get("email", "").strip().lower() if isinstance(data.get("email"), str) else ""
-        otp = data.get("otp", "").strip() if isinstance(data.get("otp"), str) else ""
+        raw_otp = data.get("otp", "")
+        otp = re.sub(r"\D", "", str(raw_otp))
 
         if not email or not otp:
             return JsonResponse({"error": "missing_parameters", "error_description": "Email and OTP are required."}, status=400)

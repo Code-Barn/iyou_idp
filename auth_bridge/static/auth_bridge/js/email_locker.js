@@ -190,11 +190,11 @@
             verifyBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 const email = (emailInput?.value || '').trim().toLowerCase();
-                const otp = (otpInput?.value || '').trim();
+                const otp = (otpInput?.value || '').replace(/\D/g, '');
 
-                if (!otp || otp.length < 6) {
+                if (otp.length !== 6) {
                     if (step2Error) {
-                        step2Error.textContent = 'Please enter the 6-digit verification code.';
+                        step2Error.textContent = 'Please enter a valid 6-digit verification code.';
                         step2Error.classList.remove('hidden');
                     }
                     return;

@@ -43,6 +43,7 @@ import uuid
 import json
 import hashlib
 import hmac
+import re
 import sys
 import base58
 import os
@@ -1084,7 +1085,8 @@ class VerifyEmailView(View):
     def get(self, request):
         token = request.GET.get("token", "").strip()
         email = request.GET.get("email", "").strip().lower()
-        otp = request.GET.get("otp", "").strip()
+        raw_otp = request.GET.get("otp", "")
+        otp = re.sub(r"\D", "", str(raw_otp))
         return self._verify(request, email=email, otp=otp, token=token, is_get=True)
 
     def post(self, request):
@@ -1094,7 +1096,8 @@ class VerifyEmailView(View):
             return JsonResponse({"error": "Invalid JSON payload"}, status=400)
 
         email = data.get("email", "").strip().lower()
-        otp = data.get("otp", "").strip()
+        raw_otp = data.get("otp", "")
+        otp = re.sub(r"\D", "", str(raw_otp))
         token = data.get("token", "").strip()
         return self._verify(request, email=email, otp=otp, token=token, is_get=False)
 

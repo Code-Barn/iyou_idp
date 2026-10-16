@@ -962,9 +962,9 @@
             }
 
             verifyBtn.addEventListener('click', () => {
-                const otp = (codeInput.value || '').trim();
-                if (!otp || otp.length < 6) {
-                    showStepBError('Please enter the 6-digit code.');
+                const otp = (codeInput.value || '').replace(/\D/g, '');
+                if (otp.length !== 6) {
+                    showStepBError('Please enter a valid 6-digit verification code.');
                     return;
                 }
                 verifyCode(pendingEmail, otp);

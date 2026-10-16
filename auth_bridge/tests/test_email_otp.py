@@ -225,6 +225,70 @@ class EmailOtpEngineTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].from_email, "custom_sender@iyou.me")
 
+    @override_settings(SYSTEM_GATE_ENABLED=False)
+    def test_otp_verification_with_spaces_succeeds(self) -> None:
+        email = "spaces_otp@example.com"
+        self.client.post(
+            CHALLENGE_URL,
+            json.dumps({"email": email}),
+            content_type="application/json",
+        )
+        cached_raw = cache.get(f"email_otp:{email}")
+        cached = json.loads(cached_raw) if isinstance(cached_raw, str) else cached_raw
+        raw_otp = cached["otp"]
+        spaced_otp = f"{raw_otp[:3]} {raw_otp[3:]}"
+
+        resp = self.client.post(
+            VERIFY_URL,
+            json.dumps({"email": email, "otp": spaced_otp}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("success"))
+        self.assertTrue(User.objects.filter(email=email, email_verified=True).exists())
+
+    @override_settings(SYSTEM_GATE_ENABLED=False)
+    def test_otp_verification_with_hyphens_succeeds(self) -> None:
+        email = "hyphen_otp@example.com"
+        self.client.post(
+            CHALLENGE_URL,
+            json.dumps({"email": email}),
+            content_type="application/json",
+        )
+        cached_raw = cache.get(f"email_otp:{email}")
+        cached = json.loads(cached_raw) if isinstance(cached_raw, str) else cached_raw
+        raw_otp = cached["otp"]
+        hyphen_otp = f"{raw_otp[:3]}-{raw_otp[3:]}"
+
+        resp = self.client.post(
+            VERIFY_URL,
+            json.dumps({"email": email, "otp": hyphen_otp}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("success"))
+        self.assertTrue(User.objects.filter(email=email, email_verified=True).exists())
+
+    @override_settings(SYSTEM_GATE_ENABLED=False)
+    def test_otp_verification_get_magic_link_with_spaces_and_hyphens(self) -> None:
+        email = "get_otp_sanitize@example.com"
+        self.client.post(
+            CHALLENGE_URL,
+            json.dumps({"email": email}),
+            content_type="application/json",
+        )
+        cached_raw = cache.get(f"email_otp:{email}")
+        cached = json.loads(cached_raw) if isinstance(cached_raw, str) else cached_raw
+        raw_otp = cached["otp"]
+        dirty_otp = f" {raw_otp[:3]} - {raw_otp[3:]} "
+
+        resp = self.client.get(
+            VERIFY_URL,
+            {"email": email, "otp": dirty_otp},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(User.objects.filter(email=email, email_verified=True).exists())
+
 
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
