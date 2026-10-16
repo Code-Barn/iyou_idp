@@ -64,6 +64,8 @@ class EmailOtpEngineTests(TestCase):
         sent_mail = mail.outbox[0]
         self.assertEqual(sent_mail.to, [email])
         self.assertEqual(sent_mail.from_email, settings.DEFAULT_FROM_EMAIL)
+        self.assertIn("Your iyou verification code", sent_mail.subject)
+        self.assertIn("— The iyou Identity Team", sent_mail.body)
 
         cached_raw = cache.get(f"email_otp:{email}")
         self.assertIsNotNone(cached_raw)
@@ -244,7 +246,8 @@ class TestSmtpCommandTests(TestCase):
         sent = mail.outbox[0]
         self.assertEqual(sent.to, ["target@example.com"])
         self.assertEqual(sent.from_email, "info@iyou.me")
-        self.assertIn("SMTP Verification Test", sent.subject)
+        self.assertEqual(sent.subject, "[iyou IdP] SMTP Verification Test")
+        self.assertIn("— The iyou Identity Team", sent.body)
         self.assertIn("Successfully dispatched test email", out.getvalue())
 
     def test_invalid_recipient_email_raises_command_error(self) -> None:

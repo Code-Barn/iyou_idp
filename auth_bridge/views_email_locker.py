@@ -130,19 +130,22 @@ class ChallengeLinkEmailView(View):
         }
         cache.set(f"email_link_otp:{email}", json.dumps(cache_payload), timeout=300)
 
-        subject = f"Your iYou email link verification code: {otp}"
+        subject = f"Your iyou email link verification code: {otp}"
         message = (
-            f"Your verification code to link {email} to your iYou identity is: {otp}\n\n"
-            f"This code will expire in 5 minutes.\n"
+            f"Your verification code to link {email} to your iyou identity is: {otp}\n\n"
+            f"This code will expire in 5 minutes.\n\n"
+            f"— The iyou Identity Team\n"
         )
         html_message = (
             f"<div style='font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;'>"
-            f"<h2 style='color: #111827; margin-bottom: 16px;'>iYou Email Locker</h2>"
+            f"<h2 style='color: #111827; margin-bottom: 16px;'>iyou Email Locker</h2>"
             f"<p style='color: #4b5563; font-size: 15px;'>Your verification code to link <strong>{email}</strong> is:</p>"
             f"<div style='background: #f3f4f6; border-radius: 8px; padding: 16px; text-align: center; margin: 24px 0;'>"
             f"<span style='font-size: 32px; font-weight: 700; letter-spacing: 6px; font-family: monospace; color: #4f46e5;'>{otp}</span>"
             f"</div>"
             f"<p style='color: #6b7280; font-size: 13px;'>This code will expire in 5 minutes.</p>"
+            f"<hr style='border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;'>"
+            f"<p style='color: #6b7280; font-size: 13px; margin: 0;'>— The iyou Identity Team</p>"
             f"</div>"
         )
         from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "info@iyou.me")

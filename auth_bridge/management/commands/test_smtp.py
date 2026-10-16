@@ -62,7 +62,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  Host User: {host_user or '(none)'}")
         self.stdout.write(f"  From Email: {from_email}")
 
-        subject = "[iYou IdP] SMTP Verification Test"
+        subject = "[iyou IdP] SMTP Verification Test"
         message = (
             f"Hello,\n\n"
             f"This is an automated SMTP verification test dispatched by iyou_idp 'test_smtp'.\n\n"
@@ -72,11 +72,12 @@ class Command(BaseCommand):
             f"- Host: {host}:{port}\n"
             f"- Backend: {backend}\n"
             f"- TLS: {use_tls}\n\n"
-            f"If you received this message, your SMTP configuration is operating normally.\n"
+            f"If you received this message, your SMTP configuration is operating normally.\n\n"
+            f"— The iyou Identity Team\n"
         )
         html_message = (
             f"<div style='font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;'>"
-            f"<h2 style='color: #111827; margin-bottom: 16px;'>iYou SMTP Verification Test</h2>"
+            f"<h2 style='color: #111827; margin-bottom: 16px;'>iyou SMTP Verification Test</h2>"
             f"<p style='color: #4b5563; font-size: 15px;'>This is an automated verification test dispatched by <code>iyou_idp</code>.</p>"
             f"<div style='background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 20px 0;'>"
             f"<ul style='list-style: none; padding: 0; margin: 0; font-size: 13px; color: #374151; font-family: monospace;'>"
@@ -88,6 +89,8 @@ class Command(BaseCommand):
             f"</ul>"
             f"</div>"
             f"<p style='color: #10b981; font-weight: 600; font-size: 14px;'>✓ End-to-end SMTP delivery is operational.</p>"
+            f"<hr style='border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;'>"
+            f"<p style='color: #6b7280; font-size: 13px; margin: 0;'>— The iyou Identity Team</p>"
             f"</div>"
         )
 

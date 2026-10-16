@@ -1034,21 +1034,24 @@ class ChallengeEmailView(View):
         cache.set(f"email_otp:{email}", json.dumps(cache_payload), timeout=300)
         cache.set(f"email_otp_token:{token}", email, timeout=300)
 
-        subject = f"Your iYou verification code: {otp}"
+        subject = f"Your iyou verification code: {otp}"
         message = (
-            f"Your iYou verification code is: {otp}\n\n"
+            f"Your iyou verification code is: {otp}\n\n"
             f"This code will expire in 5 minutes.\n\n"
-            f"If you did not request this code, you can safely ignore this email.\n"
+            f"If you did not request this code, you can safely ignore this email.\n\n"
+            f"— The iyou Identity Team\n"
         )
         html_message = (
             f"<div style='font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;'>"
-            f"<h2 style='color: #111827; margin-bottom: 16px;'>iYou Identity Verification</h2>"
+            f"<h2 style='color: #111827; margin-bottom: 16px;'>iyou Identity Verification</h2>"
             f"<p style='color: #4b5563; font-size: 15px;'>Your verification code is:</p>"
             f"<div style='background: #f3f4f6; border-radius: 8px; padding: 16px; text-align: center; margin: 24px 0;'>"
             f"<span style='font-size: 32px; font-weight: 700; letter-spacing: 6px; font-family: monospace; color: #4f46e5;'>{otp}</span>"
             f"</div>"
             f"<p style='color: #6b7280; font-size: 13px;'>This code will expire in 5 minutes.</p>"
             f"<p style='color: #9ca3af; font-size: 12px;'>If you did not request this verification, no action is required.</p>"
+            f"<hr style='border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;'>"
+            f"<p style='color: #6b7280; font-size: 13px; margin: 0;'>— The iyou Identity Team</p>"
             f"</div>"
         )
         from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "info@iyou.me")
