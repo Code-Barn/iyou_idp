@@ -76,6 +76,7 @@ class DIDAuthBackend(ModelBackend):
         """
         User = get_user_model()
         try:
-            return User.objects.get(pk=user_id)
+            user = User.objects.get(pk=user_id)
         except User.DoesNotExist:
             return None
+        return user if self.user_can_authenticate(user) else None

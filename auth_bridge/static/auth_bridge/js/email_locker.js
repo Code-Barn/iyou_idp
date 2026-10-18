@@ -53,6 +53,7 @@
         const modal = document.getElementById('claim-email-modal');
         const openBtn = document.getElementById('open-claim-email-btn');
         const closeBtns = document.querySelectorAll('.close-claim-email-btn');
+        const modalTitle = document.getElementById('claim-modal-title');
         const step1 = document.getElementById('claim-step1-container');
         const step2 = document.getElementById('claim-step2-container');
         const step1Error = document.getElementById('claim-step1-error');
@@ -64,13 +65,23 @@
         const verifyBtn = document.getElementById('claim-verify-btn');
         const backBtn = document.getElementById('claim-back-btn');
         const targetEmailDisplay = document.getElementById('claim-target-email');
+        const mergeWarningBadge = document.getElementById('merge-warning-badge');
+        const mergeAliasContainer = document.getElementById('merge-alias-label-container');
+        const mergeAliasInput = document.getElementById('merge-alias-label-input');
 
         if (!modal || !openBtn) return;
 
+        let isMergeMode = false;
+
         function resetForm() {
+            isMergeMode = false;
+            if (modalTitle) modalTitle.textContent = 'Claim & Lock Email';
             if (emailInput) emailInput.value = '';
             if (labelSelect) labelSelect.value = 'personal';
             if (otpInput) otpInput.value = '';
+            if (mergeAliasInput) mergeAliasInput.value = 'alias';
+            if (mergeWarningBadge) mergeWarningBadge.classList.add('hidden');
+            if (mergeAliasContainer) mergeAliasContainer.classList.add('hidden');
             if (step1Error) {
                 step1Error.classList.add('hidden');
                 step1Error.textContent = '';
@@ -111,6 +122,11 @@
 
         if (backBtn) {
             backBtn.addEventListener('click', () => {
+                isMergeMode = false;
+                if (modalTitle) modalTitle.textContent = 'Claim & Lock Email';
+                if (mergeWarningBadge) mergeWarningBadge.classList.add('hidden');
+                if (mergeAliasContainer) mergeAliasContainer.classList.add('hidden');
+                if (verifyBtn) verifyBtn.textContent = 'Verify & Lock';
                 if (step2) step2.classList.add('hidden');
                 if (step1) step1.classList.remove('hidden');
                 if (step2Error) step2Error.classList.add('hidden');
@@ -159,12 +175,27 @@
 
                     if (!response.ok) {
                         if (step1Error) {
-                            step1Error.textContent = data.error_description || data.error || 'Failed to dispatch verification code.';
+                            step1Error.textContent = data.message || data.error_description || data.error || 'Failed to dispatch verification code.';
                             step1Error.classList.remove('hidden');
                         }
                         sendBtn.disabled = false;
                         sendBtn.textContent = 'Send Verification Code';
                         return;
+                    }
+
+                    if (data.action === 'merge_confirmation_required') {
+                        isMergeMode = true;
+                        if (modalTitle) modalTitle.textContent = 'Account Consolidation Mode';
+                        if (mergeWarningBadge) mergeWarningBadge.classList.remove('hidden');
+                        if (mergeAliasContainer) mergeAliasContainer.classList.remove('hidden');
+                        if (mergeAliasInput && !mergeAliasInput.value) mergeAliasInput.value = 'alias';
+                        if (verifyBtn) verifyBtn.textContent = 'Consolidate Account';
+                    } else {
+                        isMergeMode = false;
+                        if (modalTitle) modalTitle.textContent = 'Claim & Lock Email';
+                        if (mergeWarningBadge) mergeWarningBadge.classList.add('hidden');
+                        if (mergeAliasContainer) mergeAliasContainer.classList.add('hidden');
+                        if (verifyBtn) verifyBtn.textContent = 'Verify & Lock';
                     }
 
                     if (targetEmailDisplay) targetEmailDisplay.textContent = email;
@@ -202,32 +233,39 @@
 
                 step2Error?.classList.add('hidden');
                 verifyBtn.disabled = true;
-                verifyBtn.textContent = 'Verifying...';
+                verifyBtn.textContent = isMergeMode ? 'Consolidating...' : 'Verifying...';
+
+                const endpoint = isMergeMode ? '/auth/email/merge/confirm/' : '/auth/email/link/verify/';
+                const aliasLabel = (mergeAliasInput?.value || '').trim() || 'alias';
+                const payload = isMergeMode
+                    ? { email, otp, alias_label: aliasLabel }
+                    : { email, otp };
 
                 try {
-                    const response = await fetch('/auth/email/link/verify/', {
+                    const response = await fetch(endpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': getCsrfToken(),
                         },
-                        body: JSON.stringify({ email, otp }),
+                        body: JSON.stringify(payload),
                     });
 
                     const data = await response.json();
 
                     if (!response.ok) {
                         if (step2Error) {
-                            step2Error.textContent = data.error_description || data.error || 'Invalid or expired verification code.';
+                            step2Error.textContent = data.error_description || data.message || data.error || 'Invalid or expired verification code.';
                             step2Error.classList.remove('hidden');
                         }
                         verifyBtn.disabled = false;
-                        verifyBtn.textContent = 'Verify & Lock';
+                        verifyBtn.textContent = isMergeMode ? 'Consolidate Account' : 'Verify & Lock';
                         return;
                     }
 
+                    const wasMerge = isMergeMode;
                     appendLinkedEmailRow({
-                        id: data.vc?.credentialSubject?.id ? (data.id || String(Date.now())) : String(Date.now()),
+                        id: data.id || String(Date.now()),
                         email: data.email,
                         label: data.label,
                         verified_at: new Date().toISOString(),
@@ -239,7 +277,11 @@
                     if (emptyState) emptyState.classList.add('hidden');
 
                     closeModal();
-                    showToast(`Email ${data.email} successfully locked and linked!`);
+                    showToast(
+                        wasMerge
+                            ? (data.message || `Account ${data.email} successfully consolidated!`)
+                            : `Email ${data.email} successfully locked and linked!`
+                    );
                 } catch (err) {
                     if (step2Error) {
                         step2Error.textContent = 'Network error. Please try again.';
@@ -247,7 +289,7 @@
                     }
                 } finally {
                     verifyBtn.disabled = false;
-                    verifyBtn.textContent = 'Verify & Lock';
+                    verifyBtn.textContent = isMergeMode ? 'Consolidate Account' : 'Verify & Lock';
                 }
             });
         }

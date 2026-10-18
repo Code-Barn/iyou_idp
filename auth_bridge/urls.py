@@ -42,6 +42,7 @@ from .views_passkeys import (
 from .admin_views import custom_admin_login, custom_admin_verify, custom_admin_dashboard
 from .views_email_locker import (
     ChallengeLinkEmailView,
+    ConfirmAccountMergeView,
     ExportEmailCredentialView,
     LinkedEmailDetailView,
     ListLinkedEmailsView,
@@ -73,12 +74,14 @@ urlpatterns = [
     path('auth/email/verify/',         VerifyEmailView.as_view()),
     path('email/link/challenge/',      ChallengeLinkEmailView.as_view(), name='email_link_challenge'),
     path('email/link/verify/',         VerifyLinkEmailView.as_view(),    name='email_link_verify'),
+    path('email/merge/confirm/',       ConfirmAccountMergeView.as_view(), name='email_merge_confirm'),
     path('email/link/',                ListLinkedEmailsView.as_view(),   name='email_link_list'),
     path('email/link/<uuid:id>/',      LinkedEmailDetailView.as_view(),  name='email_link_remove'),
     path('email/link/<uuid:id>/vc/',   LinkedEmailDetailView.as_view(),  name='email_link_vc'),
     path('email/link/credential/',     ExportEmailCredentialView.as_view(), name='email_link_credential'),
     path('auth/email/link/challenge/', ChallengeLinkEmailView.as_view()),
     path('auth/email/link/verify/',    VerifyLinkEmailView.as_view()),
+    path('auth/email/merge/confirm/',  ConfirmAccountMergeView.as_view()),
     path('auth/email/link/',           ListLinkedEmailsView.as_view()),
     path('auth/email/link/<uuid:id>/', LinkedEmailDetailView.as_view()),
     path('auth/email/link/<uuid:id>/vc/', LinkedEmailDetailView.as_view()),

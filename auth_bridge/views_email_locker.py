@@ -24,8 +24,10 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.sessions.models import Session
 from django.core.mail import send_mail
 from django.core.validators import ValidationError, validate_email
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -34,7 +36,7 @@ from django.views.decorators.csrf import csrf_exempt
 import jwt
 from oidc_provider.models import RSAKey
 
-from .models import LinkedEmail
+from .models import FederatedIdentity, LinkedEmail
 from .resilient_cache import cache
 
 User = get_user_model()
@@ -120,7 +122,78 @@ class ChallengeLinkEmailView(View):
         if label not in VALID_LABELS:
             label = "personal"
 
-        if User.objects.filter(email=email).exists() or LinkedEmail.objects.filter(email=email).exists():
+        target_user = User.objects.filter(email=email).first()
+        if target_user is not None:
+            if target_user != request.user and target_user.is_active:
+                if target_user.is_sovereign or target_user.account_tier == "sovereign":
+                    return JsonResponse(
+                        {
+                            "error": "cannot_merge_sovereign_account",
+                            "message": "Sovereign accounts cannot be merged via the web tier.",
+                        },
+                        status=403,
+                    )
+
+                otp = "".join(secrets.choice("0123456789") for _ in range(6))
+                merge_payload = {
+                    "source_user_id": str(target_user.id),
+                    "dest_user_id": str(request.user.id),
+                    "otp": otp,
+                }
+                cache.set(f"account_merge_otp:{email}", json.dumps(merge_payload), timeout=300)
+
+                subject = f"Your iyou account consolidation code: {otp}"
+                message = (
+                    f"Your verification code to consolidate {email} into your active iyou session "
+                    f"({request.user.email or request.user.custodial_did}) is: {otp}\n\n"
+                    f"Confirming this code will transfer all linked OAuth logins and emails from {email} "
+                    f"into your active identity and assign {email} as an alias.\n\n"
+                    f"This code will expire in 5 minutes.\n\n"
+                    f"— The iyou Identity Team\n"
+                )
+                html_message = (
+                    f"<div style='font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;'>"
+                    f"<h2 style='color: #111827; margin-bottom: 16px;'>iyou Account Consolidation</h2>"
+                    f"<p style='color: #4b5563; font-size: 15px;'>Your verification code to consolidate <strong>{email}</strong> into your active session is:</p>"
+                    f"<div style='background: #f3f4f6; border-radius: 8px; padding: 16px; text-align: center; margin: 24px 0;'>"
+                    f"<span style='font-size: 32px; font-weight: 700; letter-spacing: 6px; font-family: monospace; color: #4f46e5;'>{otp}</span>"
+                    f"</div>"
+                    f"<p style='color: #6b7280; font-size: 13px;'>Confirming this code will consolidate this account into your active iyou session and transfer all linked logins.</p>"
+                    f"<p style='color: #6b7280; font-size: 13px;'>This code will expire in 5 minutes.</p>"
+                    f"<hr style='border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px;'>"
+                    f"<p style='color: #6b7280; font-size: 13px; margin: 0;'>— The iyou Identity Team</p>"
+                    f"</div>"
+                )
+                from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "info@iyou.me")
+                try:
+                    send_mail(
+                        subject=subject,
+                        message=message,
+                        from_email=from_email,
+                        recipient_list=[email],
+                        html_message=html_message,
+                        fail_silently=False,
+                    )
+                except Exception:
+                    logger.exception("Failed to dispatch account consolidation OTP to %s", email)
+
+                logger.info(
+                    "ACCOUNT MERGE OTP DISPATCHED: source_email=%s source_user=%s dest_user=%s",
+                    email,
+                    target_user.id,
+                    request.user.id,
+                )
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "action": "merge_confirmation_required",
+                        "message": "Account consolidation code dispatched to existing account.",
+                    }
+                )
+
+            return JsonResponse({"error": "email_already_claimed"}, status=409)
+
+        if LinkedEmail.objects.filter(email=email).exists():
             return JsonResponse({"error": "email_already_claimed"}, status=409)
 
         otp = "".join(secrets.choice("0123456789") for _ in range(6))
@@ -165,6 +238,131 @@ class ChallengeLinkEmailView(View):
 
         logger.info("EMAIL LINK OTP DISPATCHED: email=%s user=%s", email, request.user.custodial_did)
         return JsonResponse({"success": True, "message": "Verification code dispatched."})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ConfirmAccountMergeView(View):
+    def post(self, request: HttpRequest) -> HttpResponse:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "authentication_required"}, status=401)
+
+        try:
+            data = json.loads(request.body.decode("utf-8") or "{}") if request.body else request.POST.dict()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({"error": "invalid_payload", "error_description": "Invalid JSON payload."}, status=400)
+
+        email = data.get("email", "").strip().lower() if isinstance(data.get("email"), str) else ""
+        raw_otp = data.get("otp", "")
+        otp = re.sub(r"\D", "", str(raw_otp))
+        raw_alias_label = data.get("alias_label", "alias")
+        alias_label = raw_alias_label.strip() if isinstance(raw_alias_label, str) and raw_alias_label.strip() else "alias"
+        alias_label = alias_label[:50]
+
+        if not email or not otp:
+            return JsonResponse({"error": "missing_parameters", "error_description": "Email and OTP are required."}, status=400)
+
+        cached_raw = cache.get(f"account_merge_otp:{email}")
+        if not cached_raw:
+            return JsonResponse(
+                {"error": "expired_or_invalid_otp", "error_description": "Consolidation code expired or not found."},
+                status=400,
+            )
+
+        cached = json.loads(cached_raw) if isinstance(cached_raw, str) else cached_raw
+
+        cached_dest_user_id = str(cached.get("dest_user_id", ""))
+        if cached_dest_user_id != str(request.user.id):
+            return JsonResponse(
+                {"error": "user_mismatch", "error_description": "Consolidation code does not belong to current session."},
+                status=403,
+            )
+
+        expected_otp = str(cached.get("otp", ""))
+        if not hmac.compare_digest(otp, expected_otp):
+            return JsonResponse(
+                {"error": "invalid_otp", "error_description": "Invalid consolidation code."},
+                status=400,
+            )
+
+        source_user_id = cached.get("source_user_id")
+        source_user = User.objects.filter(id=source_user_id).first()
+        if not source_user or source_user.id == request.user.id:
+            return JsonResponse({"error": "source_user_not_found"}, status=404)
+
+        if source_user.is_sovereign or source_user.account_tier == "sovereign":
+            return JsonResponse(
+                {
+                    "error": "cannot_merge_sovereign_account",
+                    "message": "Sovereign accounts cannot be merged via the web tier.",
+                },
+                status=403,
+            )
+
+        source_email = source_user.email or email
+
+        with transaction.atomic():
+            # a. Transfer all FederatedIdentity rows from source_user to request.user
+            FederatedIdentity.objects.filter(user=source_user).update(user=request.user)
+
+            # b. Transfer all existing LinkedEmail rows from source_user to request.user (skip if duplicate)
+            for linked in LinkedEmail.objects.filter(user=source_user):
+                if linked.email.lower() == (request.user.email or "").lower():
+                    linked.delete()
+                    continue
+                if LinkedEmail.objects.filter(user=request.user, email=linked.email).exists():
+                    linked.delete()
+                    continue
+                linked.user = request.user
+                linked.save(update_fields=["user"])
+
+            # c. Create LinkedEmail(user=request.user, email=source_user.email, label=alias_label, is_public=False)
+            absorbed_linked, _ = LinkedEmail.objects.update_or_create(
+                email=source_email,
+                defaults={
+                    "user": request.user,
+                    "label": alias_label,
+                    "is_public": False,
+                },
+            )
+
+            # d. Mark source_user.is_active = False, source_user.merged_into = request.user, and save
+            source_user.is_active = False
+            source_user.merged_into = request.user
+            source_user.save(update_fields=["is_active", "merged_into", "updated_at"])
+
+            # e. Invalidate active sessions for source_user in Redis / session store
+            cache.delete(f"user_auth_method:{source_user.id}")
+            try:
+                for sess in Session.objects.filter(expire_date__gte=timezone.now()):
+                    decoded = sess.get_decoded()
+                    if str(decoded.get("_auth_user_id", "")) == str(source_user.id):
+                        sess.delete()
+            except Exception:
+                logger.warning("Failed to scan session store during consolidation for user %s", source_user.id)
+
+            # f. Mint and sign an EmailOwnershipCredential VC for the absorbed address using the IdP key
+            vc = issue_email_ownership_credential(request.user, source_email, alias_label)
+
+        cache.delete(f"account_merge_otp:{email}")
+        logger.info(
+            "ACCOUNT CONSOLIDATED: source_user=%s (%s) merged into dest_user=%s (%s) with label=%s",
+            source_user.id,
+            source_email,
+            request.user.id,
+            request.user.custodial_did,
+            alias_label,
+        )
+
+        return JsonResponse(
+            {
+                "success": True,
+                "message": "Account successfully consolidated.",
+                "id": str(absorbed_linked.id),
+                "email": source_email,
+                "label": alias_label,
+                "vc": vc,
+            }
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")

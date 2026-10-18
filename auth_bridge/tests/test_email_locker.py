@@ -95,7 +95,7 @@ class MultiEmailLockerTest(TestCase):
         self.client.force_login(self.user_a)
         resp = self.client.post(
             reverse("auth_bridge:email_link_challenge"),
-            data=json.dumps({"email": self.user_b.email, "label": "personal"}),
+            data=json.dumps({"email": self.user_a.email, "label": "personal"}),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 409)

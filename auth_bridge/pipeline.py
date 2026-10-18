@@ -54,13 +54,26 @@ def process_oauth_identity(
     if not email:
         raise ValueError("Missing email address for OAuth identity resolution.")
 
-    fed_identity = FederatedIdentity.objects.filter(
+    fed_identity = FederatedIdentity.objects.select_related("user", "user__merged_into").filter(
         provider=provider_name,
         provider_user_id=provider_uid,
     ).first()
 
     if fed_identity:
-        user = fed_identity.user
+        matched_user = fed_identity.user
+        if matched_user.merged_into is not None:
+            logger.info(
+                "SMART-MERGE REDIRECT: routing inbound login from merged user %s to master %s",
+                matched_user.id,
+                matched_user.merged_into.id,
+            )
+            user = matched_user.merged_into
+        else:
+            user = matched_user
+
+        if not user.is_active:
+            raise PermissionDenied("Deactivated account cannot be logged into directly.")
+
         if not user.email_verified:
             user.email_verified = True
             if not user.email_verified_at:
@@ -74,20 +87,33 @@ def process_oauth_identity(
         )
         return {"action": "login", "user": user}
 
-    existing_user = User.objects.filter(email=email).first()
-    if not existing_user:
+    matched_user = User.objects.select_related("merged_into").filter(email=email).first()
+    if not matched_user:
         from .models import LinkedEmail
 
-        linked_entry = LinkedEmail.objects.filter(email=email).select_related("user").first()
+        linked_entry = LinkedEmail.objects.filter(email=email).select_related("user", "user__merged_into").first()
         if linked_entry:
-            existing_user = linked_entry.user
+            matched_user = linked_entry.user
             logger.info(
                 "OAUTH MATCH: resolved via LinkedEmail %s -> user %s",
                 email,
-                existing_user.email,
+                matched_user.email,
             )
 
-    if existing_user:
+    if matched_user:
+        if matched_user.merged_into is not None:
+            logger.info(
+                "SMART-MERGE REDIRECT: routing inbound login from merged user %s to master %s",
+                matched_user.id,
+                matched_user.merged_into.id,
+            )
+            existing_user = matched_user.merged_into
+        else:
+            existing_user = matched_user
+
+        if not existing_user.is_active:
+            raise PermissionDenied("Deactivated account cannot be logged into directly.")
+
         is_sovereign = bool(
             existing_user.is_sovereign or existing_user.account_tier == "sovereign"
         )

@@ -82,6 +82,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     age_bracket_established_at = models.DateTimeField(null=True, blank=True)
     parent_guardian_did = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+    merged_into = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="absorbed_accounts",
+        help_text="Pointer to the master account if this identity was consolidated.",
+    )
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
