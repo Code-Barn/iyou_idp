@@ -289,6 +289,69 @@ class EmailOtpEngineTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertTrue(User.objects.filter(email=email, email_verified=True).exists())
 
+    @override_settings(SYSTEM_GATE_ENABLED=True, ADMIN_DID="did:key:unrelated-admin")
+    def test_brand_new_email_otp_succeeds_with_system_gate_enabled(self) -> None:
+        email = "brand_new_gated_user@example.com"
+        challenge_resp = self.client.post(
+            CHALLENGE_URL,
+            json.dumps({"email": email, "next_url": "/dashboard/"}),
+            content_type="application/json",
+        )
+        self.assertEqual(challenge_resp.status_code, 200)
+
+        cached_raw = cache.get(f"email_otp:{email}")
+        cached = json.loads(cached_raw) if isinstance(cached_raw, str) else cached_raw
+        otp = cached["otp"]
+
+        verify_resp = self.client.post(
+            VERIFY_URL,
+            json.dumps({"email": email, "otp": otp}),
+            content_type="application/json",
+        )
+        self.assertEqual(verify_resp.status_code, 200)
+        self.assertEqual(verify_resp["Content-Type"], "application/json")
+        data = verify_resp.json()
+        self.assertTrue(data.get("success"))
+        self.assertEqual(data.get("redirect_url"), "/dashboard/")
+
+        user = User.objects.get(email=email)
+        self.assertTrue(user.email_verified)
+        self.assertTrue(self.client.session.get("beta_access"))
+        self.assertEqual(self.client.session.get("_auth_user_id"), str(user.id))
+        self.assertEqual(self.client.session.get("auth_method"), "otp:email")
+
+    @override_settings(SYSTEM_GATE_ENABLED=True, ADMIN_DID="did:key:unrelated-admin")
+    @patch("auth_bridge.views._did_passes_gate", return_value=False)
+    def test_verify_email_ajax_returns_json_403_never_html_when_gate_blocks(self, _mock_gate: Any) -> None:
+        email = "blocked_gate_user@example.com"
+        self.client.post(
+            CHALLENGE_URL,
+            json.dumps({"email": email}),
+            content_type="application/json",
+        )
+        cached_raw = cache.get(f"email_otp:{email}")
+        cached = json.loads(cached_raw) if isinstance(cached_raw, str) else cached_raw
+
+        resp = self.client.post(
+            VERIFY_URL,
+            json.dumps({"email": email, "otp": cached["otp"]}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("application/json", resp["Content-Type"])
+        data = resp.json()
+        self.assertFalse(data.get("success", True))
+        self.assertEqual(data.get("error"), "beta_gate_required")
+        self.assertEqual(data.get("redirect_url"), reverse("auth_bridge:beta_gate"))
+
+    def test_login_page_sets_csrf_cookie_and_renders_sanitized_error_handling(self) -> None:
+        resp = self.client.get(reverse("auth_bridge:login"))
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode("utf-8")
+        self.assertIn("contentType.includes('application/json')", body)
+        self.assertIn("Verification rejected by server (HTTP ${resp.status}).", body)
+        self.assertIn(r'pattern="[0-9\s\-]{6,8}"', body)
+
 
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",

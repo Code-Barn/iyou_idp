@@ -19,7 +19,7 @@ Views for authentication challenges and OIDC flows.
 from django.http import JsonResponse, HttpResponseRedirect, HttpResponseNotAllowed
 from django.views import View
 from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth import login, logout as django_logout, get_user_model
 from django.shortcuts import render, redirect
@@ -1164,11 +1164,27 @@ class VerifyEmailView(View):
             user.save()
             logger.info("EMAIL OTP USER PROVISIONED: email=%s did=%s", email, did)
 
+        # Managed email OTP proof-of-control grants session beta access
+        if hasattr(request, "session"):
+            request.session["beta_access"] = True
+
         # Security Posture & Gate Interlocking
         user = evaluate_sovereign_admin_posture(user)
         gate_resp = _gate_response(request, user.custodial_did, next_url)
         if gate_resp is not None:
-            return gate_resp
+            if is_get:
+                return gate_resp
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "beta_gate_required",
+                    "redirect_url": reverse("auth_bridge:beta_gate"),
+                },
+                status=403,
+            )
+
+        if not user.is_active:
+            return JsonResponse({"error": "User account is disabled"}, status=403)
 
         # Session Establishment
         login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
@@ -1295,6 +1311,7 @@ class PkceTokenView(View):
             raise
 
 
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class LoginPageView(View):
     """
     Render the DID login page for OIDC authentication flow.

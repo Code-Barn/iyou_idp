@@ -889,9 +889,20 @@
                             next_url: currentNextUrl || '',
                         }),
                     });
+                    const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+                    if (!resp.ok) {
+                        if (contentType.includes('application/json')) {
+                            const errData = await resp.json();
+                            throw new Error(errData.error || errData.message || `Verification rejected by server (HTTP ${resp.status}).`);
+                        }
+                        throw new Error(`Verification rejected by server (HTTP ${resp.status}).`);
+                    }
+                    if (!contentType.includes('application/json')) {
+                        throw new Error(`Verification rejected by server (HTTP ${resp.status}).`);
+                    }
                     const data = await resp.json();
-                    if (!resp.ok || !data.success) {
-                        throw new Error(data.error || 'Failed to dispatch verification code.');
+                    if (!data.success) {
+                        throw new Error(data.error || data.message || 'Failed to dispatch verification code.');
                     }
                     pendingEmail = email;
                     targetEmailSpan.textContent = email;
@@ -954,9 +965,24 @@
                             otp: otp,
                         }),
                     });
+                    const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+                    if (!resp.ok) {
+                        if (contentType.includes('application/json')) {
+                            const errData = await resp.json();
+                            if (errData.error === 'beta_gate_required' && errData.redirect_url) {
+                                window.location.href = errData.redirect_url;
+                                return;
+                            }
+                            throw new Error(errData.error || errData.message || `Verification rejected by server (HTTP ${resp.status}).`);
+                        }
+                        throw new Error(`Verification rejected by server (HTTP ${resp.status}).`);
+                    }
+                    if (!contentType.includes('application/json')) {
+                        throw new Error(`Verification rejected by server (HTTP ${resp.status}).`);
+                    }
                     const data = await resp.json();
-                    if (!resp.ok || !data.success) {
-                        throw new Error(data.error || 'Verification failed. Please check the code.');
+                    if (!data.success) {
+                        throw new Error(data.error || data.message || 'Verification failed. Please check the code.');
                     }
                     const shouldShowDisclaimer = (data.show_legal_disclaimer !== false) && (!data.user || data.user.show_legal_disclaimer !== false);
                     const shouldShowAgeGate = Boolean(data.show_age_gate || (data.user && data.user.age_bracket === null));

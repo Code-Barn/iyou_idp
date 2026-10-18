@@ -87,6 +87,7 @@ urlpatterns = [
     path('challenge-status/<str:challenge_id>/', check_challenge_status, name='challenge_status'),
     path('logout/', GlobalLogoutView.as_view(), name='global_logout'),
     path('gate/', BetaGateView.as_view(), name='gate'),
+    path('gate/', BetaGateView.as_view(), name='beta_gate'),
     path('gate/redeem/', redeem_beta_invite, name='gate_redeem'),
     # One-shot, session-only read of the RFC-002 sponsoring DID. The invite edge
     # is never persisted, so this is the only place it can be observed — and only
