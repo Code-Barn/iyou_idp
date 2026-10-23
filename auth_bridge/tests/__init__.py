@@ -632,7 +632,7 @@ class SatelliteRosterTest(TestCase):
         from oidc_provider.models import Client as OIDCClient
 
         call_command("seed_clients")
-        self.assertEqual(OIDCClient.objects.count(), 20)
+        self.assertEqual(OIDCClient.objects.count(), 21)
 
         help_client = OIDCClient.objects.get(client_id="iyou-help-satellite-client")
         self.assertEqual(help_client.name, "iyou_help (Mutual Aid)")
@@ -666,6 +666,15 @@ class SatelliteRosterTest(TestCase):
         self.assertIn("http://127.0.0.1:8017/", chat_client.post_logout_redirect_uris)
         self.assertEqual(chat_client.scope, ["openid", "profile", "email"])
         self.assertIn("code", [rt.value for rt in chat_client.response_types.all()])
+
+        link_client = OIDCClient.objects.get(client_id="iyou-link-satellite-client")
+        self.assertEqual(link_client.name, "iyou_link")
+        self.assertEqual(link_client.client_type, "public")
+        self.assertEqual(link_client.client_secret, "")
+        self.assertIn("https://link.iyou.me/oidc/callback/", link_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8005/oidc/callback/", link_client.redirect_uris)
+        self.assertIn("https://link.iyou.me/", link_client.post_logout_redirect_uris)
+        self.assertIn("http://127.0.0.1:8005/", link_client.post_logout_redirect_uris)
 
 
 class CacheFallbackTest(TestCase):

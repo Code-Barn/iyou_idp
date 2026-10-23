@@ -558,6 +558,7 @@ Satellite clients in the mesh are registered as **public** OIDC clients (no `cli
 | iyou_spot (Muster'd Ezine) | `iyou-spot-satellite-client` | `https://spot.iyou.me/oidc/callback/` | `http://127.0.0.1:8019/oidc/callback/` |
 | iyou_baba (Sovereign Sticker Vault) | `iyou-baba-satellite-client` | `https://baba.iyou.me/oidc/callback/` | `http://127.0.0.1:8016/oidc/callback/` |
 | iyou_chat (Messenger) | `iyou-chat-satellite-client` | `https://chat.iyou.me/oidc/callback/` | `http://127.0.0.1:8017/oidc/callback/` |
+| iyou_link | `iyou-link-satellite-client` | `https://link.iyou.me/oidc/callback/` | `http://127.0.0.1:8005/oidc/callback/` |
 
 All satellites also include the standard fallback `http://127.0.0.1:8000/oidc/callback/` for single-port testing environments.
 

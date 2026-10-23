@@ -285,11 +285,24 @@ SATELLITES = [
             "http://127.0.0.1:8017/",
         ],
     },
+    {
+        "client_id": "iyou-link-satellite-client",
+        "name": "iyou_link",
+        "redirects": [
+            "https://link.iyou.me/oidc/callback/",
+            "http://127.0.0.1:8005/oidc/callback/",
+            LOCAL_DEV_FALLBACK,
+        ],
+        "post_logout_redirects": [
+            "https://link.iyou.me/",
+            "http://127.0.0.1:8005/",
+        ],
+    },
 ]
 
 
 class Command(BaseCommand):
-    help = "Provisions fleet-wide OIDC public clients for the 20-satellite ecosystem mesh."
+    help = "Provisions fleet-wide OIDC public clients for the 21-satellite ecosystem mesh."
 
     def handle(self, *args, **options):
         code_response_type, _ = ResponseType.objects.get_or_create(
