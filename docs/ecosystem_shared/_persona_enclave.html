@@ -16,12 +16,16 @@
       onerror="this.classList.add('hidden')"
       onload="this.classList.remove('hidden')"
     />
+    {% if request.session.account_tier != "sovereign" or is_custodial %}
+    <span class="w-2 h-2 rounded-full bg-amber-500 inline-block" id="active-persona-dot" title="Custodial Identity (Tier 1 Managed)"></span>
+    {% else %}
     <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" id="active-persona-dot" title="Sovereign Key Active"></span>
+    {% endif %}
     <span id="active-persona-display-name" class="mesh-user-handle truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[140px] font-mono text-xs font-medium text-slate-700 dark:text-slate-200">
       {{ user_display_label|default:user.username|truncatechars:18 }}
     </span>
-    <span class="text-[10px] px-1 py-0.5 rounded font-bold transition-colors duration-150 {% if active_persona_level == 1 or not active_persona_level %}bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300{% else %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% endif %}" id="active-persona-level">
-      L{{ active_persona_level|default:1 }}
+    <span class="text-[10px] px-1 py-0.5 rounded font-bold transition-colors duration-150 {% if request.session.account_tier != 'sovereign' or is_custodial %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% elif active_persona_level == 1 or not active_persona_level %}bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300{% else %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% endif %}" id="active-persona-level">
+      {% if request.session.account_tier != "sovereign" or is_custodial %}T1{% else %}L{{ active_persona_level|default:1 }}{% endif %}
     </span>
     <svg class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200" id="persona-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -43,7 +47,11 @@
 
     <div class="px-2 py-1.5 text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60">
       <span>Active Enclave Personas</span>
+      {% if request.session.account_tier != "sovereign" or is_custodial %}
+      <span id="persona-bridge-status" class="text-amber-500 font-normal">Custodial Mode (Tier 1)</span>
+      {% else %}
       <span id="persona-bridge-status" class="text-emerald-500 font-normal">Bridge Connected</span>
+      {% endif %}
     </div>
 
     <!-- Persona List Target Container -->

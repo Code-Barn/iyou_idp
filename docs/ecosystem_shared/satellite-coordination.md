@@ -36,13 +36,14 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | iyou_baba | `~/CODE_BASE/iyou_baba/` | [TODO.md](../../../iyou_baba/TODO.md) | 🟢 Operational (PKCE Secretless) | Sovereign Sticker Vault, Discovery Index & Curation Foundry. Color: `blue`. Domain: `baba.iyou.me`. Dev port: 8016. Cookie namespaces: `baba_sessionid`, `baba_csrftoken`. |
 | iyou_chat | `~/CODE_BASE/iyou_chat/` | [TODO.md](../../../iyou_chat/TODO.md) | 🟡 Onboarding (target: PKCE Secretless) | Sovereign Messenger Hub, MAM Archive, standalone messenger UI, and embeddable dock bundle. Color: `blue` (#3B82F6). Dev port: `8017`. Domain: `chat.iyou.me`. |
 
-### Supporting Projects (Not in Ecosystem Bar)
+### Supporting Projects & Micro-Satellites (Not in Ecosystem Bar)
 
 | Repo | Stack | TODO.md | Key Items |
 |:---|:---|:---|:---|
 | iyou_home | Tauri/TypeScript | [TODO.md](../../../iyou_home/TODO.md) | Local desktop enclave. Released v0.2.2 (RFC-001 through RFC-006 implemented). SEC-002/003/004/005/006. |
 | did_rust | Rust crate | [TODO.md](../../../did_rust/TODO.md) | Core DID library. SEC-003 alignment enforcement. Shared by idp + home. |
 | iyou_mobile | Tauri/React | [TODO.md](../../../iyou_mobile/TODO.md) | Mobile counterpart. Barcode scanner, deep-link, secure storage. |
+| iyou_link | Django 6.1 / OIDC | [TODO.md](../../../iyou_link/TODO.md) | 🟡 Onboarding (target: PKCE Secretless). Ecosystem micro-satellite (`~/CODE_BASE/iyou_link/`). |
 
 ---
 

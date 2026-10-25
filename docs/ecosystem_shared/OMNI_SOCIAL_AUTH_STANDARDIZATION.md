@@ -1110,10 +1110,42 @@ class PKCEAuthenticationBackend(auth.Backend):
 
     def get_user(self, user_id):
         from django.contrib.auth import get_user_model
-        try:
-            return get_user_model().objects.get(pk=user_id)
-        except get_user_model().DoesNotExist:
+        UserModel = get_user_model()
+        return UserModel.objects.filter(pk=user_id).first()
+
+    def _sync_session_identity_meta(self, claims):
+        if not claims or not isinstance(claims, dict):
+            return
+        sub = claims.get("sub", "")
+        tier = claims.get("account_tier") or (
+            "managed_free" if str(sub).startswith("did:web:") else "sovereign"
+        )
+        request = getattr(self, "request", None)
+        if request is not None and hasattr(request, "session"):
+            request.session["account_tier"] = tier
+            request.session["custodial_did"] = sub
+            request.session["did_method"] = claims.get("did_method") or (
+                "web" if str(sub).startswith("did:web:") else "key"
+            )
+
+    def create_user(self, claims):
+        sub = claims.get("sub")
+        if not sub:
             return None
+        from django.contrib.auth import get_user_model
+        UserModel = get_user_model()
+        user = UserModel.objects.create(
+            username=sub,
+            email=claims.get("email", ""),
+        )
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+        self._sync_session_identity_meta(claims)
+        return evaluate_sovereign_admin_posture(user)
+
+    def update_user(self, user, claims):
+        self._sync_session_identity_meta(claims)
+        return evaluate_sovereign_admin_posture(user)
 
     def _get_or_create_user(self, user_info):
         """Rule 4: username = sub. §6.2: Sovereign Admin Posture."""
@@ -1122,16 +1154,12 @@ class PKCEAuthenticationBackend(auth.Backend):
             return None
 
         from django.contrib.auth import get_user_model
-        User = get_user_model()
+        UserModel = get_user_model()
 
-        user, created = User.objects.get_or_create(
-            username=sub,
-            defaults={"email": user_info.get("email", "")},
-        )
-
-        evaluate_sovereign_admin_posture(user)
-
-        return user
+        existing = UserModel.objects.filter(username=sub).first()
+        if existing is None:
+            return self.create_user(user_info)
+        return self.update_user(existing, user_info)
 
     @staticmethod
     def _get_setting(key, default=None):
@@ -1157,3 +1185,54 @@ When onboarding a new satellite, verify these items before marking it as aligned
 - [ ] `pkce_code_verifier` and `pkce_redirect_uri` stored in session; token POST uses `application/x-www-form-urlencoded`
 - [ ] `IDP_BASE_INTERNAL_URL` defaults to `IDP_BASE_PUBLIC_URL` (`https://iyou.me`) in dev
 - [ ] `SESSION_COOKIE_SECURE = not DEBUG` and `SESSION_COOKIE_DOMAIN` properly scoped
+- [ ] `decode_public_key()` supports `did:web:` via SHA-256 64-hex nodeprep mapping (§11.1)
+- [ ] `create_user()` and `update_user()` invoke `_sync_session_identity_meta(claims)` (§11.2)
+
+---
+
+## 11. Tier 1 Managed Identity Ingress (did:web)
+
+Tier 1 (`managed_free`) users authenticate via custodial DIDs (`did:web:iyou.me:user:<uuid>`) minted by `iyou_idp`. Every satellite relying party and XMPP-enabled service must support `did:web` subjects without rejecting them in public-key decoding or dropping session tier context.
+
+### 11.1 SHA-256 Nodeprep 64-Hex Mapping Rule (`decode_public_key`)
+
+Satellites that derive canonical 64-hex public keys or RFC 7622 nodeprep-safe XMPP JIDs (`{localpart}@{domain}`) via `decode_public_key(identifier)` MUST handle `did:web:` identifiers:
+
+- Check `identifier.startswith("did:web:")`.
+- Strip prefix (`identifier[len("did:web:"):]`) to validate a non-empty method-specific identifier.
+- Derive a deterministic raw 32-byte digest via `hashlib.sha256(identifier.encode("utf-8")).digest()`.
+- Return the 64-character lowercase hexadecimal string (`raw.hex().lower()`).
+
+```python
+if ident.startswith("did:web:"):
+    body = ident[len("did:web:") :].strip()
+    if not body:
+        raise InvalidIdentifierError("did:web identifier is missing method-specific id")
+    raw = hashlib.sha256(ident.encode("utf-8")).digest()
+    return raw.hex().lower()
+```
+
+This guarantees nodeprep-safe usernames and JIDs (no colons, no uppercase, 64 lowercase hex characters) across all Django and XMPP satellites and eliminates OIDC callback loops for Tier 1 users.
+
+### 11.2 Session Tier Synchronization (`_sync_session_identity_meta`)
+
+In `PKCEAuthenticationBackend` and `IYouOIDCAuthenticationBackend`, both `create_user(self, claims)` and `update_user(self, user, claims)` MUST invoke `self._sync_session_identity_meta(claims)` to populate three session variables:
+
+- `request.session["account_tier"]`: `claims.get("account_tier") or ("managed_free" if str(sub).startswith("did:web:") else "sovereign")`
+- `request.session["custodial_did"]`: `claims.get("sub", "")`
+- `request.session["did_method"]`: `claims.get("did_method") or ("web" if str(sub).startswith("did:web:") else "key")`
+
+Backends must also implement an explicit `get_user(self, user_id)` method delegating to `UserModel.objects.filter(pk=user_id).first()`.
+
+### 11.3 Custodial Enclave UI (`_persona_enclave.html`)
+
+The canonical `_persona_enclave.html` partial adapts its visual telemetry based on `request.session.account_tier != "sovereign" or is_custodial`:
+
+- **When `request.session.account_tier != "sovereign" or is_custodial`:**
+  - Active persona dot (`#active-persona-dot`): Amber dot (`bg-amber-500`) with `title="Custodial Identity (Tier 1 Managed)"`.
+  - Level badge (`#active-persona-level`): Amber badge displaying `T1` (instead of `L1`).
+  - Bridge status label (`#persona-bridge-status`): Amber text displaying `Custodial Mode (Tier 1)`.
+- **When Sovereign (`request.session.account_tier == "sovereign"` and not `is_custodial`):**
+  - Active persona dot (`#active-persona-dot`): Emerald pulsing dot (`bg-emerald-500 animate-pulse`) with `title="Sovereign Key Active"`.
+  - Level badge (`#active-persona-level`): Violet badge displaying `L1` (or `L{{ active_persona_level|default:1 }}`).
+  - Bridge status label (`#persona-bridge-status`): Emerald text displaying `Bridge Connected`.

@@ -820,3 +820,63 @@ Session cookie security and domain isolation must dynamically follow the deploym
 - Set `SESSION_COOKIE_DOMAIN = None if DEBUG else ".iyou.me"`
 - `PKCEOIDCLogoutView` must support both `GET` and `POST` methods to prevent HTTP 405 Method Not Allowed errors on user sign-out from varied satellite interfaces.
 
+---
+
+## 18. Tier 1 Managed Identity Ingress (did:web)
+
+Tier 1 (`managed_free`) users authenticate with server-managed custodial DIDs of the form `did:web:iyou.me:user:<uuid>`. Unlike Sovereign `did:key:z6Mk...` identifiers (which encode raw Ed25519 public key bytes in multibase Base58btc), `did:web` identifiers contain colons and domain/path segments that cannot be decoded via multibase Base58btc and are prohibited in raw XMPP JID localparts by RFC 7622 nodeprep rules.
+
+### 18.1 SHA-256 Nodeprep 64-Hex Mapping Rule (`decode_public_key`)
+
+To prevent OIDC callback rejection loops and guarantee RFC 7622 nodeprep-safe usernames and JIDs across all Django and XMPP satellites, `decode_public_key(identifier)` in `templates/utils/auth_pkce.py` implements a deterministic SHA-256 digest mapping for `did:web:`:
+
+1. Detect `identifier.startswith("did:web:")`.
+2. Strip prefix (`identifier[len("did:web:"):]`) to verify a non-empty method-specific identifier is present.
+3. Compute the raw 32-byte digest over the full UTF-8 identifier string:
+   ```python
+   raw = hashlib.sha256(identifier.encode("utf-8")).digest()
+   return raw.hex().lower()
+   ```
+4. Return the 64-character lowercase hexadecimal string (`[0-9a-f]{64}`).
+
+This ensures every `did:web:iyou.me:user:<uuid>`, `did:key:z6Mk...`, and `npub1...` normalizes to a uniform 64-hex localpart (`{pubkey_hex}@{domain}`) with zero colons or prohibited codepoints.
+
+### 18.2 Session Identity Metadata Synchronization (`_sync_session_identity_meta`)
+
+All satellite authentication backends (`PKCEAuthenticationBackend` and `IYouOIDCAuthenticationBackend`) must invoke `self._sync_session_identity_meta(claims)` inside both `create_user(claims)` and `update_user(user, claims)` to persist Tier 1 and Sovereign metadata in `request.session`:
+
+```python
+def _sync_session_identity_meta(self, claims: dict) -> None:
+    sub = claims.get("sub", "")
+    tier = claims.get("account_tier") or (
+        "managed_free" if str(sub).startswith("did:web:") else "sovereign"
+    )
+    request.session["account_tier"] = tier
+    request.session["custodial_did"] = sub
+    request.session["did_method"] = claims.get("did_method") or (
+        "web" if str(sub).startswith("did:web:") else "key"
+    )
+```
+
+| Session Variable | Tier 1 Managed Value | Sovereign Value | Purpose |
+|:---|:---|:---|:---|
+| `request.session["account_tier"]` | `"managed_free"` (or claim value) | `"sovereign"` | Drives Custodial Enclave UI & tier-aware feature gates |
+| `request.session["custodial_did"]` | `did:web:iyou.me:user:<uuid>` | `did:key:z6Mk...` | Preserves original OIDC `sub` DID even when `User.username` is a 64-hex JID |
+| `request.session["did_method"]` | `"web"` | `"key"` | Identifies underlying W3C DID method |
+
+Additionally, backends must define an explicit `get_user(self, user_id)` method delegating to `UserModel.objects.filter(pk=user_id).first()` to guarantee session rehydration across requests.
+
+### 18.3 Custodial Enclave UI (`_persona_enclave.html`)
+
+The canonical Persona Enclave partial (`templates/includes/_persona_enclave.html`) inspects `request.session.account_tier != "sovereign" or is_custodial` to distinguish Tier 1 custodial sessions from Sovereign hardware/bridge sessions:
+
+- **Custodial Mode (`request.session.account_tier != "sovereign" or is_custodial`):**
+  - Active persona status dot (`#active-persona-dot`): Amber dot (`bg-amber-500`) with `title="Custodial Identity (Tier 1 Managed)"`.
+  - Level badge (`#active-persona-level`): Amber badge rendering `T1` (instead of `L1`).
+  - Bridge status label (`#persona-bridge-status`): Amber label rendering `Custodial Mode (Tier 1)`.
+- **Sovereign Mode (`request.session.account_tier == "sovereign"` and not `is_custodial`):**
+  - Active persona status dot (`#active-persona-dot`): Emerald pulsing dot (`bg-emerald-500 animate-pulse`) with `title="Sovereign Key Active"`.
+  - Level badge (`#active-persona-level`): Violet badge rendering `L1` (or `L{{ active_persona_level }}`).
+  - Bridge status label (`#persona-bridge-status`): Emerald label rendering `Bridge Connected`.
+
+
