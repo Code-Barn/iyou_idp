@@ -1,7 +1,7 @@
 # Standard UI Specification: Sovereign Mesh Navigation & Persona Enclave
 
 **Canonical Reference for Layer 0 Ecosystem Bar, Layer 1 Standard Header, Modular Persona Enclave, Mascot Footer, and PWA Standards**  
-**Version:** 2.1.0  
+**Version:** 2.2.0 (Modular Layer 1 Slot Architecture & Commerce Support)  
 **Status:** Authoritative Ecosystem Specification  
 
 ---
@@ -16,14 +16,20 @@ The iYou ecosystem presentation tier is structured into strict horizontal layers
 │          Light: deep #0B0F19 / Dark: crisp slate-100 (inverted)            │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ Layer 1: Application Brand & Sovereign Identity Header                      │
-│   ├── Left: Brand Lockup (squircle stamp + iyou_{slug} + DESCRIPTOR / GEO) │
-│   └── Right:                                                               │
-│       ├── Notification Bell (#notification-bell-btn)                       │
-│       ├── Modular Persona Enclave Partial (_persona_enclave.html)          │
+│   ├── Left: Brand Lockup (squircle stamp + iyou_{slug})                     │
+│   │     ├── Domain Badge (#domain-badge, hidden sm:inline-flex)             │
+│   │     ├── [Search] (#header-search-btn, opt-in)                           │
+│   │     └── [Geo Scope] (#geo-scope-container, authenticated)               │
+│   └── Right (strict slot order):                                          │
+│       ├── [Shopping Cart] (#header-cart-btn, opt-in commerce)              │
+│       ├── [Notifications] (#notification-bell-btn)                          │
+│       ├── [Persona Enclave] (_persona_enclave.html)                         │
 │       │     └── @handle + L1/L2+ level chips, Flyout with Public Profile   │
-│       ├── Action Links ([ ⚙️ Edit ], Sign Out)                             │
-│       ├── Logged-Out: "• Sovereign Key Required" capsule + "🔑 Authenticate"│
-│       └── Outline Theme Toggle (☀ in Light / ☾ in Dark)                    │
+│       ├── [Edit] (hidden md:inline-flex)                                    │
+│       ├── [Sign Out] (hidden md:inline-flex)                                │
+│       ├── [L2 Toggle] (#l2-toggle-header-btn)                               │
+│       ├── [Theme Switcher] (#theme-toggle, ☀ / ☾)                           │
+│       └── Logged-Out: "• Sovereign Key Required" capsule + "🔑 Authenticate"│
 ├────────────────────────────────────────────────────────────────────────────┤
 │ Layer 2: Application Sub-Nav Ribbon (_nav.html, max-w-7xl width contract)  │
 ├────────────────────────────────────────────────────────────────────────────┤
@@ -51,7 +57,7 @@ The Layer 0 bar provides continuous, non-intrusive navigation across all 20 appl
 - **Positioning**: Fixed to the viewport top (`fixed top-0 left-0 right-0 z-[9999]`).
 - **Initial Resting State**: Hidden above the viewport with only a 4px activation lip visible (`-translate-y-[calc(100%-4px)]`).
 - **Desktop Hover Expansion**: Smoothly expands to full height on hover (`sm:hover:translate-y-0`) with hardware-accelerated transitions (`transition-transform duration-300 ease-in-out`).
-- **Surface Styling**: Glassmorphic deep dark surface in light mode with a crisp white drawer in dark mode (Section 2.4).
+- **Surface Styling**: Solid opaque contrast surface in both modes — deep dark `bg-slate-900` in light mode with a crisp light `dark:bg-slate-100` drawer in dark mode (Section 2.4). No transparency, no bleed-through; the drawer has `z-[9999]` (≥ z-50) above Layer 1.
 - **Close Action**: Explicit top-right close button (`#close-ecosystem-bar`) calling `closeEcosystemBar(event)`.
 - **Mobile Pull Handle**: Bottom 8px strip (`h-2 w-full bg-{color}-600 dark:bg-{color}-500 cursor-pointer`) containing a centered accent pill (`w-8 h-1 bg-{color}-200 dark:bg-{color}-900 rounded-full opacity-80`) hooked to `toggleEcosystemBar(event)`. The collapsed lip dynamically binds to the satellite's accent color so the resting trigger is always visible against the app below.
 
@@ -60,7 +66,7 @@ The Layer 0 drawer inverts its chroma between color schemes to remain intentiona
 
 ```html
 <div id="sovereign-ecosystem-topbar"
-     class="fixed top-0 left-0 right-0 z-[9999] transition-transform duration-300 ease-in-out -translate-y-[calc(100%-4px)] sm:hover:translate-y-0 bg-[#0B0F19]/95 text-slate-300 border-b border-violet-500/50 dark:bg-slate-100 dark:text-slate-900 dark:border-b-2 dark:border-violet-600 shadow-2xl">
+     class="fixed top-0 left-0 right-0 z-[9999] transition-transform duration-300 ease-in-out -translate-y-[calc(100%-4px)] sm:hover:translate-y-0 bg-slate-900 text-slate-100 border-b border-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:border-b-2 dark:border-{color}-500 shadow-2xl">
   <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2">
     <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 dark:text-slate-600 pb-1 mb-1 border-b border-slate-800 dark:border-slate-300">
       <span class="text-violet-400 dark:text-violet-700 font-bold tracking-wider">SOVEREIGN MESH ECOSYSTEM</span>
@@ -76,10 +82,10 @@ The Layer 0 drawer inverts its chroma between color schemes to remain intentiona
 </div>
 ```
 
-- **Light mode (`bg-[#0B0F19]/95 text-slate-300 border-b border-violet-500/50`)**: Deep dark drawer, violet mesh accent border/title.
-- **Dark mode (`dark:bg-slate-100 dark:text-slate-900 dark:border-b-2 dark:border-violet-600`)**: Crisp light drawer with functional violet-700 labels and slate-200 close button.
+- **Light mode (`bg-slate-900 text-slate-100 border-b border-slate-800`)**: Solid opaque deep dark drawer (`bg-slate-900`, never transparent). The outer wrapper MUST be opaque in both modes so that when Layer 0 expands it never bleeds or allows Layer 1 text to show through underneath; `z-[9999]` (≥ z-50) keeps it above Layer 1 (`z-30`) and Layer 2 (`z-50`).
+- **Dark mode (`dark:bg-slate-100 dark:text-slate-900 dark:border-b-2 dark:border-{color}-500`)**: Solid opaque light drawer with per-app accent bottom border and slate-200 close button.
 - **Link contrast**: Every app link ships paired light/dark classes (e.g. `text-violet-400 hover:text-violet-300 dark:text-violet-700 dark:hover:text-violet-600`) so the per-app color stream remains legible in both modes. Section separators use `<span class="text-slate-700 dark:text-slate-400">/</span>`.
-- **Mesh chrome is violet**: The Layer 0 bar border and title use the violet mesh identity (not the per-app accent). Per-app accents appear in the link stream and in the collapsed 4px lip / pull handle (`bg-{color}-600 dark:bg-{color}-500` strip + `bg-{color}-200 dark:bg-{color}-900` pill), which binds to each satellite's accent color so the resting lip is always visible.
+- **Mesh chrome border**: The Layer 0 outer border is bound to the satellite accent (`border-slate-800` light, `dark:border-{color}-500` dark, 2px in dark). Per-app accents appear in the link stream and in the collapsed 4px lip / pull handle (`bg-{color}-600 dark:bg-{color}-500` strip + `bg-{color}-200 dark:bg-{color}-900` pill), which binds to each satellite's accent color so the resting lip is always visible. Title chrome remains violet-400/violet-700 in both modes for mesh identity.
 
 ### 2.2 The 20-App Multi-Colored Stream
 Links are ordered by protocol topology and color-coded with distinct Tailwind CSS palette accents, separated by dark slashes (`<span class="text-slate-700">/</span>`). The active application is highlighted using `text-__COLOR__-400 font-bold underline`:
@@ -142,14 +148,15 @@ function toggleEcosystemBar(e) {
 
 ## 3. Layer 1: Application Brand & Sovereign Identity Header
 
-### 3.1 Header Layout & Width Contract
+### 3.1 Header Layout & Width Contract — Modular Slot Architecture (v2.2.0)
+
 All Layer 1 headers across the ecosystem share one mandatory width and spacing contract regardless of app or viewport:
 
 ```html
 <header class="relative z-30 border-b backdrop-blur-sm transition-colors duration-200 bg-white/90 border-slate-200 text-slate-900 dark:bg-[#0B0F19]/90 dark:border-gray-800 dark:text-gray-100">
   <div class="w-full max-w-7xl mx-auto px-2 sm:px-4 h-16 flex items-center justify-between">
-    <!-- Left: Brand Lockup & Geo-Scope Capsule -->
-    <!-- Right: Action & Identity Controls -->
+    <!-- Left: Brand Lockup & Sibling Domain Badge / Search / Geographic Scope Capsule -->
+    <!-- Right: Cart → Notifications → Persona → Edit → Sign Out → L2 → Theme -->
   </div>
 </header>
 ```
@@ -157,15 +164,34 @@ All Layer 1 headers across the ecosystem share one mandatory width and spacing c
 - **Outer `<header>`**: `relative z-30 border-b backdrop-blur-sm transition-colors duration-200 bg-white/90 border-slate-200 text-slate-900 dark:bg-[#0B0F19]/90 dark:border-gray-800 dark:text-gray-100`.
 - **Inner flex row**: `w-full max-w-7xl mx-auto px-2 sm:px-4 h-16 flex items-center justify-between` — responsive padding floor (`px-2 sm:px-4`) providing maximum horizontal breathing room for micro-screens (320px–375px), with fixed 64px (`h-16`) header height floor and items vertically centered.
 - **Enlarged Brand Logo**: Responsive squircle brand stamp `class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-sm border border-slate-200 dark:border-slate-800 shrink-0 group-hover:scale-105 transition-transform duration-150"` (44px–48px rendering slot, matching `logo_square_sm.png` dual-asset hierarchy, scaled up from previous 32-36px).
-- **Responsive Geo-Scope Capsule vs. Brandmark Descriptor Pill Interchange**:
-  - When **Authenticated** (`{% if user.is_authenticated or request.user.is_authenticated %}`): Renders the interactive Geographic Scope Capsule wrapped in `<div class="relative inline-block text-left shrink-0" id="geo-scope-container">`, with compact pill button (`#geo-scope-trigger-btn`), pulsing status dot (`shrink-0`), responsive label `<span id="geo-scope-display-label" class="hidden sm:inline font-bold uppercase tracking-wider text-[10px]">` (label hidden on micro-screens to prevent overflow, showing only icon and pulse indicator), and interactive popover ladder modal.
-  - When **Unauthenticated** (`{% else %}`): Renders the static Brandmark Descriptor Pill (`<div id="brand-descriptor-pill" class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 text-[10px] font-mono font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 shrink-0 select-none">__APP_DESCRIPTOR__</div>`). On compact mobile viewports (<640px / `sm:`), the descriptor pill is pruned (`hidden sm:inline-flex`) to preserve the 320px/375px horizontal width budget alongside the brand lockup and authentication controls.
-- **Mobile Action Pruning**: Direct action links `[ ⚙️ Edit ]` and `Sign Out` use `hidden md:inline-flex` so they are pruned from the primary header on smaller screens (below `md:` / 768px). Mobile users access profile editing and session termination via the Persona Enclave dropdown flyout or mobile bottom navigation dock.
+- **Modular Slot Architecture — Strict 12-Slot Order (v2.2.0)**:
+  1. Left Brand Lockup (squircle + `iyou_{slug}`).
+  2. Domain Badge (`#domain-badge`).
+  3. [Search] (`#header-search-btn`, opt-in via `show_search`).
+  4. [Geo Scope] (`#geo-scope-container`, authenticated; gated by `show_geo_scope`).
+  5. [Shopping Cart] (`#header-cart-btn`, opt-in commerce via `show_cart`).
+  6. [Notifications] (`#notification-bell-btn`, gated by `show_notifications`).
+  7. [Persona Enclave] (`{% include "includes/_persona_enclave.html" %}`, gated by `show_persona`).
+  8. [Edit] (`[ ⚙️ Edit ]`, gated by `show_profile_edit`).
+  9. [Sign Out] (`Sign Out`, gated by `show_sign_out`).
+  10. [L2 Toggle] (`#l2-toggle-header-btn`, gated by `show_l2_toggle`).
+  11. [Theme Switcher] (`#theme-toggle`, gated by `show_theme_toggle`).
+  12. Logged-Out Auth Block (unauthenticated alternative: Sovereign Key Required capsule + Authenticate button).
+  Slots 1–11 are emitted left→right in strict DOM order; Slot 12 is the authenticated/unauthenticated alternative state (the `{% if %}`/`{% else %}` branches), completing the 12-slot contract. `[…]` marks slots that may be pruned per-app via `DEFAULT_L1_CONFIG` + `APP_FEATURE_MATRIX` (Section 3.2A); unconditional slots render identically for every satellite.
+- **Responsive Footprint Constraints (Normative)**:
+  - **Small viewports (<640px / below `sm:`) enforce a 3-icon utility limit next to the Persona Enclave**: text labels and secondary pills are pruned so at most three icon affordances (Cart, Notifications, Theme — plus Persona Enclave) compete for the 320–375px budget. Implementations MUST NOT exceed this density; additional slots (Search, L2) are icon-only or pruned at `<640px`.
+  - **Domain Badges must use `hidden sm:inline-flex`**: both `#domain-badge` and `#brand-descriptor-pill` are pruned below `sm:` (`hidden sm:inline-flex`) to preserve the micro-screen width budget alongside the brand lockup and authentication controls.
+  - **Profile edit and sign-out text links must use `hidden md:inline-flex`**: `[ ⚙️ Edit ]` and `Sign Out` are pruned from the primary header below `md:` / 768px. Mobile users access profile editing and session termination via the Persona Enclave dropdown flyout or mobile bottom navigation dock.
+  - **Mobile Action Pruning**: Direct action links (`[ ⚙️ Edit ]`, `Sign Out`) use `hidden md:inline-flex` so they are pruned from the primary header on smaller screens (below `md:` / 768px). Mobile users access profile editing and session termination via the Persona Enclave dropdown flyout or mobile bottom navigation dock.
+- **Responsive Geo-Scope Capsule vs. Brandmark Descriptor Pill Interchange — Global Scope Mutual Exclusion (restored per git audit, pre-c33)**:
+  - When **Authenticated** (`{% if user.is_authenticated or request.user.is_authenticated %}`): Renders the interactive Geographic Scope Capsule wrapped in `<div class="relative inline-block text-left shrink-0" id="geo-scope-container">`, with compact pill button (`#geo-scope-trigger-btn`), pulsing status dot (`shrink-0`), responsive label `<span id="geo-scope-display-label" class="hidden sm:inline font-bold uppercase tracking-wider text-[10px]">` (label hidden on micro-screens to prevent overflow, showing only icon and pulse indicator), and interactive popover ladder modal, **unless** `show_geo_scope` is `False` in the merged L1 config (then the capsule is omitted and the Domain Badge, if any, falls back in the authenticated branch — still never side-by-side with the geo pill).
+  - When **Unauthenticated** (`{% else %}`): Renders the Domain Badge (`<span id="domain-badge" class="hidden sm:inline-flex …">`, e.g. `RESTAURANT OS`) when `domain_badge` is configured, otherwise the static Brandmark Descriptor Pill (`<div id="brand-descriptor-pill" class="hidden sm:inline-flex …">__APP_DESCRIPTOR__</div>`). The badge and the geo-scope pill are mutually exclusive via Django branches — the badge MUST NOT sit side-by-side with the global scope pill. Logged-out renders `[ RESTAURANT OS ]`; logged-in renders `[ ● GLOBAL MESH ▾ ]` and hides the badge. On compact mobile viewports (<640px / `sm:`), both badge and pill are pruned (`hidden sm:inline-flex`) to preserve the 320px/375px horizontal width budget alongside the brand lockup and authentication controls.
 - **Persona Micro-Truncation**: Active persona handle (`#active-persona-display-name`) incorporates granular breakpoint clamps: `truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[140px]`.
 - Data-visualization viewports (`name`, `draw`, `spot`) may permit full-bleed `<main class="w-full">`, but headers and footers **MUST** strictly remain `max-w-7xl mx-auto`.
 
-### 3.2 Standard Header Components
-The canonical `_standard_header.html` provides (all slots visible in both authenticated and unauthenticated states):
+### 3.2 Standard Header Components (Modular Slot Map)
+
+The canonical `_standard_header.html` provides the 12 Layer 1 slots in strict DOM order (slots 1–11 left→right; slot 12 is the auth-alternative state). Unconditional slots render in both auth states as noted; authenticated-only slots (Slots 5–9 in the right cluster) render only inside `{% if user.is_authenticated or request.user.is_authenticated %}`; slot 12 renders in the `{% else %}` branch. Optional slots render only when enabled in the merged L1 config (Section 3.2A); `DEFAULT_L1_CONFIG` reproduces the pre-v2.2.0 visual output exactly:
 
 1. **Session DID Binding**:
    ```javascript
@@ -232,7 +258,7 @@ The canonical `_standard_header.html` provides (all slots visible in both authen
    - Solid vibrant accent button for "Authenticate"
 
 7. **Feature-Gated Persistent L2 Collapser (`#l2-toggle-header-btn`)**:
-   Positioned directly preceding `#theme-toggle`, gated by `{% if SHOW_L2_TOGGLE %}`:
+   Positioned directly preceding `#theme-toggle`. In the default config (`show_l2_toggle=False`) the button is gated by `{% if SHOW_L2_TOGGLE %}` for backward compatibility; when baked via `show_l2_toggle=True` (e.g. `wun`), the generator emits the button statically with no Django guard (see Section 3.2A L2 Toggle Bifurcation):
    ```html
    {% if SHOW_L2_TOGGLE %}
    <button id="l2-toggle-header-btn" type="button"
@@ -246,14 +272,84 @@ The canonical `_standard_header.html` provides (all slots visible in both authen
    </button>
    {% endif %}
    ```
-   - **Feature Flag Contract**: Server setting `SHOW_L2_TOGGLE = env.bool("SHOW_L2_TOGGLE", default=False)` in general satellites, overridden to `True` where Layer 2 ribbons exist (e.g. `iyou_wun`).
+   - **Feature Flag Contract**: Server setting `SHOW_L2_TOGGLE = env.bool("SHOW_L2_TOGGLE", default=False)` in general satellites, overridden to `True` where Layer 2 ribbons exist (e.g. `iyou_wun`). At generation time, `APP_FEATURE_MATRIX["wun"]["show_l2_toggle"]=True` bakes the button; the env gate remains the runtime contract for all other satellites.
    - **Client DOM Check Rule**: In addition to template feature-gating, `theme.js` implements a DOM check rule that auto-hides `#l2-toggle-header-btn` (`btn.style.display = 'none'`) if `#app-l2-ribbon` is absent on the rendered page, preventing inert toggles.
    - **State Persistence**: Toggling adds/removes `.l2-collapsed` on both `document.body` and `document.documentElement`, persisted in `localStorage.setItem('{slug}_l2_collapsed', ...)`.
 
-8. **Outline Theme Toggle**: Sun in light mode, Moon in dark mode (Section 3.5), with `shrink-0`.
+8. **Outline Theme Toggle**: Sun in light mode, Moon in dark mode (Section 3.5), with `shrink-0`. Gated by `show_theme_toggle` (default `True`).
 
-### 3.3 Brandmark Descriptor Registry
-A rounded monospace pill (`#brand-descriptor-pill`) rendered inline in the unauthenticated brand lockup, providing immediate semantic domain classification for visitors before login. Upon authentication, this descriptor swaps dynamically to the interactive Geographic Scope Capsule (`#geo-scope-container`).
+### 3.2A Modular Slot Configuration, Shopping Cart, and `APP_FEATURE_MATRIX` Contract (v2.2.0)
+
+Layer 1 customization is centralized in `omni_social/scripts/generate_templates.py`. Satellites MUST NOT fork `_standard_header.html`; they are customized centrally via the merged config returned by `get_l1_config(slug)`:
+
+```python
+DEFAULT_L1_CONFIG = {
+    "domain_badge": None,
+    "show_geo_scope": True,
+    "show_search": False,
+    "show_cart": False,
+    "show_notifications": True,
+    "show_persona": True,
+    "show_profile_edit": True,
+    "show_sign_out": True,
+    "show_l2_toggle": False,
+    "show_theme_toggle": True,
+    "dual_logo": False,
+}
+APP_FEATURE_MATRIX = {
+    "dine": {"domain_badge": "RESTAURANT OS", "show_cart": True, "show_notifications": False, "show_profile_edit": False, "show_geo_scope": True, "dual_logo": True},
+    "wun": {"domain_badge": "SOCIAL HUB", "show_l2_toggle": True},
+    "poly": {"domain_badge": "CONSENSUS", "show_geo_scope": False, "show_notifications": False},
+    "chat": {"domain_badge": "MESSENGER", "show_geo_scope": False, "show_profile_edit": False},
+}
+def get_l1_config(slug: str) -> dict:
+    config = dict(DEFAULT_L1_CONFIG)
+    config.update(APP_FEATURE_MATRIX.get(slug, {}))
+    return config
+```
+
+**Contract**:
+- **Zero Regressions / Backward Compatibility**: `DEFAULT_L1_CONFIG` reproduces the current exact Layer 1 visual output for every satellite (byte-identical for default apps; e.g. `play` shows zero diff). Overrides in `APP_FEATURE_MATRIX` are opt-in per slug; apps without a matrix entry inherit the default verbatim.
+- **Merge Rule**: `config = {**DEFAULT_L1_CONFIG, **APP_FEATURE_MATRIX.get(slug, {})}`. Unknown slugs default safely; no per-repo edits are required.
+- **Central Customization**: Satellite templates are customized centrally in `omni_social` by editing `DEFAULT_L1_CONFIG` / `APP_FEATURE_MATRIX` and regenerating with `scripts/generate_templates.py <slug> <color>`. Per-satellite forks are forbidden (cf. `PRESERVE_LAYER_1_APPS = set()` in Section 3.7).
+- **Slot Wiring (generation-time conditionals)**: `show_search`, `show_notifications`, `show_profile_edit`, `show_geo_scope`, and `show_l2_toggle` are wired as generation-time conditionals on the merged config (also `show_cart`, `show_persona`, `show_sign_out`, `show_theme_toggle`, `domain_badge`). Disabled slots emit no DOM node; the `{% if user.is_authenticated … %}` / `{% else %}` / `{% endif %}` structure is preserved with empty branches where needed.
+- **Pruning Capabilities**: `show_profile_edit=False` removes `[ ⚙️ Edit ]`; `show_notifications=False` removes `#notification-bell-btn`; `show_geo_scope=False` removes `#geo-scope-container` (the geo-scope ladder modal/script remain inert). Example profiles: `dine` prunes Notifications + Edit but enables Cart; `poly` prunes Geo Scope + Notifications; `chat` prunes Geo Scope + Edit.
+- **Domain Badge Slot (Slot 2) & Global Scope Mutual Exclusion (restored per git audit)**: When `domain_badge` is not `None`, the rectangular monospace badge `<span id="domain-badge" class="hidden sm:inline-flex …">` renders **only** in the unauthenticated `{% else %}` branch (or, when `show_geo_scope=False`, as the authenticated fallback), and **MUST NOT** sit side-by-side with the `#geo-scope-container` global-scope pill. Logged-out renders `[ RESTAURANT OS ]`; logged-in renders `[ ● GLOBAL MESH ▾ ]` and hides the badge. When `None`, no badge element is emitted and the descriptor pill renders as before.
+- **Shopping Cart Slot (`show_cart`, Slot 5; high-contrast cyber-grit aesthetic)**:
+  Emitted in the right cluster immediately after Geo Scope and before Notifications when `show_cart=True` (authenticated state; `iyou_dine` canonical):
+  ```html
+  <!-- Shopping Cart Drawer Trigger -->
+  <button
+    id="header-cart-btn"
+    type="button"
+    class="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95"
+    title="Open Order Tray"
+    aria-label="Shopping Cart"
+  >
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+    </svg>
+    <span
+      id="cart-count-badge"
+      class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-{color}-500 text-white dark:text-slate-950 text-[10px] font-mono font-bold items-center justify-center shadow-sm"
+    >0</span>
+  </button>
+  ```
+  - **Trigger**: `#header-cart-btn` with bag SVG (`w-5 h-5`), `title="Open Order Tray"`, `aria-label="Shopping Cart"`, `active:scale-95` press feedback.
+  - **Badge**: `#cart-count-badge` (`hidden` until count > 0) with `{color}-500` background, white text in light mode / slate-950 in dark mode (high-contrast), monospace bold 10px, `min-w-[18px] h-[18px]`, absolutely positioned `-top-0.5 -right-0.5`.
+  - **Search Slot (`show_search`, Slot 3)** is an opt-in `#header-search-btn` magnifier (`w-5 h-5`) placed after Domain Badge and before Geo Scope; default `False` (no output).
+  - **L2 Toggle Bifurcation**: When `show_l2_toggle=True` (e.g. `wun`), the generator emits the button statically baked in (no `{% if SHOW_L2_TOGGLE %}` guard). When `False` (default), the generator retains the `{% if SHOW_L2_TOGGLE %}` Django gate for backward compatibility with runtime env overrides.
+
+### 3.3 Brandmark Descriptor Registry & Domain Badge
+
+A rounded monospace pill (`#brand-descriptor-pill`) rendered inline in the unauthenticated brand lockup provides immediate semantic domain classification for visitors before login. Upon authentication, this descriptor swaps dynamically to the interactive Geographic Scope Capsule (`#geo-scope-container`). Apps that opt into a `domain_badge` (Section 3.2A) render the rectangular monospace Domain Badge (`#domain-badge`) in the unauthenticated branch instead of the pill; the badge is mutually exclusive with the geo-scope pill (never side-by-side):
+
+```html
+<!-- Domain Badge (Modular Slot 2, when domain_badge is not None) -->
+<span id="domain-badge" class="hidden sm:inline-flex items-center px-2 py-0.5 rounded border border-{color}-300 dark:border-{color}-800/60 bg-{color}-50/80 dark:bg-{color}-950/40 text-[10px] font-mono font-bold uppercase tracking-widest text-{color}-700 dark:text-{color}-300 shrink-0 select-none">
+  __DOMAIN_BADGE__
+</span>
+```
 
 ```html
 <div id="brand-descriptor-pill"
@@ -284,8 +380,10 @@ A rounded monospace pill (`#brand-descriptor-pill`) rendered inline in the unaut
 | `dev` | `DEVELOPER PORTAL` | Mesh Operations & Developer Tools |
 | `spot` | `LOCAL DISCOVERY` | Geolocation & Local Discovery |
 | `baba` | `STICKER VAULT` | Sovereign Sticker Vault, Discovery Index & Curation Foundry |
+| `chat` | `MESSENGER HUB` | Sovereign Messenger Hub & Standalone Dock (Domain Badge: `MESSENGER`) |
+| `dine` | `RESTAURANT OS` | Sovereign Restaurant Operating System (Domain Badge: `RESTAURANT OS`) |
 
-The descriptor is sourced from `APP_DESCRIPTORS` in `scripts/generate_templates.py` and is templated via `__APP_DESCRIPTOR__` in the standard header generator.
+The descriptor is sourced from `APP_DESCRIPTORS` in `scripts/generate_templates.py` and is templated via `__APP_DESCRIPTOR__` in the standard header generator. The Domain Badge text is sourced from `APP_FEATURE_MATRIX[slug]["domain_badge"]` (e.g. `dine` → `RESTAURANT OS`, `wun` → `SOCIAL HUB`, `poly` → `CONSENSUS`, `chat` → `MESSENGER`) and **must** use `hidden sm:inline-flex`, mutually exclusive with the global-scope pill.
 
 ### 3.4 Logged-Out Authentication Block (The Poly Standard)
 When no active session exists, the standard header renders a two-part authenticated gate matching `iyou_poly` production screenshots:
@@ -325,7 +423,8 @@ The `#theme-toggle` button uses the `block dark:hidden` / `hidden dark:block` pa
 </button>
 ```
 
-### 3.6 Dual-Asset Logo Hierarchy
+### 3.6 Dual-Asset Logo Hierarchy & Dual Light/Dark Logos (v2.2.0, ca388a3)
+
 To optimize performance and eliminate loading high-res square master assets (~512–768px) for the 44–48px (`w-11 h-11 sm:w-12 sm:h-12 rounded-xl`) rendering slot, satellites implement a dual-asset logo hierarchy:
 - **`static/img/logo_square_sm.png`**: 64×64 or 96×96 px — dedicated for the Layer 1 header squircle stamp. Minimizes network payload and ensures sharp rasterization on standard and Retina displays.
 - **`static/img/logo_square.png`**: High-res square master — dedicated for `_footer.html`, favicons, Apple Touch icons, and PWA icon generation.
@@ -335,8 +434,17 @@ To optimize performance and eliminate loading high-res square master assets (~51
   ```
   This ensures satellites that haven't generated `logo_square_sm.png` yet safely resolve to `logo_square.png` without displaying a broken image box.
 
+**Dual Light/Dark Logos (`dual_logo=True`, e.g. `iyou_dine` and `iyou_clar` with `logo_light.png`/`logo_square_light.png` + `logo_dark.png`/`logo_square_dark.png`)**: When `APP_FEATURE_MATRIX[slug]["dual_logo"]` is `True`, the generator emits two images with pure-CSS theme toggling in both Layer 1 and Layer 3 (no JS):
+```html
+<img src="{% static 'img/logo_light.png' %}" class="block dark:hidden h-8 w-8 rounded-lg object-contain shadow-sm border border-slate-200" alt="dine">
+<img src="{% static 'img/logo_dark.png' %}" class="hidden dark:block h-8 w-8 rounded-lg object-contain shadow-sm border border-slate-800" alt="dine">
+```
+- `logo_light.png` / `logo_square_light.png` (`block dark:hidden`) renders on light surfaces; `logo_dark.png` / `logo_square_dark.png` (`hidden dark:block`) renders on dark surfaces.
+- Layer 3 (`_footer.html`) mirrors the same pair at footer scale (`h-20 w-20 sm:h-24 sm:w-24 rounded-2xl`).
+- When `dual_logo` is `False` (default, e.g. `poly`, `wun`), the generator retains the canonical single `logo_square_sm.png` (+ `onerror` fallback to `logo_square.png`) image tag. This preserves backward compatibility while enabling dual assets in `iyou_dine` and `iyou_clar` (see `BRAND_ASSET_STANDARDIZATION_SPEC`, ca388a3, for the fleet filename grammar: `<subject>[_<shape>][_<variant>][_<size>]` with pure-CSS `block dark:hidden` / `hidden dark:block` switching and no `onerror` for dual assets).
+
 ### 3.7 Unified Standard Header — Deprecation of PRESERVE_LAYER_1_APPS
-All 20 applications (19 relying-party satellites + sovereign hub) now receive the standardized canonical `_standard_header.html` from `generate_templates.py` — no custom exceptions are preserved. The domain badge (`APP_METADATA.badge`) provides the per-app semantic classification.
+All 20 applications (19 relying-party satellites + sovereign hub) now receive the standardized canonical `_standard_header.html` from `generate_templates.py` — no custom exceptions are preserved. The domain badge (`#domain-badge` via `APP_FEATURE_MATRIX[slug]["domain_badge"]`, or `#brand-descriptor-pill` via `APP_METADATA.badge` / `APP_DESCRIPTORS`) provides the per-app semantic classification.
 
 `PRESERVE_LAYER_1_APPS` is formally deprecated and cleared across all generator and synchronization tooling:
 
@@ -345,10 +453,10 @@ All 20 applications (19 relying-party satellites + sovereign hub) now receive th
 PRESERVE_LAYER_1_APPS = set()
 ```
 
-- **`iyou_poly`**: Removed from preserve set; now renders the `CONSENSUS ENGINE` badge via the canonical header.
+- **`iyou_poly`**: Removed from preserve set; now renders the `CONSENSUS` Domain Badge via the canonical header (matrix), with `CONSENSUS ENGINE` retained as the `APP_DESCRIPTORS` fallback.
 - **`iyou_name`**: Removed from preserve set; now renders the `SOVEREIGN` badge via the canonical header.
 
-The `--skip-header` flag is retained only for local debugging/development workflows, but all 20 applications in the sovereign mesh strictly adhere to this universal Layer 1 header contract.
+The `--skip-header` flag is retained only for local debugging/development workflows, but all 20 applications in the sovereign mesh strictly adhere to this universal Layer 1 header contract. Per-app slot specialization is expressed exclusively through `APP_FEATURE_MATRIX` (Section 3.2A), centralized in `omni_social`; satellites MUST NOT fork headers.
 
 ---
 

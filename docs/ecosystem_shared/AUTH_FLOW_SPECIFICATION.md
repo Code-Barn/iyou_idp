@@ -55,7 +55,7 @@ clients. This means:
 - `_scope = "openid profile email"` — default scope set
 - `require_consent = False` / `reuse_consent = True` — consent bypassed entirely for trusted satellites
 
-**Client ID format:** `{slug}-satellite-client` (e.g., `iyou-wun-satellite-client`)
+**Client ID format:** `iyou-{slug}-satellite-client` (e.g., `iyou-wun-satellite-client`)
 
 **Registered redirect URIs:** Each client has one or more `https://{subdomain}.iyou.me/oidc/callback/` URIs.
 
@@ -811,13 +811,23 @@ response = requests.post(
 )
 ```
 
-### 17.4 Ingress Alignment (No Split-Brain)
-`IDP_BASE_INTERNAL_URL` must default to `IDP_BASE_PUBLIC_URL` (`https://iyou.me`) in local dev and environments where direct ingress is accessible. Internal Kubernetes cluster service URLs (e.g. `http://iyou-idp.mesh.svc.cluster.local:8000`) are strictly injected via Helm in production to prevent split-brain routing and TLS/network mismatches.
+### 17.4 Immutable Identity & OIDC URL Contract (No Split-Brain)
+All satellite apps must adhere to the immutable OIDC endpoint topology:
+- **External (Browser-Facing) Authorize Endpoint:**
+  `OIDC_OP_AUTHORIZATION_ENDPOINT = "https://iyou.me/openid/authorize/"`
+- **Internal Cluster Back-Channel Endpoints (Direct Pod-to-Pod via CoreDNS, Port 80 ClusterIP in `identity` namespace):**
+  - `OIDC_OP_TOKEN_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/token/"`
+  - `OIDC_OP_USER_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/userinfo/"`
+  - `OIDC_OP_JWKS_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/jwks/"`
+  *(Note: Must strictly use `/openid/`, NEVER `/oidc/`. Service port is 80, not 8000).*
 
-### 17.5 Resilient Cookies & Logout
-Session cookie security and domain isolation must dynamically follow the deployment environment:
-- Set `SESSION_COOKIE_SECURE = not DEBUG`
-- Set `SESSION_COOKIE_DOMAIN = None if DEBUG else ".iyou.me"`
+### 17.5 App-Scoped Cookies & Resilient Logout
+Session and CSRF cookies must be app-scoped and host-only to prevent cookie collisions across `*.iyou.me`:
+- `SESSION_COOKIE_NAME = env("SESSION_COOKIE_NAME", default=f"{APP_SLUG}_sessionid")`
+- `CSRF_COOKIE_NAME = env("CSRF_COOKIE_NAME", default=f"{APP_SLUG}_csrftoken")`
+- `SESSION_COOKIE_DOMAIN = None` and `CSRF_COOKIE_DOMAIN = None` (Strictly host-only, never wildcard `.iyou.me`)
+- `SESSION_COOKIE_SECURE = not DEBUG` and `CSRF_COOKIE_SECURE = not DEBUG`
+- `SESSION_COOKIE_HTTPONLY = True` and `CSRF_COOKIE_HTTPONLY = False`
 - `PKCEOIDCLogoutView` must support both `GET` and `POST` methods to prevent HTTP 405 Method Not Allowed errors on user sign-out from varied satellite interfaces.
 
 ---
@@ -878,5 +888,31 @@ The canonical Persona Enclave partial (`templates/includes/_persona_enclave.html
   - Active persona status dot (`#active-persona-dot`): Emerald pulsing dot (`bg-emerald-500 animate-pulse`) with `title="Sovereign Key Active"`.
   - Level badge (`#active-persona-level`): Violet badge rendering `L1` (or `L{{ active_persona_level }}`).
   - Bridge status label (`#persona-bridge-status`): Emerald label rendering `Bridge Connected`.
+
+---
+
+## 19. Canonical Satellite App Onboarding Contract (`ONBOARD_APP.md`)
+
+To eliminate setting drift, inconsistent internal cluster URLs, cookie collisions, and divergent `auth_pkce.py` implementations, every satellite app must follow `docs/ecosystem_shared/ONBOARD_APP.md` verbatim:
+
+1. **Identity & OIDC URL Contract (Immutable):**
+   - `OIDC_OP_AUTHORIZATION_ENDPOINT = "https://iyou.me/openid/authorize/"`
+   - `OIDC_OP_TOKEN_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/token/"` (Port 80 ClusterIP)
+   - `OIDC_OP_USER_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/userinfo/"`
+   - `OIDC_OP_JWKS_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/jwks/"`
+2. **Satellite Django `config/settings.py` Standard:**
+   - App-scoped cookies (`{APP_SLUG}_sessionid`, `{APP_SLUG}_csrftoken`), `SESSION_COOKIE_DOMAIN = None`, `CSRF_COOKIE_DOMAIN = None`.
+   - `OIDC_RP_CLIENT_ID = f"iyou-{APP_SLUG}-satellite-client"`, `OIDC_RP_CLIENT_SECRET = None`, `OIDC_RP_SIGN_ALGO = "RS256"`, `OIDC_RP_SCOPES = "openid profile email"`.
+   - `AUTHENTICATION_BACKENDS = ["apps.core.auth_pkce.PKCEAuthenticationBackend", "django.contrib.auth.backends.ModelBackend"]`.
+   - `LOGIN_URL = "/oidc/authenticate/"`, `LOGIN_REDIRECT_URL = "/"`, `LOGOUT_REDIRECT_URL = "/"`.
+3. **Standard URL Routing (`config/urls.py`):**
+   - `/oidc/authenticate/` (`oidc_authentication_init`), `/oidc/callback/` (`oidc_authentication_callback`), `/oidc/logout/` (`oidc_logout`), plus compatibility aliases `/accounts/login/` and `/accounts/logout/`.
+4. **Helm `values.yaml` Contract (`k3s_vm/apps/iyou-<slug>/`):**
+   - Injects canonical `OIDC_OP_*` endpoints, `<slug>_sessionid` / `<slug>_csrftoken`, and `SECURE_PROXY_SSL_HEADER: "HTTP_X_FORWARDED_PROTO,https"`.
+5. **Verification Checklist:**
+   - Registered in `iyou-idp` client seeder (`require_consent: False`, `reuse_consent: True`, PKCE public).
+   - Database migrations applied (`auth_user`, `django_session` must exist).
+   - Back-channel smoke test: container can `curl http://iyou-idp.identity.svc.cluster.local/openid/jwks/` with HTTP 200.
+
 
 

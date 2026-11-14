@@ -23,7 +23,7 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | dc_tech_website | `~/CODE_BASE/dc_tech_website/` | [TODO.md](../../../dc_tech_website/TODO.md) | ✅ Hardened / Operational | Proxy header, public client, state relay — all verified. |
 | iyou_safe | `~/CODE_BASE/iyou_safe/` | [TODO.md](../../../iyou_safe/TODO.md) | ✅ Hardened / Operational | Exception guard, proxy header, public client, state relay — all verified. |
 | iyou_talk | `~/CODE_BASE/iyou_talk/` | [TODO.md](../../../iyou_talk/TODO.md) | ✅ Hardened / Operational | 4-rule alignment complete. |
-| iyou_clar | `~/CODE_BASE/iyou_clar/` | [TODO.md](../../../iyou_clar/TODO.md) | ✅ Hardened / Operational | Zero-secret backend. Proxy header, state relay, dirty-flag — all verified. |
+| iyou_clar | `~/CODE_BASE/iyou_clar/` | [TODO.md](../../../iyou_clar/TODO.md) | ✅ Hardened / Operational | Zero-secret backend, proxy header, state relay, dual-theme Capricorn crest logos codified. |
 | iyou_play | `~/CODE_BASE/iyou_play/` | [TODO.md](../../../iyou_play/TODO.md) | ✅ Hardened / Operational | Reference implementation. Standard mozilla_django_oidc defaults. |
 | iyou_blog | `~/CODE_BASE/iyou_blog/` | [TODO.md](../../../iyou_blog/TODO.md) | 🟡 Onboarding | Deep Django layout. CDN tailwind (Rule 7), secret present (Rule 2), generic OIDC backend (needs PKCE). |
 | iyou_help | `~/CODE_BASE/iyou_help/` | [TODO.md](../../../iyou_help/TODO.md) | ✅ Operational | Help & Support. Color: `red`. |
@@ -35,6 +35,9 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | iyou_spot | `~/CODE_BASE/iyou_spot/` | [TODO.md](../../../iyou_spot/TODO.md) | 🟡 Onboarding | Local Discovery & Recommendations. Color: `pink`. |
 | iyou_baba | `~/CODE_BASE/iyou_baba/` | [TODO.md](../../../iyou_baba/TODO.md) | 🟢 Operational (PKCE Secretless) | Sovereign Sticker Vault, Discovery Index & Curation Foundry. Color: `blue`. Domain: `baba.iyou.me`. Dev port: 8016. Cookie namespaces: `baba_sessionid`, `baba_csrftoken`. |
 | iyou_chat | `~/CODE_BASE/iyou_chat/` | [TODO.md](../../../iyou_chat/TODO.md) | 🟡 Onboarding (target: PKCE Secretless) | Sovereign Messenger Hub, MAM Archive, standalone messenger UI, and embeddable dock bundle. Color: `blue` (#3B82F6). Dev port: `8017`. Domain: `chat.iyou.me`. |
+| iyou_dine | `~/CODE_BASE/iyou_dine/` | [TODO.md](../../../iyou_dine/TODO.md) | 🟢 Operational (PKCE Secretless) | Sovereign Restaurant Operating System, 0% Take-Rate Settlement, Line-to-Floor Telemetry. Color: `amber` (`#F59E0B`). Port: `8028`. Path: `~/CODE_BASE/iyou_dine`. Domain: `dine.iyou.me`. Client ID: `iyou-dine-satellite-client`. Cookie namespaces: `dine_sessionid`, `dine_csrftoken`, `dine_theme`. Badge: `RESTAURANT OS`. |
+| iyou_show | `~/CODE_BASE/iyou_show/` | [TODO.md](../../../iyou_show/TODO.md) | 🟡 Incubating (target: PKCE Secretless) | Zero-Custody Video Channel Indexer & Multi-Source Player (`Plyr.js`). Color: `rose` (`#F43F5E`). Port: `8029`. Domain: `show.iyou.me`. Client ID: `iyou-show-satellite-client`. Cookie namespaces: `show_sessionid`, `show_csrftoken`. Badge: `VIDEO INDEX`. |
+| iyou_muse | `~/CODE_BASE/iyou_muse/` | [TODO.md](../../../iyou_muse/TODO.md) | 🟡 Incubating (target: PKCE Secretless) | Attribution-First Public Exhibition Gallery (Blossom `BUD-01` + Kind `1063`). Color: `indigo` (`#6366F1`). Port: `8030`. Domain: `muse.iyou.me`. Client ID: `iyou-muse-satellite-client`. Cookie namespaces: `muse_sessionid`, `muse_csrftoken`. Badge: `EXHIBITION`. |
 
 ### Supporting Projects & Micro-Satellites (Not in Ecosystem Bar)
 
@@ -139,7 +142,7 @@ Canonical spec: `docs/specs/BRAND_ASSET_STANDARDIZATION_SPEC.md`. Filename-gramm
 | BRAND-003 — Pure-CSS dual-theme markup | omni_social | Open | `generate_standard_header()` (L1052–1082) and `generate_footer()` (L1085–1132) emit `block dark:hidden` + `hidden dark:block` pairs. Remove both inline `onerror` handlers (CSP-hostile, flashes broken alt text). |
 | BRAND-004 — `repo_dir` threading | omni_social | Open | `generate()` gains `repo_dir`/`logo_mode` params + git-root inference; `--repo-dir`/`--logo-mode` CLI flags; update `regenerate_all.py` and `ecosystem_integration.py` call sites. |
 | BRAND-005 — Asset migration to canonical grammar | iyou_poly, iyou_hive, iyou_name, iyou_wun, iyou_spot, iyou_draw | Open | `poly_mascot_*`→`mascot_*`; `hiver_mascot_*`→`mascot_*`; `tinynamelogo*_DM`→`logo_wide{,_dark}`; `M_LOGO.png`→`logo_square.png`; delete wun's 1×1 `logo.png` stub; move repo-root masters into `brand/`. |
-| BRAND-006 — No-broken-image guarantee | 12 asset-less satellites | Open | `idp`, `ride`, `dctech`, `safe`, `talk`, `clar`, `play`, `blog`, `help`, `life`, `walk`, `stay`, `dev` currently render a broken `<img alt="talk">` in both Layer 1 and Layer 3. Terminal `GLYPH_ONLY` monogram fallback retires this fleet-wide. |
+| BRAND-006 — No-broken-image guarantee | 11 asset-less satellites | Open | `idp`, `ride`, `dctech`, `safe`, `talk`, `play`, `blog`, `help`, `life`, `walk`, `stay`, `dev` currently render a broken `<img alt="talk">` in both Layer 1 and Layer 3 (`clar` resolved with dual light/dark assets). Terminal `GLYPH_ONLY` monogram fallback retires this fleet-wide. |
 | BRAND-007 — React SPA parity | iyou_hive | Open | `StandardHeader.tsx` + `MascotFooter.tsx` use JS `onError` handlers and `.jpg` mascots. Port to `mascot_*.png` + CSS visibility classes; dedupe the triplicated `img/` trees. |
 | BRAND-008 — Fleet regeneration | all 20 apps | Open | After BRAND-002…007: `regenerate_all.py` across the roster. Verify byte-identical second run (idempotence) and zero missing-asset paths. |
 
@@ -156,7 +159,9 @@ Canonical spec: `docs/specs/BRAND_ASSET_STANDARDIZATION_SPEC.md`. Filename-gramm
 | **Immediate Integrity Execution Plan** | [`IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md`](strategy/IMMEDIATE_INTEGRITY_EXECUTION_PLAN.md) | Active Execution Blueprint | Tactical sprint rollout: Phase 1 near-term zero-cost engineering (Invariant Alert hook specs `INVARIANT_ALERT_PUSH`, read-only database guards, fail-closed bridge checks), Phase 2 entity ring-fencing & Purpose Trust charter drafting, Phase 3 automated key decay & community witnesses. |
 | **Dependent Identity & Graduation Spec** | [`DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md`](specs/DEPENDENT_IDENTITY_AND_GRADUATION_SPEC.md) | Canonical Living Spec | Parent-stewarded minors: client-side Web-of-Trust graph distance replaces intrusive cloud age verification; `iyou_home` enclave child subkey derivation (`m/iyou/dependent/<index>`); zero-PII `DependentTokenSlot` age-bracket VCs signed by parent DID; 5-year Trust Ladder (Stages 1–3); Sovereign Graduation zero-loss key export; automated restorative intervention (`iyou_safe` → `iyou_talk` COGS/POGS routing). |
 | **Universal Profile Metadata & Cross-Satellite Sync (RFC-006)** | [`specs/RFC-006-universal-profile-metadata.md`](specs/RFC-006-universal-profile-metadata.md) | Canonical Living Spec (Implemented v0.2.2) | Universal profile metadata (handle, display name, avatar, banner, bio, nip05); `SET_PROFILE_METADATA` ingress & `profile_sync` Port 9001 broadcast; Level 0 air-gap enforcement; canonical `.mesh-user-handle` / `.mesh-user-avatar` reactive DOM hydration without reload. |
+| **Canonical Creator Ecosystem Spec** | [`specs/CREATOR_ECOSYSTEM_SPEC.md`](specs/CREATOR_ECOSYSTEM_SPEC.md) | Canonical Living Spec (`OMNI-CREATOR-SPEC-V1`) | Strict separation of concerns (Creator vs. Artifact vs. Stream): `iyou_clar` identity & multi-platform link registry (`CreatorPlatformLink`), `iyou_muse` attribution-first exhibition gallery (Blossom `BUD-01` + Nostr Kind `1063`), `iyou_show` zero-custody Plyr.js multi-source player, and `iyou_hear` sovereign V4V audio router; inherited `dep.bracket` youth ring-fencing and zero-custody storage invariants. |
 | **Ecosystem Vision & Dual-Entity Charter** | [`strategy/ECOSYSTEM_VISION_AND_DUAL_ENTITY_CHARTER.md`](strategy/ECOSYSTEM_VISION_AND_DUAL_ENTITY_CHARTER.md) | Canonical Living Charter | Defines Perpetual Purpose Trust vs. Byers Brands LLC separation, OMNI mythos, moderation posture, and launch perimeter roadmap. |
+| **Mission-Aligned Monetization & Pre-PPT Charter** | [`strategy/MISSION_MONETIZATION_AND_PPT_BRIDGE.md`](strategy/MISSION_MONETIZATION_AND_PPT_BRIDGE.md) | Canonical Operating Charter (`OMNI-STRAT-MONETIZATION-V1`) | Codified operating charter: The 4 Immutable Mission Invariants (0% protocol take-rate, $0 forever single-operator baseline, zero-surveillance ads, copyleft poison pill), 6 Approved Commercial Engines (Multi-Unit Pro, Municipal Appliances, Infrastructure Leases, Managed Custodial, Physical Hardware, Contextual Sponsorships), and 3-Phase Pre-PPT Bootstrap Bridge. |
 
 ---
 
@@ -178,6 +183,26 @@ Canonical spec: `docs/specs/BRAND_ASSET_STANDARDIZATION_SPEC.md`. Filename-gramm
 | GEO-002 — L1 Auth-Gated Brand Lockup | All 20 apps | Complete | Anonymous users see static monospace badge; authenticated users receive interactive scope capsule (`#geo-scope-trigger-btn`). |
 | GEO-003 — Hierarchical Popover Ladder Modal | All 20 apps | Complete | Embedded `#geo-scope-modal` with right-to-left tier rendering, quick scope search, switch actions, and localStorage history. |
 | GEO-004 — Fleet Template Regeneration | 18 Satellites | Complete | Fleet-wide templates regenerated via `scripts/regenerate_all.py` without Layer 2 drift. Verified with reference satellites `iyou_play` and `iyou_wun`. |
+
+---
+
+### Canonical Creator Ecosystem Architecture Rollout (OMNI-CREATOR-SPEC-V1)
+
+Canonical spec: `docs/specs/CREATOR_ECOSYSTEM_SPEC.md`. Strict 4-tier separation of concerns across `iyou_clar` (Identity & Link Registry), `iyou_muse` (Visual Exhibition Gallery), `iyou_show` (Zero-Custody Video Player), and `iyou_hear` (Sovereign Audio & V4V).
+
+| Ticket | Target Repo | Status | Notes |
+|:---|:---|:---|:---|
+| CES-101 — Smart Creator Scout | iyou_clar | Open | Automated link crawler & metadata scraper for multi-platform presence discovery. |
+| CES-102 — Priority Sequencer | iyou_clar | Open | Locality-weighted curator ranking engine (`[vote_country, vote_state, vote_locality]`) with Schnorr BIP-340 verification. |
+| CES-103 — Public Curator Permalinks | iyou_clar | Open | Human-readable `/@handle` and `/@handle/manifest.json` permalinks exporting canonical `CreatorPlatformLink` schemas. |
+| CES-201 — Video Satellite Chassis | iyou_show | Open | Django 6.1 lightweight satellite scaffolding, Secretless PKCE OIDC (`auth_pkce.py`), port 8029, domain `show.iyou.me`. |
+| CES-202 — Plyr.js Multi-Source Engine | iyou_show | Open | Unified player unifying Blossom BUD-01 MP4/WebM mirrors with YouTube/Odysee/Rumble external embeds and client-side failover. |
+| CES-203 — Discovery Ring-Fencing | iyou_show | Open | Enforce `dep.bracket` youth guards on video discovery feeds and interstitial warnings on external links. |
+| CES-301 — Exhibition Gallery Canvas | iyou_muse | Open | Attribution-first museum-grade exhibition gallery, zoomable high-res canvas, dark/light studio themes. |
+| CES-302 — BUD-01 & Kind 1063 Ingestion | iyou_muse | Open | Ingest visual artifacts from `iyou_draw` and Nostr relays; verify SHA-256 hashes against Blossom nodes. |
+| CES-303 — Zero-Algorithm Invariant | iyou_muse | Open | Verify zero recommendation feeds, zero comment forms, and pure chronological/curator gallery ordering. |
+| CES-401 — Sovereign Audio Aggregator | iyou_hear | Backlog | Ingest music, podcasts, stems, and Podcasting 2.0 RSS / Nostr Kind 1063 audio feeds. |
+| CES-402 — Value-for-Value Stream Router | iyou_hear | Backlog | Dynamic Lightning (LUD-06/16) and Cashu ecash split stream router. |
 
 ---
 

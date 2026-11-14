@@ -44,7 +44,7 @@ Legend — **L1** = Layer 1 header logo, **L3** = Layer 3 footer brand block. "B
 | `dctech` | indigo | *(none)* | — | ❌ broken | ❌ broken | F-01, F-02 |
 | `safe` | rose | *(none)* | — | ❌ broken | ❌ broken | F-01, F-02 |
 | `talk` | cyan | *(none)* | — | ❌ broken | ❌ broken | F-01, F-02 |
-| `clar` | emerald | *(none)* | — | ❌ broken | ❌ broken | F-02 (deep Django layout) |
+| `clar` | emerald | `logo_square.png` (360²), `logo_square_sm.png` (25²), `logo_square_light.png` (511²), `logo_square_dark.png` (360²), `icon-192/512.png` | — | ✅ **dual** | ✅ **dual** | Dual light/dark Capricorn crests |
 | `play` | amber | *(none)* | — | ❌ broken | ❌ broken | F-01, F-02 |
 | `blog` | sky | *(none)* | — | ❌ broken | ❌ broken | F-01, F-02 |
 | `help` | red | *(none)* | — | ❌ broken | ❌ broken | F-01, F-02 |

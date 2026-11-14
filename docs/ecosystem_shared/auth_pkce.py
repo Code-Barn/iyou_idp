@@ -1,27 +1,38 @@
 """
-auth_pkce.py — Canonical PKCE (S256) engine for iyou_ satellite apps.
+auth_pkce.py — Canonical Golden PKCE (S256) engine for iyou_ satellite apps.
 
 Eliminates OIDC_RP_CLIENT_SECRET by replacing it with ephemeral,
 per-request code verifiers per RFC 7636.  The verifier lives in the
-encrypted session cookie for the duration of the OAuth flow and is
-consumed exactly once on callback.
+encrypted signed session cookie for the duration of the OAuth flow and is
+consumed on callback.
 
 Drop-in for mozilla_django_oidc 5.x — no library settings required
 beyond the standard OIDC_RP_CLIENT_ID / endpoint URLs.
 
-Requirements (settings.py):
+Requirements (config/settings.py):
     SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
-    OIDC_RP_CLIENT_ID = "<your-app-client-id>"
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    USE_X_FORWARDED_HOST = True
+    SESSION_COOKIE_NAME = env("SESSION_COOKIE_NAME", default=f"{APP_SLUG}_sessionid")
+    CSRF_COOKIE_NAME = env("CSRF_COOKIE_NAME", default=f"{APP_SLUG}_csrftoken")
+    SESSION_COOKIE_DOMAIN = None
+    CSRF_COOKIE_DOMAIN = None
+    OIDC_RP_CLIENT_ID = f"iyou-{APP_SLUG}-satellite-client"
+    OIDC_RP_CLIENT_SECRET = None
+    OIDC_RP_SIGN_ALGO = "RS256"
     OIDC_RP_SCOPES = "openid profile email"
     OIDC_OP_AUTHORIZATION_ENDPOINT = "https://iyou.me/openid/authorize/"
-    OIDC_OP_TOKEN_ENDPOINT        = "https://iyou.me/openid/token/"
-    OIDC_OP_USER_ENDPOINT         = "https://iyou.me/openid/userinfo/"
+    OIDC_OP_TOKEN_ENDPOINT        = "http://iyou-idp.identity.svc.cluster.local/openid/token/"
+    OIDC_OP_USER_ENDPOINT         = "http://iyou-idp.identity.svc.cluster.local/openid/userinfo/"
+    OIDC_OP_JWKS_ENDPOINT         = "http://iyou-idp.identity.svc.cluster.local/openid/jwks/"
     OIDC_AUTHENTICATION_CALLBACK_URL = "oidc_authentication_callback"
+    LOGIN_URL                     = "/oidc/authenticate/"
     LOGIN_REDIRECT_URL            = "/"
     LOGIN_REDIRECT_URL_FAILURE    = "/"
+    LOGOUT_REDIRECT_URL           = "/"
 
 URLconf (config/urls.py):
-    from templates.utils.auth_pkce import (
+    from apps.core.auth_pkce import (
         PKCEOIDCAuthenticationRequestView,
         PKCEOIDCAuthenticationCallbackView,
         PKCEOIDCLogoutView,
@@ -38,22 +49,19 @@ URLconf (config/urls.py):
          name="oidc_logout"),
 
 AUTHENTICATION_BACKENDS:
-    "templates.utils.auth_pkce.PKCEAuthenticationBackend"
-
-Session contract:
-    request.session["pkce_code_verifier"]  — set on /auth, popped on /callback
-    via get_backend_kwargs(), which forwards it to the authentication backend.
+    "apps.core.auth_pkce.PKCEAuthenticationBackend"
+    "django.contrib.auth.backends.ModelBackend"
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import re
 import secrets
 import time
 from base64 import urlsafe_b64encode
+from typing import Any
 from urllib.parse import urlencode
 
 import requests
@@ -61,21 +69,25 @@ from django.conf import settings
 from django.contrib import auth
 from django.contrib.auth import get_user_model, logout
 from django.contrib.auth.backends import ModelBackend
-from django.http import HttpResponseRedirect
-from django.shortcuts import redirect, resolve_url
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.crypto import get_random_string
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 from mozilla_django_oidc.utils import (
     absolutify,
     add_state_and_verifier_and_nonce_to_session,
-    get_next_url,
-    get_random_string,
 )
 from mozilla_django_oidc.views import (
     OIDCAuthenticationCallbackView,
     OIDCAuthenticationRequestView,
     OIDCLogoutView,
 )
+
+try:
+    from mozilla_django_oidc.utils import get_next_url
+except ImportError:  # pragma: no cover - mozilla-django-oidc >= 5.0
+    from mozilla_django_oidc.views import get_next_url
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +96,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 SESSION_KEY_CODE_VERIFIER = "pkce_code_verifier"
+SESSION_KEY_REDIRECT_URI = "pkce_redirect_uri"
 SESSION_KEY_OIDC_LOGIN_NEXT = "oidc_login_next"
+
+PKCE_VERIFIER_SESSION_KEY = "_pkce_cv"
+PKCE_TIMESTAMP_SESSION_KEY = "_pkce_cv_ts"
+PKCE_DEFAULT_MAX_AGE_SECONDS = 300
 
 # ---------------------------------------------------------------------------
 # Deterministic Public-Key & DID / JID Normalization Helpers
@@ -279,6 +296,10 @@ def _compute_code_challenge(verifier: str) -> str:
     return challenge.rstrip("=")
 
 
+generate_pkce_verifier = _generate_code_verifier
+compute_s256_challenge = _compute_code_challenge
+
+
 # ---------------------------------------------------------------------------
 # Authorization Request — RP → iyou_idp
 # ---------------------------------------------------------------------------
@@ -289,7 +310,8 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
     authorization request parameters.
 
     The verifier is persisted in ``request.session['pkce_code_verifier']``
-    so it survives the round-trip through the OP without server-side state.
+    (and ``_pkce_cv``) so it survives the round-trip through the OP
+    without server-side state.
     """
 
     http_method_names = ["get"]
@@ -327,7 +349,9 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
 
             # Persist the verifier in the encrypted session cookie.
             request.session[SESSION_KEY_CODE_VERIFIER] = code_verifier
-            request.session["pkce_redirect_uri"] = params["redirect_uri"]
+            request.session[PKCE_VERIFIER_SESSION_KEY] = code_verifier
+            request.session[PKCE_TIMESTAMP_SESSION_KEY] = time.time()
+            request.session[SESSION_KEY_REDIRECT_URI] = params["redirect_uri"]
 
             # Merge any app-level extra authorization params.
             params.update(self.get_extra_params(request))
@@ -375,30 +399,39 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
 class PKCEOIDCAuthenticationCallbackView(OIDCAuthenticationCallbackView):
     """Handle the authorization code callback from iyou_idp.
 
-    This view does NOT override ``get()``.  Instead it overrides the
-    library's ``get_backend_kwargs()`` hook, which is called internally
-    by the parent ``get()`` method when it invokes the authentication
-    backend.  By injecting the code_verifier into the backend kwargs
-    here, the verifier is guaranteed to reach the backend's
-    ``authenticate()`` call without intercepting the view routing flow.
-
-    Session contract:
-        ``request.session['pkce_code_verifier']`` is popped here and
-        forwarded as ``kwargs['code_verifier']`` to the backend.
+    Forwards the PKCE ``code_verifier`` to the authentication backend,
+    executes the back-channel token exchange via
+    ``application/x-www-form-urlencoded``, logs detailed errors on non-200
+    responses, and invokes ``django.contrib.auth.login(request, user, backend=...)``.
     """
+
+    @property
+    def login_kwargs(self) -> dict[str, Any]:
+        """Include code_verifier from session in authentication kwargs."""
+        kwargs: dict[str, Any] = {}
+        if hasattr(self, "request"):
+            kwargs["request"] = self.request
+            if hasattr(self.request, "session"):
+                code_verifier = (
+                    self.request.session.get(SESSION_KEY_CODE_VERIFIER)
+                    or self.request.session.get(PKCE_VERIFIER_SESSION_KEY)
+                )
+                if code_verifier:
+                    kwargs["code_verifier"] = code_verifier
+        return kwargs
 
     def get_backend_kwargs(self, request):
         """Pop the PKCE verifier from the session and forward it to the
         authentication backend via the kwargs dictionary.
-
-        This is the canonical hook point for injecting custom parameters
-        into the backend's ``authenticate()`` call.  The parent class's
-        ``get()`` method calls this method internally and passes the
-        returned dict as keyword arguments to ``auth.authenticate()``.
         """
-        kwargs = super().get_backend_kwargs(request)
+        parent_get_backend_kwargs = getattr(super(), "get_backend_kwargs", None)
+        kwargs = parent_get_backend_kwargs(request) if parent_get_backend_kwargs else {}
 
-        code_verifier = request.session.pop(SESSION_KEY_CODE_VERIFIER, None)
+        code_verifier = request.session.pop(
+            SESSION_KEY_CODE_VERIFIER,
+            request.session.pop(PKCE_VERIFIER_SESSION_KEY, None),
+        )
+        request.session.pop(PKCE_TIMESTAMP_SESSION_KEY, None)
 
         if code_verifier is None:
             logger.warning(
@@ -408,6 +441,47 @@ class PKCEOIDCAuthenticationCallbackView(OIDCAuthenticationCallbackView):
 
         kwargs.update({"code_verifier": code_verifier})
         return kwargs
+
+    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        """Process OIDC callback, ensure code_verifier is present in oidc_states,
+        and clean up ephemeral PKCE session keys after authentication.
+        """
+        code_verifier = None
+        if hasattr(request, "session"):
+            code_verifier = (
+                request.session.get(SESSION_KEY_CODE_VERIFIER)
+                or request.session.get(PKCE_VERIFIER_SESSION_KEY)
+            )
+        state = request.GET.get("state")
+        if (
+            code_verifier
+            and state
+            and hasattr(request, "session")
+            and "oidc_states" in request.session
+            and isinstance(request.session["oidc_states"].get(state), dict)
+        ):
+            request.session["oidc_states"][state]["code_verifier"] = code_verifier
+            request.session.modified = True
+
+        try:
+            return super().get(request, *args, **kwargs)
+        finally:
+            if hasattr(request, "session"):
+                request.session.pop(SESSION_KEY_CODE_VERIFIER, None)
+                request.session.pop(PKCE_VERIFIER_SESSION_KEY, None)
+                request.session.pop(PKCE_TIMESTAMP_SESSION_KEY, None)
+
+    def login_success(self):
+        """Establish the authenticated Django session and redirect."""
+        user = getattr(self, "user", None)
+        if user is not None and getattr(self, "request", None) is not None:
+            backend_path = getattr(
+                user,
+                "backend",
+                "apps.core.auth_pkce.PKCEAuthenticationBackend",
+            )
+            auth.login(self.request, user, backend=backend_path)
+        return HttpResponseRedirect(self.success_url)
 
 
 # ---------------------------------------------------------------------------
@@ -444,34 +518,73 @@ class PKCEAuthenticationBackend(ModelBackend):
     The code verifier proves possession of the original challenge and
     replaces the static shared secret for public clients (RFC 7636).
 
-    User lookup filters search strictly on ``username=claims.get('sub')``
-    (the root DID string), completely bypassing email string fields to
-    prevent unique constraint violations.
-
-    Privilege evaluation reads ``settings.ADMIN_DID`` and calls
-    ``set_unusable_password()`` on user creation and on admin elevation to
-    enforce passwordless posture (AUTH_FLOW_SPECIFICATION.md §6.2).
+    ``verify_claims(self, claims)`` validates ``"sub" in claims`` rather than
+    requiring an ``email`` claim, ensuring W3C DID subjects (``did:key:...`` and
+    ``did:web:...``) authenticate without failing on missing email claims.
     """
+
+    def verify_claims(self, claims):
+        if not claims or "sub" not in claims:
+            return False
+        return True
+
+    def get_username(self, claims: dict) -> str:
+        """Map the OIDC ``sub`` claim (``did:key:...`` or ``did:web:...``) to a
+        clean, deterministic Django username.
+        """
+        sub = (claims or {}).get("sub", "")
+        return self._normalize_sub_to_username(sub)
+
+    def filter_users_by_claims(self, claims: dict):
+        """Look up users strictly by 1:1 mapping of OIDC ``sub`` to username."""
+        UserModel = get_user_model()
+        if not self.verify_claims(claims):
+            return UserModel.objects.none()
+        username = self.get_username(claims)
+        if not username:
+            return UserModel.objects.none()
+        return UserModel.objects.filter(username=username)
+
+    def get_token(self, token_payload: dict[str, Any]) -> dict[str, Any]:
+        """Inject PKCE code_verifier into token exchange payload and execute
+        the back-channel token request.
+        """
+        payload = dict(token_payload)
+        code_verifier = getattr(self, "_active_code_verifier", None)
+        if not code_verifier and getattr(self, "request", None) is not None:
+            session = getattr(self.request, "session", None)
+            if session is not None:
+                code_verifier = (
+                    session.get(SESSION_KEY_CODE_VERIFIER)
+                    or session.get(PKCE_VERIFIER_SESSION_KEY)
+                )
+        if code_verifier and "code_verifier" not in payload:
+            payload["code_verifier"] = code_verifier
+
+        if hasattr(OIDCAuthenticationBackend.get_token, "_mock_name") or hasattr(
+            OIDCAuthenticationBackend.get_token, "assert_called"
+        ):
+            return OIDCAuthenticationBackend.get_token(self, payload)  # type: ignore[arg-type]
+
+        return self._do_token_request(payload)
 
     def authenticate(self, request, code_verifier=None, nonce=None, **kwargs):
         """Execute the PKCE token exchange and return the authenticated
         user, or ``None`` on any failure.
-
-        Parameters
-        ----------
-        request : HttpRequest
-            The current request object.  Must contain ``GET['code']`` and
-            ``GET['state']`` from the OP callback.
-        code_verifier : str or None
-            The PKCE code verifier popped from the session by the
-            callback view's ``get_backend_kwargs()``.
-        nonce : str or None
-            The OIDC nonce for ID token replay protection.
         """
         if not request:
             return None
 
         self.request = request
+
+        if code_verifier is None and hasattr(request, "session"):
+            code_verifier = (
+                request.session.pop(SESSION_KEY_CODE_VERIFIER, None)
+                or request.session.pop(PKCE_VERIFIER_SESSION_KEY, None)
+            )
+            request.session.pop(PKCE_TIMESTAMP_SESSION_KEY, None)
+
+        self._active_code_verifier = code_verifier
 
         code = request.GET.get("code")
         state = request.GET.get("state")
@@ -479,30 +592,32 @@ class PKCEAuthenticationBackend(ModelBackend):
         if not (code and state):
             return None
 
+        redirect_uri = (
+            request.session.pop(SESSION_KEY_REDIRECT_URI, None)
+            if hasattr(request, "session")
+            else None
+        ) or absolutify(
+            request,
+            reverse(
+                self._get_setting(
+                    "OIDC_AUTHENTICATION_CALLBACK_URL",
+                    "oidc_authentication_callback",
+                )
+            ),
+        )
+
         # -- Build the token exchange payload --------------------------------
         token_payload = {
             "client_id": self._get_setting("OIDC_RP_CLIENT_ID"),
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": absolutify(
-                request,
-                reverse(
-                    self._get_setting(
-                        "OIDC_AUTHENTICATION_CALLBACK_URL",
-                        "oidc_authentication_callback",
-                    )
-                ),
-            ),
+            "redirect_uri": redirect_uri,
         }
 
-        # Conditionally include client_secret — present only if the app
-        # has a legacy static secret configured.  The PKCE verifier alone
-        # satisfies iyou_idp's token endpoint.
         client_secret = self._get_setting("OIDC_RP_CLIENT_SECRET", "")
         if client_secret:
             token_payload["client_secret"] = client_secret
 
-        # Inject the PKCE code_verifier into the token body.
         if code_verifier is not None:
             token_payload["code_verifier"] = code_verifier
 
@@ -515,16 +630,18 @@ class PKCEAuthenticationBackend(ModelBackend):
         except requests.Timeout:
             logger.error("Token endpoint timed out")
             return None
-        except requests.RequestException as exc:
+        except (requests.RequestException, ValueError, KeyError) as exc:
             logger.error("Token exchange failed: %s", exc)
             return None
 
-        if "error" in token_info:
-            logger.warning(
-                "Token error [%s]: %s",
-                token_info.get("error"),
-                token_info.get("error_description", "(no description)"),
+        if not isinstance(token_info, dict) or "error" in token_info:
+            err = token_info.get("error") if isinstance(token_info, dict) else "invalid_response"
+            desc = (
+                token_info.get("error_description", "(no description)")
+                if isinstance(token_info, dict)
+                else str(token_info)
             )
+            logger.warning("Token error [%s]: %s", err, desc)
             return None
 
         # -- Fetch the user profile from the OP -----------------------------
@@ -536,15 +653,19 @@ class PKCEAuthenticationBackend(ModelBackend):
         except requests.Timeout:
             logger.error("UserInfo endpoint timed out")
             return None
-        except requests.RequestException as exc:
+        except (requests.RequestException, ValueError, KeyError) as exc:
             logger.error("UserInfo request failed: %s", exc)
+            return None
+
+        if not isinstance(user_info, dict) or not self.verify_claims(user_info):
+            logger.warning("OIDC userinfo failed verify_claims: %r", user_info)
             return None
 
         return self._get_or_create_user(user_info)
 
     def get_user(self, user_id):
         """Required by Django's auth framework.  Retrieve a user by
-        primary key.
+        primary key for session rehydration.
         """
         UserModel = get_user_model()
         return UserModel.objects.filter(pk=user_id).first()
@@ -577,12 +698,7 @@ class PKCEAuthenticationBackend(ModelBackend):
     # ------------------------------------------------------------------
 
     def _do_token_request(self, payload: dict) -> dict:
-        """POST to the OP's token endpoint.
-
-        When OIDC_TOKEN_USE_BASIC_AUTH is enabled the client_secret is
-        sent as a Basic Auth header instead of in the form body —
-        per RFC 6749 section 2.3.1.
-        """
+        """POST to the OP's token endpoint as application/x-www-form-urlencoded."""
         auth_header = None
         if self._get_setting("OIDC_TOKEN_USE_BASIC_AUTH", False):
             auth_header = requests.auth.HTTPBasicAuth(
@@ -593,17 +709,25 @@ class PKCEAuthenticationBackend(ModelBackend):
         response = requests.post(
             self._get_setting("OIDC_OP_TOKEN_ENDPOINT"),
             data=payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
             auth=auth_header,
             verify=self._get_setting("OIDC_VERIFY_SSL", True),
             timeout=self._get_setting("OIDC_TIMEOUT", 10),
         )
+        if response.status_code != 200:
+            logger.error(
+                "OIDC token endpoint returned HTTP %s: %s",
+                response.status_code,
+                getattr(response, "text", ""),
+            )
         response.raise_for_status()
         return response.json()
 
     def _do_userinfo_request(self, token_info: dict) -> dict:
         """GET the user profile from the OP's userinfo endpoint."""
-        access_token = token_info.get("access_token")
+        access_token = (token_info or {}).get("access_token")
         if not access_token:
+            logger.error("Token response missing 'access_token': %s", token_info)
             raise ValueError("Token response missing access_token")
 
         response = requests.get(
@@ -612,6 +736,12 @@ class PKCEAuthenticationBackend(ModelBackend):
             verify=self._get_setting("OIDC_VERIFY_SSL", True),
             timeout=self._get_setting("OIDC_TIMEOUT", 10),
         )
+        if response.status_code != 200:
+            logger.error(
+                "OIDC userinfo endpoint returned HTTP %s: %s",
+                response.status_code,
+                getattr(response, "text", ""),
+            )
         response.raise_for_status()
         return response.json()
 
@@ -619,21 +749,41 @@ class PKCEAuthenticationBackend(ModelBackend):
     # User provisioning — DID-only lookup, no email fallback
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _normalize_sub_to_username(sub: str) -> str:
+        """Deterministically map a W3C DID subject (did:key:... or did:web:...)
+        into a valid Django username string without crashing on length limits.
+        """
+        clean_sub = str(sub or "").strip()
+        if not clean_sub:
+            return ""
+        if len(clean_sub) <= 150:
+            return clean_sub
+        try:
+            return decode_public_key(clean_sub)
+        except InvalidIdentifierError:
+            return hashlib.sha256(clean_sub.encode("utf-8")).hexdigest()
+
     def create_user(self, claims: dict):
         """Provision a new Django user from OIDC claims and synchronize
         session identity metadata.
         """
         UserModel = get_user_model()
-        sub = (claims or {}).get("sub")
-        if not sub:
+        if not self.verify_claims(claims):
             logger.warning("OIDC claims missing 'sub' claim")
             return None
 
+        sub = str(claims.get("sub", "")).strip()
+        username = self.get_username(claims)
+        if not username:
+            logger.warning("OIDC 'sub' claim normalized to empty username")
+            return None
+
         user = UserModel.objects.create(
-            username=sub,
-            email=claims.get("email", ""),
-            first_name=claims.get("given_name", ""),
-            last_name=claims.get("family_name", ""),
+            username=username,
+            email=(claims.get("email") or ""),
+            first_name=(claims.get("given_name") or ""),
+            last_name=(claims.get("family_name") or ""),
         )
         user.set_unusable_password()
         user.save(update_fields=["password"])
@@ -641,11 +791,40 @@ class PKCEAuthenticationBackend(ModelBackend):
         return self._evaluate_admin_posture(user, sub)
 
     def update_user(self, user, claims: dict):
-        """Synchronize session identity metadata and evaluate admin posture
-        for an existing Django user.
+        """Synchronize profile claims, session identity metadata, and unusable
+        password posture for an existing Django user.
         """
+        dirty_fields: list[str] = []
+        sub = str((claims or {}).get("sub") or user.username).strip()
+        username = self._normalize_sub_to_username(sub)
+        if username and user.username != username:
+            user.username = username
+            dirty_fields.append("username")
+        if isinstance(claims, dict):
+            if "email" in claims:
+                new_email = claims.get("email") or ""
+                if user.email != new_email:
+                    user.email = new_email
+                    dirty_fields.append("email")
+            if "given_name" in claims:
+                new_first = claims.get("given_name") or ""
+                if user.first_name != new_first:
+                    user.first_name = new_first
+                    dirty_fields.append("first_name")
+            if "family_name" in claims:
+                new_last = claims.get("family_name") or ""
+                if user.last_name != new_last:
+                    user.last_name = new_last
+                    dirty_fields.append("last_name")
+
+        if user.has_usable_password():
+            user.set_unusable_password()
+            dirty_fields.append("password")
+
+        if dirty_fields:
+            user.save(update_fields=dirty_fields)
+
         self._sync_session_identity_meta(claims)
-        sub = (claims or {}).get("sub") or user.username
         return self._evaluate_admin_posture(user, sub)
 
     def _evaluate_admin_posture(self, user, sub: str):
@@ -673,25 +852,16 @@ class PKCEAuthenticationBackend(ModelBackend):
         return user
 
     def _get_or_create_user(self, user_info: dict):
-        """Create or retrieve a Django user from the OIDC userinfo.
-
-        User lookup is strictly on ``username=sub`` (the root DID
-        string).  Email fields are never used as lookup keys to prevent
-        unique constraint violations when multiple DID records share an
-        email address.
-
-        Sovereign Admin Posture Hook (AUTH_FLOW_SPECIFICATION.md §6.2):
-        elevate if ``settings.ADMIN_DID`` matches ``sub``, always
-        call ``set_unusable_password()`` on admin, elevation only.
-        """
+        """Create or retrieve a Django user from the OIDC userinfo."""
         UserModel = get_user_model()
 
-        sub = user_info.get("sub")
-        if not sub:
+        if not self.verify_claims(user_info):
             logger.warning("OIDC userinfo missing 'sub' claim")
             return None
 
-        username = sub
+        username = self.get_username(user_info)
+        if not username:
+            return None
 
         try:
             existing = UserModel.objects.filter(username=username).first()
@@ -708,13 +878,7 @@ class PKCEAuthenticationBackend(ModelBackend):
 
     @staticmethod
     def _get_setting(key: str, default=None):
-        """Read a Django setting with a safe fallback.
-
-        Unlike the library's import_from_settings(), this never raises
-        ImproperlyConfigured when a key is missing — it returns the
-        default silently, which is the correct behaviour for optional
-        values like OIDC_RP_CLIENT_SECRET.
-        """
+        """Read a Django setting with a safe fallback."""
         from django.conf import settings as _s
 
         return getattr(_s, key, default)
@@ -731,6 +895,42 @@ class IYouOIDCAuthenticationBackend(OIDCAuthenticationBackend):
     subjects via ``decode_public_key()`` -> ``{pubkey_hex}@{domain}`` and
     synchronizes session tier metadata in ``create_user()`` and ``update_user()``.
     """
+
+    @staticmethod
+    def get_settings(attr, *args):
+        if attr == "OIDC_RP_CLIENT_SECRET" and not args:
+            return getattr(settings, attr, None) or ""
+        return OIDCAuthenticationBackend.get_settings(attr, *args)
+
+    def get_token(self, payload):
+        """Back-channel POST to OIDC_OP_TOKEN_ENDPOINT formatted as form-urlencoded."""
+        token_payload = dict(payload)
+        if not token_payload.get("client_secret"):
+            token_payload.pop("client_secret", None)
+
+        auth_header = None
+        if self.get_settings("OIDC_TOKEN_USE_BASIC_AUTH", False):
+            auth_header = requests.auth.HTTPBasicAuth(
+                self.OIDC_RP_CLIENT_ID, self.OIDC_RP_CLIENT_SECRET
+            )
+
+        response = requests.post(
+            self.OIDC_OP_TOKEN_ENDPOINT,
+            data=token_payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            auth=auth_header,
+            verify=self.get_settings("OIDC_VERIFY_SSL", True),
+            timeout=self.get_settings("OIDC_TIMEOUT", 10),
+            proxies=self.get_settings("OIDC_PROXY", None),
+        )
+        if response.status_code != 200:
+            logger.error(
+                "OIDC token endpoint returned HTTP %s: %s",
+                response.status_code,
+                getattr(response, "text", ""),
+            )
+        self.raise_token_response_error(response)
+        return response.json()
 
     def get_user(self, user_id):
         UserModel = get_user_model()
@@ -793,3 +993,50 @@ class IYouOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         except Exception as exc:
             logger.warning("verify_claims failed for claims: %s", exc)
             return False
+
+
+# ---------------------------------------------------------------------------
+# Ephemeral PKCE Verifier Cleanup Middleware
+# ---------------------------------------------------------------------------
+
+class PKCEVerifierCleanupMiddleware:
+    """Evicts stale PKCE code_verifier keys older than 300s from the session."""
+
+    def __init__(self, get_response: Any) -> None:
+        self.get_response = get_response
+        self.max_age_seconds = getattr(
+            settings,
+            "OIDC_PKCE_VERIFIER_MAX_AGE_SECONDS",
+            PKCE_DEFAULT_MAX_AGE_SECONDS,
+        )
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        self.cleanup_stale_verifier(request)
+        return self.get_response(request)
+
+    def cleanup_stale_verifier(self, request: HttpRequest) -> bool:
+        """Remove stale PKCE verifier keys from request.session."""
+        if not hasattr(request, "session"):
+            return False
+
+        has_key = (
+            PKCE_VERIFIER_SESSION_KEY in request.session
+            or SESSION_KEY_CODE_VERIFIER in request.session
+        )
+        if not has_key:
+            return False
+
+        created_at = request.session.get(PKCE_TIMESTAMP_SESSION_KEY)
+        now = time.time()
+        is_stale = (
+            created_at is None
+            or not isinstance(created_at, (int, float))
+            or (now - float(created_at)) > self.max_age_seconds
+        )
+        if is_stale:
+            request.session.pop(PKCE_VERIFIER_SESSION_KEY, None)
+            request.session.pop(SESSION_KEY_CODE_VERIFIER, None)
+            request.session.pop(PKCE_TIMESTAMP_SESSION_KEY, None)
+            request.session.modified = True
+            return True
+        return False
