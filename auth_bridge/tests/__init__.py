@@ -632,7 +632,7 @@ class SatelliteRosterTest(TestCase):
         from oidc_provider.models import Client as OIDCClient
 
         call_command("seed_clients")
-        self.assertEqual(OIDCClient.objects.count(), 21)
+        self.assertEqual(OIDCClient.objects.count(), 24)
 
         help_client = OIDCClient.objects.get(client_id="iyou-help-satellite-client")
         self.assertEqual(help_client.name, "iyou_help (Mutual Aid)")
@@ -675,6 +675,58 @@ class SatelliteRosterTest(TestCase):
         self.assertIn("http://127.0.0.1:8005/oidc/callback/", link_client.redirect_uris)
         self.assertIn("https://link.iyou.me/", link_client.post_logout_redirect_uris)
         self.assertIn("http://127.0.0.1:8005/", link_client.post_logout_redirect_uris)
+
+        show_client = OIDCClient.objects.get(client_id="iyou-show-satellite-client")
+        self.assertEqual(show_client.name, "iyou_show")
+        self.assertEqual(show_client.client_type, "public")
+        self.assertEqual(show_client.client_secret, "")
+        self.assertEqual(show_client.jwt_alg, "RS256")
+        self.assertFalse(show_client.require_consent)
+        self.assertTrue(show_client.reuse_consent)
+        self.assertEqual(show_client.scope, ["openid", "profile", "email"])
+        self.assertIn("code", [rt.value for rt in show_client.response_types.all()])
+        self.assertIn("https://show.iyou.me/oidc/callback/", show_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8029/oidc/callback/", show_client.redirect_uris)
+        self.assertIn("http://localhost:8029/oidc/callback/", show_client.redirect_uris)
+        self.assertIn("https://show.iyou.me/", show_client.post_logout_redirect_uris)
+        self.assertIn("http://127.0.0.1:8029/", show_client.post_logout_redirect_uris)
+        self.assertIn("http://localhost:8029/", show_client.post_logout_redirect_uris)
+
+        muse_client = OIDCClient.objects.get(client_id="iyou-muse-satellite-client")
+        self.assertEqual(muse_client.name, "iyou_muse")
+        self.assertEqual(muse_client.client_type, "public")
+        self.assertEqual(muse_client.client_secret, "")
+        self.assertEqual(muse_client.jwt_alg, "RS256")
+        self.assertFalse(muse_client.require_consent)
+        self.assertTrue(muse_client.reuse_consent)
+        self.assertEqual(muse_client.scope, ["openid", "profile", "email"])
+        self.assertIn("code", [rt.value for rt in muse_client.response_types.all()])
+        self.assertIn("https://muse.iyou.me/oidc/callback/", muse_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8030/oidc/callback/", muse_client.redirect_uris)
+        self.assertIn("http://localhost:8030/oidc/callback/", muse_client.redirect_uris)
+        self.assertIn("https://muse.iyou.me/", muse_client.post_logout_redirect_uris)
+        self.assertIn("http://127.0.0.1:8030/", muse_client.post_logout_redirect_uris)
+        self.assertIn("http://localhost:8030/", muse_client.post_logout_redirect_uris)
+
+        hear_client = OIDCClient.objects.get(client_id="iyou-hear-satellite-client")
+        self.assertEqual(hear_client.name, "iyou_hear")
+        self.assertEqual(hear_client.client_type, "public")
+        self.assertEqual(hear_client.client_secret, "")
+        self.assertEqual(hear_client.jwt_alg, "RS256")
+        self.assertFalse(hear_client.require_consent)
+        self.assertTrue(hear_client.reuse_consent)
+        self.assertEqual(hear_client.scope, ["openid", "profile", "email"])
+        self.assertIn("code", [rt.value for rt in hear_client.response_types.all()])
+        self.assertIn("https://hear.iyou.me/oidc/callback/", hear_client.redirect_uris)
+        self.assertIn("http://127.0.0.1:8031/oidc/callback/", hear_client.redirect_uris)
+        self.assertIn("http://localhost:8031/oidc/callback/", hear_client.redirect_uris)
+        self.assertIn("https://hear.iyou.me/", hear_client.post_logout_redirect_uris)
+        self.assertIn("http://127.0.0.1:8031/", hear_client.post_logout_redirect_uris)
+        self.assertIn("http://localhost:8031/", hear_client.post_logout_redirect_uris)
+
+        # Verify idempotency by running seed_clients a second time
+        call_command("seed_clients")
+        self.assertEqual(OIDCClient.objects.count(), 24)
 
 
 class CacheFallbackTest(TestCase):

@@ -79,6 +79,15 @@ env = environ.Env(
             "http://127.0.0.1:8017",
             "http://127.0.0.1:8018",
             "http://127.0.0.1:8019",
+            "https://show.iyou.me",
+            "https://muse.iyou.me",
+            "https://hear.iyou.me",
+            "http://127.0.0.1:8029",
+            "http://localhost:8029",
+            "http://127.0.0.1:8030",
+            "http://localhost:8030",
+            "http://127.0.0.1:8031",
+            "http://localhost:8031",
         ],
     ),
     DATABASE_URL=(str, "sqlite:///db.sqlite3"),
@@ -200,6 +209,7 @@ CORS_ALLOWED_ORIGINS = env("IDP_CORS_ALLOWED_ORIGINS")
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.iyou\.me$",
     r"^http://127\.0\.0\.1:\d+$",
+    r"^http://localhost:\d+$",
 ]
 
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None

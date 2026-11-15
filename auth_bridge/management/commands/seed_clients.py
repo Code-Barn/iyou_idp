@@ -298,11 +298,56 @@ SATELLITES = [
             "http://127.0.0.1:8005/",
         ],
     },
+    {
+        "client_id": "iyou-show-satellite-client",
+        "name": "iyou_show",
+        "redirects": [
+            "https://show.iyou.me/oidc/callback/",
+            "http://127.0.0.1:8029/oidc/callback/",
+            "http://localhost:8029/oidc/callback/",
+            LOCAL_DEV_FALLBACK,
+        ],
+        "post_logout_redirects": [
+            "https://show.iyou.me/",
+            "http://127.0.0.1:8029/",
+            "http://localhost:8029/",
+        ],
+    },
+    {
+        "client_id": "iyou-muse-satellite-client",
+        "name": "iyou_muse",
+        "redirects": [
+            "https://muse.iyou.me/oidc/callback/",
+            "http://127.0.0.1:8030/oidc/callback/",
+            "http://localhost:8030/oidc/callback/",
+            LOCAL_DEV_FALLBACK,
+        ],
+        "post_logout_redirects": [
+            "https://muse.iyou.me/",
+            "http://127.0.0.1:8030/",
+            "http://localhost:8030/",
+        ],
+    },
+    {
+        "client_id": "iyou-hear-satellite-client",
+        "name": "iyou_hear",
+        "redirects": [
+            "https://hear.iyou.me/oidc/callback/",
+            "http://127.0.0.1:8031/oidc/callback/",
+            "http://localhost:8031/oidc/callback/",
+            LOCAL_DEV_FALLBACK,
+        ],
+        "post_logout_redirects": [
+            "https://hear.iyou.me/",
+            "http://127.0.0.1:8031/",
+            "http://localhost:8031/",
+        ],
+    },
 ]
 
 
 class Command(BaseCommand):
-    help = "Provisions fleet-wide OIDC public clients for the 21-satellite ecosystem mesh."
+    help = "Provisions fleet-wide OIDC public clients for the 24-satellite ecosystem mesh."
 
     def handle(self, *args, **options):
         code_response_type, _ = ResponseType.objects.get_or_create(

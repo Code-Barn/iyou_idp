@@ -95,20 +95,20 @@ class EcosystemReleasesContextProcessorTest(TestCase):
         self.assertIn(
             "https://ipfs.io/ipfs/QmUA8mAoo7fTZbG1hwvChbSVbD3trAhACBHjzYQDAoFDQu/", html
         )
-        self.assertIn("9494b77a7837fcd0347d3d3e42db8de9117c504a", html)
+        self.assertIn("9ac0e54d7b29c21a80ee11f7b24936710623978a", html)
 
         expected_sha256 = {
             "iyou-home_0.2.2_x64-setup.exe": (
-                "b5074c4ab8064b252956ee5890be330dc8c48c533283f3bd906a82580a82935c"
+                "a48c815edc1eef1bceb3ffba15aa4f32e05187e30858d68f8033a0b501d3f382"
             ),
             "iyou-home_0.2.2_x64.dmg": (
-                "b809a8d84228c9bcb7487dd2ddf6cb650de7f4c85ce31e6a91552eb46aa8bc1f"
+                "3ec91f0afb1589c683e850e6bdf9adff1276fa2635621835984771e151dc0cae"
             ),
             "iyou-home_0.2.2_amd64.deb": (
-                "96fc57733d03a734cb7efef3f681e4a0c3e86a72f85d4dc26450b865380da630"
+                "ffc2f690959c4e486081be685dfff88c9ccf954dedaa86ef17fca027c1422824"
             ),
             "iyou-home_0.2.2_amd64.AppImage": (
-                "9715928adcf3bdbacaeac58b29455773b16b6550ece024501e9f3df7437d3779"
+                "afb160b8d689cddf06f1f38c5648217d830d0e612ac41539192992b8ef6638e7"
             ),
         }
         for asset, digest in expected_sha256.items():
