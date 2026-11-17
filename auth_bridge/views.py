@@ -60,7 +60,11 @@ from oidc_provider.compat import get_attr_or_callable
 logger = logging.getLogger(__name__)
 
 # Where to send the user after authentication when no explicit next_url is given.
-DEFAULT_NEXT_URL = django_settings.IDP_WUN_URL
+def _get_default_wun_landing_url() -> str:
+    base = getattr(django_settings, "IDP_WUN_URL", "https://wun.iyou.me").rstrip("/")
+    return f"{base}/?map=open"
+
+DEFAULT_NEXT_URL = _get_default_wun_landing_url()
 
 
 def _gate_enabled():
