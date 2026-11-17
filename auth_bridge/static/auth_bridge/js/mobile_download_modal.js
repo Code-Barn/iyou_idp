@@ -152,13 +152,11 @@
       setTimeout(function () {
         openMobileModal();
       }, 50);
-      if (modalParam === 'download-mobile') {
-        searchParams.delete('modal');
-        var newSearch = searchParams.toString();
-        var newHash = hashParam === '#download-mobile' ? '' : hashParam;
-        var newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + newHash;
-        window.history.replaceState({}, document.title, newUrl);
-      }
+      searchParams.delete('modal');
+      var newSearch = searchParams.toString();
+      var newHash = hashParam === '#download-mobile' ? '' : hashParam;
+      var newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + newHash;
+      window.history.replaceState({}, document.title, newUrl);
     }
   } catch (err) {
   }

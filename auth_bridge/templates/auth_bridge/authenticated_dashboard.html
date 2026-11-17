@@ -455,12 +455,14 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 max-w-sm pointer-events-none"></div>
 
-    <!-- Mobile Download Modal -->
+    <!-- Desktop & Mobile Download Modals (deep-link targets from the ecosystem map) -->
+    {% include 'auth_bridge/_download_modal.html' %}
     {% include 'auth_bridge/_mobile_download_modal.html' %}
 
     <script>
         window.csrfToken = "{{ csrf_token }}";
     </script>
+    <script src="{% static 'auth_bridge/js/download_modal.js' %}"></script>
     <script src="{% static 'auth_bridge/js/mobile_download_modal.js' %}"></script>
     <script src="{% static 'auth_bridge/js/email_locker.js' %}"></script>
     <script src="{% static 'auth_bridge/js/passkeys.js' %}"></script>

@@ -354,13 +354,11 @@
       setTimeout(function () {
         openModal();
       }, 50);
-      if (modalParam === 'download-home') {
-        searchParams.delete('modal');
-        var newSearch = searchParams.toString();
-        var newHash = hashParam === '#download-home' ? '' : hashParam;
-        var newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + newHash;
-        window.history.replaceState({}, document.title, newUrl);
-      }
+      searchParams.delete('modal');
+      var newSearch = searchParams.toString();
+      var newHash = hashParam === '#download-home' ? '' : hashParam;
+      var newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + newHash;
+      window.history.replaceState({}, document.title, newUrl);
     }
   } catch (err) {
   }
