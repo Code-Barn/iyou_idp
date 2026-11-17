@@ -8,7 +8,7 @@
 
 ## 1. Overview & Architectural Hierarchy
 
-The iYou ecosystem presentation tier is structured into strict horizontal layers across all 20 satellite applications:
+The iyou_ ecosystem presentation tier is structured into strict horizontal layers across all 20 satellite applications:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -810,7 +810,7 @@ static/
    Web app manifest specifying `name`, `short_name`, `description`, `start_url`, `display: "standalone"`, `theme_color`, and icon array (`icon-192.png`, `icon-512.png` with `purpose: "any maskable"`):
    ```json
    {
-     "name": "iYou {AppName}",
+     "name": "iyou_ {AppName}",
      "short_name": "{ShortName}",
      "description": "{App Description}",
      "start_url": "/",
@@ -901,4 +901,3 @@ Injected immediately before closing `</body>` to ensure non-blocking page load:
   }
 </script>
 ```
-

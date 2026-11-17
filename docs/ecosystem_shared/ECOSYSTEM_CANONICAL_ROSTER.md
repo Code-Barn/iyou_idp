@@ -2,6 +2,15 @@
 
 # Canonical Ecosystem Roster
 
+## §0 Zero-CamelCase Brand Invariant
+
+**The CamelCase brand form — a lowercase `i` immediately followed by an uppercase `Y` (`i` + `You`) — is STRICTLY BANNED across the entire federation.** No UI copy, template, generated artifact, source string, config, spec, or documentation may contain that form. Always use lowercase `iyou`, `iyou_`, or `iyou.me`.
+
+- The federation map title is ALWAYS `iyou_ Federation Map`.
+- The ecosystem descriptor is ALWAYS `iyou_ ecosystem`.
+- App brands are ALWAYS lowercase snake_case: `iyou_clar`, `iyou_wun`, `iyou_idp`, `iyou_home`, `iyou_mobile`, `iyou_hive`, etc.
+- Valid lowercase URLs (`https://iyou.me`, `wss://...`), cryptographic prefixes, and external third-party identifiers are unaffected.
+
 ## §1 Governance & Immutable Copy Rule
 
 **This document is the Single Source of Truth (SSOT) for canonical ecosystem copy.** It is generated directly from `ECOSYSTEM_CATALOG` and `ENCLAVE_CATALOG` in `omni_social/scripts/generate_templates.py`.
