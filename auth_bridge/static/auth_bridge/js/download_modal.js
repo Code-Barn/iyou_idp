@@ -345,6 +345,26 @@
 
   fetchLatestRelease();
 
+  // Deep-link auto-trigger (?modal=download-home or #download-home)
+  try {
+    var searchParams = new URLSearchParams(window.location.search);
+    var modalParam = searchParams.get('modal');
+    var hashParam = window.location.hash;
+    if (modalParam === 'download-home' || hashParam === '#download-home') {
+      setTimeout(function () {
+        openModal();
+      }, 50);
+      if (modalParam === 'download-home') {
+        searchParams.delete('modal');
+        var newSearch = searchParams.toString();
+        var newHash = hashParam === '#download-home' ? '' : hashParam;
+        var newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + newHash;
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
+  } catch (err) {
+  }
+
   var observer = new MutationObserver(function () {
     if (!modal.classList.contains('hidden')) {
       highlightOS(detected);

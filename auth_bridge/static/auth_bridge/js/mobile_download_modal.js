@@ -143,6 +143,26 @@
     });
   });
 
+  // Deep-link auto-trigger (?modal=download-mobile or #download-mobile)
+  try {
+    var searchParams = new URLSearchParams(window.location.search);
+    var modalParam = searchParams.get('modal');
+    var hashParam = window.location.hash;
+    if (modalParam === 'download-mobile' || hashParam === '#download-mobile') {
+      setTimeout(function () {
+        openMobileModal();
+      }, 50);
+      if (modalParam === 'download-mobile') {
+        searchParams.delete('modal');
+        var newSearch = searchParams.toString();
+        var newHash = hashParam === '#download-mobile' ? '' : hashParam;
+        var newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + newHash;
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
+  } catch (err) {
+  }
+
   // Re-highlight on modal re-open
   var observer = new MutationObserver(function () {
     if (!modal.classList.contains('hidden')) {
