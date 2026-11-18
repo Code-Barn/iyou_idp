@@ -27,8 +27,8 @@ Protocol order, all 28 registered satellites:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | idp | iyou_idp | https://iyou.me | gate | ACTIVE | purple | IDENTITY PROVIDER | Root Identity Provider & Sovereign Authentication |
 | 2 | wun | iyou_wun | https://wun.iyou.me | nucleus | ACTIVE | violet | SOCIAL HUB | Social Hub & Sovereign Profile Space |
-| 3 | chat | iyou_chat | https://chat.iyou.me | nucleus | ACTIVE | cyan | MESSENGER HUB | Sovereign Messenger Hub, MAM Archive & Standalone Dock |
-| 4 | meet | iyou_meet | https://meet.iyou.me | nucleus | ACTIVE | teal | VIDEO & RENDEZVOUS | Sovereign Video Conferencing & Physical Meetup Orchestration |
+| 3 | chat | iyou_chat | https://chat.iyou.me | nucleus | ACTIVE | blue | MESSENGER HUB | Sovereign Messenger Hub, MAM Archive & Standalone Dock |
+| 4 | meet | iyou_meet | https://meet.iyou.me | nucleus | ACTIVE | emerald | VIDEO & RENDEZVOUS | Sovereign Video Conferencing & Physical Meetup Orchestration |
 | 5 | poly | iyou_poly | https://poly.iyou.me | ring1 | ACTIVE | purple | CONSENSUS ENGINE | Stateless Consensus Engine & Governance Ledger |
 | 6 | name | iyou_name | https://name.iyou.me | ring1 | ACTIVE | teal | GENEALOGY REGISTRY | Kinship Graph & Lineage Provenance Ledger |
 | 7 | hive | iyou_hive | https://hive.iyou.me | ring1 | BETA | orange | LEGAL VAULT | Communal Vaults & Legal Proofs |
