@@ -1648,6 +1648,18 @@ class SovereignAuthorizeView(AuthorizeView):
         prompt_none = "none" in set((request.GET.get("prompt") or "").split())
         if getattr(request.user, "is_authenticated", False):
             auth_method = request.session.get("auth_method", "")
+            if getattr(request.user, "is_sovereign", False) and (
+                auth_method == "otp:email" or auth_method.startswith("oauth:")
+            ):
+                if prompt_none:
+                    return _prompt_none_redirect(request, "interaction_required")
+                return JsonResponse(
+                    {
+                        "error": "access_denied",
+                        "error_description": "Graduated sovereign identities require cryptographic authentication for OIDC issuance.",
+                    },
+                    status=403,
+                )
             if auth_method in ("password", "unverified"):
                 if prompt_none:
                     return _prompt_none_redirect(request, "interaction_required")

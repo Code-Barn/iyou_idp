@@ -16,7 +16,11 @@
 from django.contrib import admin
 from django.urls import path, include
 from auth_bridge.views import LoginPageView, PkceTokenView, SovereignAuthorizeView, redeem_beta_invite
-from apps.core.views import peer_instance_info
+from apps.core.views import (
+    did_web_root_document,
+    did_web_user_document,
+    peer_instance_info,
+)
 
 urlpatterns = [
     path('', LoginPageView.as_view(), name='landing'),
@@ -29,6 +33,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     # Peer instance capability descriptor (public JSON, no auth required)
     path('api/v1/instance/', peer_instance_info, name='peer_instance_info'),
+    path('.well-known/did.json', did_web_root_document, name='did_web_root'),
+    path('user/<uuid:user_uuid>/did.json', did_web_user_document, name='did_web_user'),
     # auth/ must come before openid/ to avoid any routing conflict
     path('auth/', include('auth_bridge.urls')),
     # Identity Graduation protocol (export + confirm) under the canonical API prefix

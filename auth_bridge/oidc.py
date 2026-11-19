@@ -43,6 +43,9 @@ def custom_userinfo_claims(claims: dict, user: Any, request: Any = None) -> dict
     claims["email"] = user.email
     claims["email_verified"] = getattr(user, "email_verified", False)
     claims["account_tier"] = user.account_tier
+    graduated_from_did = getattr(user, "graduated_from_did", None)
+    if graduated_from_did:
+        claims["graduated_from_did"] = graduated_from_did
     claims["amr"] = [auth_method]
     claims["age_bracket"] = getattr(user, "age_bracket", None)
 
@@ -96,6 +99,9 @@ def custom_id_token_claims(
     id_token["did_method"] = user.custodial_did.split(":")[1] if user.custodial_did.count(":") >= 2 else "web"
     id_token["email_verified"] = getattr(user, "email_verified", False)
     id_token["account_tier"] = user.account_tier
+    graduated_from_did = getattr(user, "graduated_from_did", None)
+    if graduated_from_did:
+        id_token["graduated_from_did"] = graduated_from_did
     id_token["amr"] = [auth_method]
     id_token["age_bracket"] = getattr(user, "age_bracket", None)
 
@@ -142,6 +148,7 @@ class CustomScopeClaims(ScopeClaims):
             "did_method",
             "preferred_username",
             "account_tier",
+            "graduated_from_did",
             "amr",
             "email_verified",
             "public_emails",
@@ -161,6 +168,7 @@ class CustomScopeClaims(ScopeClaims):
             "did_method",
             "preferred_username",
             "account_tier",
+            "graduated_from_did",
             "amr",
             "email",
             "email_verified",

@@ -29,6 +29,7 @@ import os
 import time
 from typing import Any
 
+from django.contrib.auth import update_session_auth_hash
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect
@@ -47,7 +48,10 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import (
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .models import User
+from .resilient_cache import cache
 from .vault_client import delete_identity_key, read_identity_key
+from .views import _decode_signature_bytes, _pubkey_from_did
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +60,8 @@ RECEIPT_MAX_AGE_SECONDS = 600
 GRADUATION_ACTION = "graduate"
 X25519_KEY_SIZE = 32
 ED25519_SIGNATURE_SIZE = 64
+BIND_CHALLENGE_TTL_SECONDS = 300
+SOVEREIGN_DID_PREFIX = "did:key:"
 
 
 class GraduationProtocolError(ValueError):
@@ -98,6 +104,70 @@ def _load_vault_keypair(custodial_did: str) -> tuple[Ed25519PrivateKey, Ed25519P
     if not isinstance(private_key, Ed25519PrivateKey):
         raise ValueError("vault_private_key_not_ed25519")
     return private_key, private_key.public_key()
+
+
+def verify_did_key_vp(vp: Any, challenge: str) -> str | None:
+    if isinstance(vp, str):
+        try:
+            vp = json.loads(vp)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(vp, dict) or "VerifiablePresentation" not in vp.get("type", []):
+        return None
+
+    proof = vp.get("proof", {})
+    signature_value = proof.get("proofValue") or proof.get("signatureValue")
+    if not signature_value:
+        return None
+    proof_challenge = proof.get("challenge")
+    vp_challenge = vp.get("challenge")
+    if proof_challenge and proof_challenge != challenge:
+        return None
+    if vp_challenge and vp_challenge != challenge:
+        return None
+    if not proof_challenge and not vp_challenge:
+        return None
+
+    holder_did = (vp.get("holder") or "").strip()
+    if not holder_did.startswith(SOVEREIGN_DID_PREFIX):
+        return None
+    public_bytes = _pubkey_from_did(holder_did)
+    signature_bytes = _decode_signature_bytes(signature_value)
+    if public_bytes is None or signature_bytes is None:
+        return None
+
+    payload_dict = {key: value for key, value in vp.items() if key != "proof"}
+    if "issuer" not in payload_dict:
+        payload_dict["issuer"] = holder_did
+    legacy_payload = {
+        "@context": vp.get("@context", []),
+        "type": vp.get("type", []),
+        "holder": vp.get("holder", ""),
+        "challenge": vp.get("challenge", ""),
+        "verifiableCredential": vp.get("verifiableCredential", []),
+        "issuer": vp.get("issuer", holder_did),
+    }
+    candidates = [
+        json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        json.dumps(legacy_payload, separators=(",", ":")).encode("utf-8"),
+        json.dumps(payload_dict, separators=(",", ":")).encode("utf-8"),
+    ]
+    public_key = Ed25519PublicKey.from_public_bytes(public_bytes)
+    for candidate in dict.fromkeys(candidates):
+        try:
+            public_key.verify(signature_bytes, candidate)
+            return holder_did
+        except InvalidSignature:
+            continue
+    return None
+
+
+def _shred_custodial_key(did: str) -> None:
+    try:
+        delete_identity_key(did)
+    except KeyError:
+        return
 
 
 @require_POST
@@ -224,22 +294,105 @@ def graduate_confirm(request: HttpRequest) -> HttpResponse:
         )
         return _error("invalid_receipt_signature", 400)
 
+    new_did = receipt.get("new_did")
+    if new_did is not None:
+        derived_key = _pubkey_from_did(new_did)
+        vault_key = vault_public_key.public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+        if derived_key is None or derived_key != vault_key:
+            return _error("invalid_new_did", 400)
+        if User.objects.filter(custodial_did=new_did, is_active=True).exclude(pk=user.pk).exists():
+            return _error("did_key_already_bound", 409)
+
     try:
         with transaction.atomic():
+            user.graduated_from_did = custodial_did
             user.is_sovereign = True
             user.account_tier = "sovereign"
-            user.save(update_fields=["is_sovereign", "account_tier", "updated_at"])
-            delete_identity_key(custodial_did)
+            update_fields = [
+                "graduated_from_did", "is_sovereign", "account_tier", "updated_at"
+            ]
+            if new_did is not None:
+                user.custodial_did = new_did
+                update_fields.append("custodial_did")
+            user.save(update_fields=update_fields)
+            _shred_custodial_key(custodial_did)
+            if new_did is not None and hasattr(request, "session"):
+                request.session["auth_method"] = "did:websocket"
+                cache.set(f"user_auth_method:{user.id}", "did:websocket", 86400)
     except Exception:
         logger.exception(
             "VAULT SHRED FAILED — rolled back graduation did=%s", custodial_did
         )
         return _error("vault_shred_failed", 502)
 
-    logger.info("GRADUATION COMPLETE: did=%s promoted to sovereign", custodial_did)
+    active_did = user.custodial_did
+    logger.info("GRADUATION COMPLETE: %s promoted to sovereign did=%s", custodial_did, active_did)
     return JsonResponse({
         "status": "graduated",
-        "did": custodial_did,
+        "did": active_did,
+        "graduated_from_did": custodial_did,
+        "is_sovereign": True,
+    })
+
+
+@require_POST
+@csrf_protect
+def graduate_bind(request: HttpRequest) -> HttpResponse:
+    if not request.user.is_authenticated:
+        return _error("authentication_required", 401)
+    user = request.user
+    if user.is_sovereign:
+        return _error("already_sovereign", 400)
+
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return _error("malformed_json", 400)
+
+    vp = payload.get("vp")
+    challenge = payload.get("challenge", "")
+    if not vp or not challenge:
+        return _error("missing_vp_or_challenge", 400)
+    if cache.get(challenge) is None:
+        return _error("challenge_expired", 400)
+
+    holder_did = verify_did_key_vp(vp, challenge)
+    if holder_did is None:
+        return _error("invalid_vp", 401)
+    if User.objects.filter(custodial_did=holder_did, is_active=True).exclude(pk=user.pk).exists():
+        return _error("did_key_already_bound", 409)
+
+    previous_did = user.custodial_did
+    try:
+        with transaction.atomic():
+            user.graduated_from_did = previous_did
+            user.custodial_did = holder_did
+            user.is_sovereign = True
+            user.account_tier = "sovereign"
+            user.set_unusable_password()
+            user.save(update_fields=[
+                "graduated_from_did", "custodial_did", "is_sovereign",
+                "account_tier", "password", "updated_at",
+            ])
+            if hasattr(request, "session"):
+                update_session_auth_hash(request, user)
+            _shred_custodial_key(previous_did)
+    except Exception:
+        logger.exception("VAULT SHRED FAILED — rolled back wallet binding did=%s", previous_did)
+        return _error("vault_shred_failed", 502)
+
+    cache.delete(challenge)
+    if hasattr(request, "session"):
+        request.session["auth_method"] = "did:websocket"
+        cache.set(f"user_auth_method:{user.id}", "did:websocket", 86400)
+
+    logger.info("GRADUATION BIND COMPLETE: %s -> %s", previous_did, holder_did)
+    return JsonResponse({
+        "status": "graduated",
+        "did": holder_did,
+        "graduated_from_did": previous_did,
         "is_sovereign": True,
     })
 

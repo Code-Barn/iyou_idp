@@ -67,6 +67,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True, db_index=True, blank=True, null=True)
     custodial_did = models.CharField(max_length=255, unique=True, db_index=True)
+    graduated_from_did = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     account_tier = models.CharField(max_length=20, choices=ACCOUNT_TIERS, default="managed_free")
     is_sovereign = models.BooleanField(default=False)
     email_verified = models.BooleanField(default=False)

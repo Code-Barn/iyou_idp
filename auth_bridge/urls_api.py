@@ -15,11 +15,12 @@
 
 from django.urls import path
 
-from .views_graduation import graduate_confirm, graduate_export
+from .views_graduation import graduate_bind, graduate_confirm, graduate_export
 
 app_name = 'identity'
 
 urlpatterns = [
     path('graduate/export/', graduate_export, name='graduate_export'),
     path('graduate/confirm/', graduate_confirm, name='graduate_confirm'),
+    path('graduate/bind/', graduate_bind, name='graduate_bind'),
 ]

@@ -21,7 +21,10 @@ wallet, or neighbouring peer discover what this node offers across the three
 auth tiers.  No session or permissions are required to read it.
 """
 
+from typing import Any
+
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
@@ -78,3 +81,33 @@ def peer_instance_info(request):
         "admin_did": settings.ADMIN_DID,
     }
     return JsonResponse(payload)
+
+
+@require_GET
+def did_web_root_document(request: Any) -> JsonResponse:
+    did = managed_did_namespace().rsplit(":user", 1)[0]
+    return JsonResponse({
+        "@context": ["https://www.w3.org/ns/did/v1"],
+        "id": did,
+    })
+
+
+@require_GET
+def did_web_user_document(request: Any, user_uuid: Any) -> JsonResponse:
+    User = get_user_model()
+    did = f"{managed_did_namespace()}:{user_uuid}"
+    user = User.objects.filter(custodial_did=did).first()
+    if user is None:
+        user = User.objects.filter(graduated_from_did=did).first()
+    if user is None:
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    document = {
+        "@context": ["https://www.w3.org/ns/did/v1"],
+        "id": did,
+        "authentication": [f"{did}#keys-1"],
+        "assertionMethod": [f"{did}#keys-1"],
+    }
+    if user.graduated_from_did == did and user.custodial_did.startswith("did:key:"):
+        document["alsoKnownAs"] = [user.custodial_did]
+    return JsonResponse(document)
