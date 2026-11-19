@@ -958,7 +958,10 @@ The handshake has several protection layers:
 | POST | `/auth/mobile-verify/` | Verifies VP (mobile OOB path), marks challenge `solved` |
 | GET | `/auth/challenge-status/<uuid>/` | Polling — returns `{solved, redirect_url}` when mobile has signed |
 | POST | `/auth/managed-login/` | Tier 1 Managed Login — validates email/password, JIT creates custodial `did:web`, verifies airlock & GDPR gates, logs in via `DIDAuthBackend`, and preserves OIDC redirect continuity |
-| GET | `/auth/logout/` | Global logout — clears IdP session, redirects to WUN (or `?next=`) |
+| GET | `/auth/logout/` | Global logout — flushes the session, clears `idp_csrftoken` + `iyou_sso_hint`, defaults to `/` (only local-relative `?next=` accepted) |
+| POST | `/auth/email/primary/challenge/` | Claim Primary Email — validates an unclaimed `did:key:` account, anti-squatting check across `User.email` + `LinkedEmail.email`, dispatches 6-digit OTP (300s TTL) |
+| POST | `/auth/email/primary/verify/` | Claim Primary Email — verifies OTP, atomically sets `User.email` / `email_verified` / `email_verified_at`, returns W3C `EmailOwnershipCredential` |
+| POST | `/auth/sso-preference/` | Toggle `iyou_sso_hint` / `iyou_sso_opt_out` cookies for the "Auto-sign in across ecosystem apps" preference |
 | GET/POST | `/auth/oauth/initiate/<provider>/` | Tier 1 OAuth — generates state, redirects to provider |
 | GET/POST | `/auth/oauth/callback/<provider>/` | Tier 1 OAuth — validates state, exchanges code, authenticates |
 | POST | `/auth/passkeys/register/begin/` | Passkey registration ceremony start (session required) |
@@ -968,14 +971,25 @@ The handshake has several protection layers:
 
 ### Identity Graduation Endpoints
 
-The export-and-shred protocol that graduates a Level 1 Managed identity to
-Sovereign custody. Full protocol specification in
-[§9 Identity Graduation Protocol](#9-identity-graduation-protocol).
+Two modes graduate a Level 1 Managed identity to Sovereign custody. The
+export-and-shred protocol preserves the retired `did:web` in
+`User.graduated_from_did` and can transition `sub` to a `did:key` when the
+signed receipt carries a `new_did` derived from the exported Vault key. The
+direct wallet-binding mode lets a Tier 1 session present a signed VP from an
+already-held `did:key` without exporting the managed seed. Full protocol
+specification in [§9 Identity Graduation Protocol](#9-identity-graduation-protocol).
+
+Graduated users emit `sub` = active `did:key`, `account_tier = "sovereign"`,
+and `graduated_from_did` = retired `did:web` in userinfo, ID-token, and
+`profile`/`openid` scope claims. Direct `did:key` users omit `graduated_from_did`.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/identity/graduate/export/` | Seals the managed Ed25519 private seed to a client ephemeral X25519 key (session + CSRF required) |
-| POST | `/api/v1/identity/graduate/confirm/` | Verifies Ed25519 receipt, atomically promotes `is_sovereign` and shreds the Vault key (session + CSRF required) |
+| POST | `/api/v1/identity/graduate/confirm/` | Verifies Ed25519 receipt, atomically promotes `is_sovereign`, records `graduated_from_did`, transitions `sub` when `new_did` is supplied, and shreds the Vault key (session + CSRF required) |
+| POST | `/api/v1/identity/graduate/bind/` | Direct wallet binding — verifies a signed W3C VP + challenge from the new `did:key`, rejects keys bound to other active users (409), atomically promotes and shreds the Vault key (session + CSRF required) |
+| GET | `/.well-known/did.json` | Root `did:web` DID document |
+| GET | `/user/<uuid>/did.json` | Managed-user DID document; includes `alsoKnownAs: ["did:key:…"]` for graduated identities |
 
 ### Admin DID Endpoints [L449-457]
 
@@ -1006,6 +1020,24 @@ invocation is required for the sovereign admin DID.
 | GET/POST | `/openid/introspect/` | Token introspection |
 | GET/POST | `/openid/end-session/` | End session |
 
+**Non-interactive authorization (`prompt=none`).** When
+`SovereignAuthorizeView` cannot complete a request without UI it redirects to
+the client's validated `redirect_uri` with `error=login_required` for
+unauthenticated callers, or `error=interaction_required` for airlock-blocked,
+legal-disclaimer, age-gate, or custodial sessions on graduated accounts; the
+original `state` is echoed unchanged. Unauthenticated `prompt=none` and
+`prompt=login` / `prompt=consent` combinations are delegated to
+`oidc_provider`, which returns the standard OIDC error redirects. Graduated
+`is_sovereign=True` users continue to mint front-channel codes when
+authenticated via `did:websocket`, `did:oob_qr`, or `webauthn:passkey`.
+
+**Cross-subdomain SSO hint.** `user_logged_in` / `user_logged_out` signals mark
+the request and `SSOHintCookieMiddleware` sets `iyou_sso_hint=1` on
+`.iyou.me` (host-only in `DEBUG`, `Secure` in production) for 86400 seconds,
+or deletes it on logout / when `iyou_sso_opt_out=1` is present. The dashboard
+"Auto-sign in across ecosystem apps" toggle writes that preference through
+`POST /auth/sso-preference/`.
+
 ### OAuth2 Provider Endpoints [L467-480]
 
 | Method | Path | Description |
@@ -1032,6 +1064,9 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/challenge-status/<id>/    → check_challenge_status
 /auth/managed-login/            → managed_login
 /auth/logout/                   → GlobalLogoutView
+/auth/email/primary/challenge/  → ClaimPrimaryEmailChallengeView
+/auth/email/primary/verify/     → VerifyPrimaryEmailView
+/auth/sso-preference/           → SSOPreferenceView
 /gate/                          → BetaGateView (Sovereign Airlock)
 /gate/redeem/                   → redeem_beta_invite (RFC-002 token / invite key / waitlist DID)
 /auth/admin/did-login/          → custom_admin_login
@@ -1045,6 +1080,9 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/passkeys/authenticate/complete/ → passkey_authenticate_complete
 /api/v1/identity/graduate/export/  → graduate_export
 /api/v1/identity/graduate/confirm/ → graduate_confirm
+/api/v1/identity/graduate/bind/    → graduate_bind (direct did:key wallet binding)
+/.well-known/did.json           → did_web_root_document
+/user/<uuid>/did.json           → did_web_user_document (alsoKnownAs after graduation)
 /openid/authorize/              → SovereignAuthorizeView (OIDC Authorization Endpoint)
 /openid/authorize               → SovereignAuthorizeView (no-trailing-slash alias)
 /openid/token/                  → Token exchange
@@ -1733,10 +1771,16 @@ in `INSTALLED_APPS`.
   extraction, and OIDC continuity (2026-07-18)
 - ✅ **Passkey (WebAuthn) engine + Identity Graduation protocol** — server-side
   passkey registration/assertion with clone detection; sealed export, signed
-  receipt confirmation and transactional Vault shredding; sovereign
-  front-channel lockout (2026-08-23)
+  receipt confirmation and transactional Vault shredding (2026-08-23)
+- ✅ **PKCE (S256) direct-callback support** — `_build_oidc_redirect` issues
+  S256-bound authorization codes inline after every auth ingress, skipping the
+  consent page for trusted public clients (2026-11)
+- ✅ **OIDC `prompt=none` silent SSO** — non-interactive authorization with
+  `login_required` / `interaction_required` error redirects to the validated
+  `redirect_uri`, plus cross-subdomain `iyou_sso_hint` signaling (2026-11-19)
+- ✅ **Sovereign `did:key:` posture promotion** — `evaluate_sovereign_admin_posture`
+  plus migration `0014_did_key_rows_to_sovereign` (2026-11-18)
 - ⬜ Add OIDC `prompt=login` support to force re-authentication
-- ⬜ Add PKCE (S256) support in the direct-callback path
 - ⬜ Wire the Tab 2 login page UI to the live passkey endpoints
 
 ### Long-term Goals [L685-694]
