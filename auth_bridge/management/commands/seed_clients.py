@@ -20,6 +20,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 LOCAL_DEV_FALLBACK = "http://127.0.0.1:8000/oidc/callback/"
+ROOT_POST_LOGOUT_REDIRECT = "https://iyou.me/"
 
 SATELLITES = [
     {
@@ -377,7 +378,7 @@ class Command(BaseCommand):
         for sat in SATELLITES:
             client_id = sat["client_id"]
             redirect_uris = "\n".join(sat["redirects"])
-            logout_uris = "\n".join(sat["post_logout_redirects"])
+            logout_uris = "\n".join([*sat["post_logout_redirects"], ROOT_POST_LOGOUT_REDIRECT])
 
             client, created = Client.objects.get_or_create(
                 client_id=client_id,

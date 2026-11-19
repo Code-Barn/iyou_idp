@@ -15,6 +15,7 @@
 
 import json
 from typing import Any
+from urllib.parse import urlencode
 
 import base58
 from cryptography.hazmat.primitives import serialization
@@ -368,3 +369,97 @@ class FreshDidKeySovereignProvisioningTest(TestCase):
         id_token = custom_id_token_claims({}, user, request=request)
         self.assertEqual(userinfo["account_tier"], "sovereign")
         self.assertEqual(id_token["account_tier"], "sovereign")
+
+
+@override_settings(SYSTEM_GATE_ENABLED=False)
+class PromptNoneAuthorizeTest(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+        rsa_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = rsa_priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        OIDCRSAKey.objects.create(key=pem.decode())
+
+        self.oidc_client = OIDCClient.objects.create(
+            name="Prompt None Client",
+            client_type="public",
+            client_id="prompt-none-client",
+            jwt_alg="RS256",
+            _redirect_uris="https://satellite.iyou.me/callback/\n",
+            _scope="openid profile",
+            require_consent=False,
+            reuse_consent=True,
+        )
+        self.oidc_client.response_types.add(ResponseType.objects.get(value="code"))
+
+        self.user = User.objects.create(
+            custodial_did="did:key:zPromptNoneTestUser",
+            email="prompt_none@iyou.me",
+            is_sovereign=True,
+            account_tier="sovereign",
+            show_legal_disclaimer=False,
+            is_active=True,
+        )
+
+    def _authorize_url(self, **overrides: Any) -> str:
+        params = {
+            "client_id": "prompt-none-client",
+            "response_type": "code",
+            "redirect_uri": "https://satellite.iyou.me/callback/",
+            "scope": "openid profile",
+            "state": "none-state-123",
+            "prompt": "none",
+        }
+        params.update(overrides)
+        return "/openid/authorize/?" + urlencode(params)
+
+    def _login(self, auth_method: str = "did:websocket", show_legal_disclaimer: bool = False) -> None:
+        self.user.show_legal_disclaimer = show_legal_disclaimer
+        self.user.save(update_fields=["show_legal_disclaimer"])
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["auth_method"] = auth_method
+        session.save()
+
+    def test_unauthenticated_prompt_none_returns_login_required(self) -> None:
+        response = self.client.get(self._authorize_url())
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://satellite.iyou.me/callback/?"))
+        self.assertIn("error=login_required", location)
+        self.assertIn("state=none-state-123", location)
+
+    def test_disclaimer_gate_prompt_none_returns_interaction_required(self) -> None:
+        self._login(show_legal_disclaimer=True)
+        response = self.client.get(self._authorize_url())
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertIn("error=interaction_required", location)
+        self.assertIn("state=none-state-123", location)
+        self.assertNotIn("post_disclaimer_redirect", self.client.session)
+
+    def test_unverified_session_prompt_none_returns_interaction_required(self) -> None:
+        self._login(auth_method="unverified")
+        response = self.client.get(self._authorize_url())
+        self.assertIn("error=interaction_required", response["Location"])
+        self.assertIn("state=none-state-123", response["Location"])
+
+    @override_settings(SYSTEM_GATE_ENABLED=True)
+    def test_airlock_blocked_prompt_none_returns_interaction_required(self) -> None:
+        self._login()
+        response = self.client.get(self._authorize_url())
+        self.assertIn("error=interaction_required", response["Location"])
+        self.assertIn("state=none-state-123", response["Location"])
+
+    def test_clean_sovereign_session_mints_code(self) -> None:
+        self._login()
+        response = self.client.get(self._authorize_url())
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://satellite.iyou.me/callback/?"))
+        self.assertIn("code=", location)
+        self.assertIn("state=none-state-123", location)
+        self.assertNotIn("error=", location)

@@ -728,6 +728,15 @@ class SatelliteRosterTest(TestCase):
         call_command("seed_clients")
         self.assertEqual(OIDCClient.objects.count(), 24)
 
+    def test_all_clients_permit_root_post_logout_redirect(self):
+        from django.core.management import call_command
+        from oidc_provider.models import Client as OIDCClient
+
+        call_command("seed_clients")
+        self.assertEqual(OIDCClient.objects.count(), 24)
+        for client in OIDCClient.objects.all():
+            self.assertIn("https://iyou.me/", client.post_logout_redirect_uris)
+
 
 class CacheFallbackTest(TestCase):
     def setUp(self):

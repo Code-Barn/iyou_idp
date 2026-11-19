@@ -28,12 +28,15 @@ import base58
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from django.core.cache.backends.locmem import LocMemCache
-from django.test import Client as TestClient, TestCase
+from django.http import HttpResponse
+from django.test import Client as TestClient, RequestFactory, TestCase
 from django.urls import reverse
 from oidc_provider.models import Client as OIDCClient, ResponseType, RSAKey as OIDCRSAKey
 
+from auth_bridge.middleware import SSOHintCookieMiddleware
 from auth_bridge.models import User
 from auth_bridge.resilient_cache import ResilientCache
+from auth_bridge.signals import SSO_HINT_MARKER, mark_sso_hint_on_login, mark_sso_hint_on_logout
 from auth_bridge.views import _build_oidc_redirect, _is_safe_public_redirect, cache as views_cache
 
 
@@ -386,3 +389,127 @@ class CanonicalJcsSignatureVerificationTest(TestCase):
             )
             self.assertEqual(resp.status_code, 200)
             self.assertTrue(resp.json().get("success"))
+
+
+class GlobalLogoutViewTest(TestCase):
+    def setUp(self):
+        self.client = TestClient()
+        self.user = User.objects.create_user(
+            email="logout_user@iyou.me",
+            custodial_did="did:key:logout-user",
+        )
+
+    def test_logout_flushes_session_and_clears_cookies(self):
+        self.client.force_login(self.user)
+        self.client.cookies["idp_csrftoken"] = "a" * 32
+        self.client.cookies["iyou_sso_hint"] = "1"
+
+        response = self.client.get(reverse("auth_bridge:global_logout"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/")
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertEqual(response.cookies["idp_csrftoken"].value, "")
+        self.assertEqual(response.cookies["iyou_sso_hint"].value, "")
+
+    def test_logout_allows_local_relative_next(self):
+        self.client.force_login(self.user)
+        response = self.client.get(f"{reverse('auth_bridge:global_logout')}?next=/gate/")
+        self.assertEqual(response["Location"], "/gate/")
+
+    def test_logout_rejects_external_open_redirect(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            f"{reverse('auth_bridge:global_logout')}?next=https://evil.example/"
+        )
+        self.assertEqual(response["Location"], "/")
+
+
+class LoginPageCacheHeaderTest(TestCase):
+    def setUp(self):
+        self.client = TestClient()
+
+    def test_login_page_has_no_store_headers(self):
+        response = self.client.get(reverse("auth_bridge:login"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertIn("no-cache", response["Cache-Control"])
+        self.assertEqual(response["Pragma"], "no-cache")
+
+    def test_dashboard_has_no_store_headers(self):
+        user = User.objects.create_user(
+            email="cached_user@iyou.me",
+            custodial_did="did:key:cached-dashboard",
+        )
+        self.client.force_login(user)
+        response = self.client.get(reverse("auth_bridge:login"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "auth_bridge/authenticated_dashboard.html")
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(response["Pragma"], "no-cache")
+
+
+class SSOHintCookieTest(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.user = User.objects.create_user(
+            email="sso_user@iyou.me",
+            custodial_did="did:key:sso-hint",
+        )
+
+    def _run_middleware(self, request):
+        return SSOHintCookieMiddleware(lambda req: HttpResponse("ok"))(request)
+
+    def test_signal_receivers_mark_request(self):
+        request = self.factory.get("/")
+        mark_sso_hint_on_login(sender=User, request=request, user=self.user)
+        self.assertEqual(getattr(request, SSO_HINT_MARKER), "set")
+        mark_sso_hint_on_logout(sender=User, request=request, user=self.user)
+        self.assertEqual(getattr(request, SSO_HINT_MARKER), "delete")
+
+    def test_middleware_sets_hint_on_login(self):
+        request = self.factory.get("/")
+        request.COOKIES = {}
+        setattr(request, SSO_HINT_MARKER, "set")
+        response = self._run_middleware(request)
+        self.assertEqual(response.cookies["iyou_sso_hint"].value, "1")
+
+    def test_middleware_suppresses_hint_when_opted_out(self):
+        request = self.factory.get("/")
+        request.COOKIES = {"iyou_sso_opt_out": "1"}
+        setattr(request, SSO_HINT_MARKER, "set")
+        response = self._run_middleware(request)
+        self.assertEqual(response.cookies["iyou_sso_hint"].value, "")
+
+    def test_middleware_deletes_hint_on_logout(self):
+        request = self.factory.get("/")
+        request.COOKIES = {"iyou_sso_hint": "1"}
+        setattr(request, SSO_HINT_MARKER, "delete")
+        response = self._run_middleware(request)
+        self.assertEqual(response.cookies["iyou_sso_hint"].value, "")
+
+    def test_sso_preference_requires_authentication(self):
+        response = TestClient().post(
+            reverse("auth_bridge:sso_preference"),
+            data=json.dumps({"auto_login": False}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error"], "authentication_required")
+
+    def test_sso_preference_toggle(self):
+        client = TestClient()
+        client.force_login(self.user)
+        url = reverse("auth_bridge:sso_preference")
+
+        disable = client.post(url, data=json.dumps({"auto_login": False}), content_type="application/json")
+        self.assertEqual(disable.status_code, 200)
+        self.assertFalse(disable.json()["auto_login"])
+        self.assertEqual(client.cookies["iyou_sso_opt_out"].value, "1")
+        self.assertEqual(client.cookies["iyou_sso_hint"].value, "")
+
+        enable = client.post(url, data=json.dumps({"auto_login": True}), content_type="application/json")
+        self.assertEqual(enable.status_code, 200)
+        self.assertTrue(enable.json()["auto_login"])
+        self.assertEqual(client.cookies["iyou_sso_opt_out"].value, "")
+        self.assertEqual(client.cookies["iyou_sso_hint"].value, "1")

@@ -16,10 +16,11 @@
 """
 Views for authentication challenges and OIDC flows.
 """
-from django.http import JsonResponse, HttpResponseRedirect, HttpResponseNotAllowed
+from django.http import JsonResponse, HttpResponseRedirect, HttpResponseNotAllowed, HttpRequest, HttpResponse
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth import login, logout as django_logout, get_user_model
 from django.shortcuts import render, redirect
@@ -1316,6 +1317,7 @@ class PkceTokenView(View):
 
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
+@method_decorator(never_cache, name='dispatch')
 class LoginPageView(View):
     """
     Render the DID login page for OIDC authentication flow.
@@ -1360,8 +1362,11 @@ class LoginPageView(View):
                 'home_ws_url': django_settings.IDP_HOME_WS_URL,
                 'wun_url': django_settings.IDP_WUN_URL,
                 'idp_base_url': django_settings.IDP_BASE_URL,
+                'sso_auto_enabled': request.COOKIES.get('iyou_sso_opt_out') != '1',
             }
-            return render(request, 'auth_bridge/authenticated_dashboard.html', context)
+            response = render(request, 'auth_bridge/authenticated_dashboard.html', context)
+            response["Pragma"] = "no-cache"
+            return response
 
         # Not authenticated — render the standard login page.
         next_url = next_url or DEFAULT_NEXT_URL
@@ -1371,7 +1376,9 @@ class LoginPageView(View):
             'wun_url': django_settings.IDP_WUN_URL,
             'idp_base_url': django_settings.IDP_BASE_URL,
         }
-        return render(request, 'auth_bridge/login.html', context)
+        response = render(request, 'auth_bridge/login.html', context)
+        response["Pragma"] = "no-cache"
+        return response
 
 
 class LegalDisclaimerView(View):
@@ -1546,10 +1553,67 @@ class GlobalLogoutView(View):
     Fully clear the IdP session and redirect the user.
     """
 
-    def get(self, request):
+    def get(self, request: HttpRequest) -> HttpResponse:
+        next_page = self._safe_next(request)
         django_logout(request)
-        next_page = request.GET.get('next', django_settings.IDP_WUN_URL + '/')
-        return redirect(next_page)
+        response = redirect(next_page)
+        response.delete_cookie("idp_csrftoken")
+        response.delete_cookie(
+            "iyou_sso_hint",
+            domain=None if django_settings.DEBUG else ".iyou.me",
+        )
+        return response
+
+    def _safe_next(self, request: HttpRequest) -> str:
+        candidate = request.GET.get('next', '')
+        if candidate.startswith('/') and not candidate.startswith('//'):
+            return candidate
+        return reverse('landing')
+
+
+class SSOPreferenceView(View):
+    def post(self, request: HttpRequest) -> HttpResponse:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "authentication_required"}, status=401)
+
+        try:
+            data = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            data = request.POST
+
+        enabled = data.get('auto_login') is True
+        response = JsonResponse({"success": True, "auto_login": enabled})
+        domain = None if django_settings.DEBUG else ".iyou.me"
+
+        if enabled:
+            response.delete_cookie("iyou_sso_opt_out", domain=domain)
+            response.set_cookie(
+                "iyou_sso_hint", "1", max_age=86400, domain=domain,
+                secure=not django_settings.DEBUG, samesite="Lax",
+            )
+        else:
+            response.set_cookie(
+                "iyou_sso_opt_out", "1", max_age=31536000, domain=domain,
+                secure=not django_settings.DEBUG, samesite="Lax",
+            )
+            response.delete_cookie("iyou_sso_hint", domain=domain)
+        return response
+
+
+def _prompt_none_redirect(request: HttpRequest, error: str) -> HttpResponse:
+    client_id = request.GET.get("client_id", "")
+    redirect_uri = request.GET.get("redirect_uri", "")
+    try:
+        client = Client.objects.get(client_id=client_id)
+    except Client.DoesNotExist:
+        return JsonResponse({"error": "invalid_request", "error_description": "Invalid client_id."}, status=400)
+    if redirect_uri not in client.redirect_uris:
+        return JsonResponse({"error": "invalid_request", "error_description": "Invalid redirect_uri."}, status=400)
+    params = {"error": error, "error_description": "Authentication interaction required."}
+    state = request.GET.get("state", "")
+    if state:
+        params["state"] = state
+    return oidc_redirect(f"{redirect_uri}?{urlencode(params)}")
 
 
 class SovereignAuthorizeEndpoint(AuthorizeEndpoint):
@@ -1581,9 +1645,12 @@ class SovereignAuthorizeView(AuthorizeView):
     authorize_endpoint_class = SovereignAuthorizeEndpoint
 
     def get(self, request, *args, **kwargs):
+        prompt_none = "none" in set((request.GET.get("prompt") or "").split())
         if getattr(request.user, "is_authenticated", False):
             auth_method = request.session.get("auth_method", "")
             if auth_method in ("password", "unverified"):
+                if prompt_none:
+                    return _prompt_none_redirect(request, "interaction_required")
                 logger.warning(
                     "OIDC GATE: blocking code issuance for unverified/password session: user=%s auth_method=%s",
                     request.user.custodial_did,
@@ -1598,6 +1665,8 @@ class SovereignAuthorizeView(AuthorizeView):
                 )
 
         if getattr(request.user, "is_authenticated", False):
+            if prompt_none and not _did_passes_gate(request, request.user.custodial_did):
+                return _prompt_none_redirect(request, "interaction_required")
             gate_resp = _gate_response(request, request.user.custodial_did)
             if gate_resp is not None:
                 return gate_resp
@@ -1607,6 +1676,8 @@ class SovereignAuthorizeView(AuthorizeView):
             # Terms & Node Operator Policy. Preserve the original authorize
             # request (full query string) so the flow resumes after ack.
             if getattr(request.user, "show_legal_disclaimer", True):
+                if prompt_none:
+                    return _prompt_none_redirect(request, "interaction_required")
                 request.session["post_disclaimer_redirect"] = request.get_full_path()
                 disclaimer_url = "{}?{}".format(
                     reverse("auth_bridge:legal_disclaimer"),
@@ -1616,6 +1687,8 @@ class SovereignAuthorizeView(AuthorizeView):
 
             if not _is_admin_did(request.user.custodial_did) and not getattr(request.user, "is_sovereign", False):
                 if getattr(request.user, "age_bracket", None) is None:
+                    if prompt_none:
+                        return _prompt_none_redirect(request, "interaction_required")
                     request.session["post_age_gate_redirect"] = request.get_full_path()
                     age_gate_url = "{}?{}".format(
                         reverse("auth_bridge:age_gate"),

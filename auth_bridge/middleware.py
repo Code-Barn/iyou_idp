@@ -27,8 +27,10 @@ import json
 import logging
 from typing import Any
 
+from django.conf import settings as django_settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 
+from auth_bridge.signals import SSO_HINT_MARKER
 from auth_bridge.tokens import is_credential_revoked
 
 logger = logging.getLogger(__name__)
@@ -143,3 +145,26 @@ class DependentRevocationMiddleware:
 
 # Canonical alias matching directive naming
 SessionRevocationInterceptor = DependentRevocationMiddleware
+
+
+class SSOHintCookieMiddleware:
+    def __init__(self, get_response: Any):
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        response = self.get_response(request)
+        action = getattr(request, SSO_HINT_MARKER, None)
+        domain = None if django_settings.DEBUG else ".iyou.me"
+
+        if action == "set":
+            if request.COOKIES.get("iyou_sso_opt_out") != "1":
+                response.set_cookie(
+                    "iyou_sso_hint", "1", max_age=86400, domain=domain,
+                    secure=not django_settings.DEBUG, samesite="Lax", httponly=False,
+                )
+            else:
+                response.delete_cookie("iyou_sso_hint", domain=domain)
+        elif action == "delete":
+            response.delete_cookie("iyou_sso_hint", domain=domain)
+
+        return response
