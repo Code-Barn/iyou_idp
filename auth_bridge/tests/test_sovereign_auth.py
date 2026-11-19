@@ -269,3 +269,102 @@ class SovereignAuthDecouplingTest(TestCase):
         data = resp.json()
         self.assertEqual(data["error"], "access_denied")
         self.assertIn("Legacy password or unverified authentication", data["error_description"])
+
+
+@override_settings(SYSTEM_GATE_ENABLED=False, BETA_INVITE_KEYS=["fresh-sovereign-invite"])
+class FreshDidKeySovereignProvisioningTest(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+        self.private_key = ed25519.Ed25519PrivateKey.generate()
+        self.did = _make_did(
+            self.private_key.public_key().public_bytes(
+                serialization.Encoding.Raw,
+                serialization.PublicFormat.Raw,
+            )
+        )
+
+    def _root_auth_vp(self, challenge: str) -> dict[str, Any]:
+        return _sign(
+            {
+                "@context": ["https://www.w3.org/2018/credentials/v1"],
+                "type": ["VerifiablePresentation"],
+                "holder": self.did,
+                "challenge": challenge,
+                "verifiableCredential": [],
+                "issuer": self.did,
+            },
+            self.private_key,
+        )
+
+    def test_verify_signature_provisions_fresh_did_key_as_sovereign(self) -> None:
+        challenge_resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        challenge = challenge_resp.json()["challenge"]
+        verify_resp = self.client.post(
+            reverse("auth_bridge:verify_signature"),
+            data=json.dumps({
+                "verifiable_presentation": self._root_auth_vp(challenge),
+                "challenge": challenge,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(verify_resp.status_code, 200)
+        self.assertTrue(verify_resp.json()["success"])
+
+        user = User.objects.get(custodial_did=self.did)
+        self.assertEqual(user.account_tier, "sovereign")
+        self.assertTrue(user.is_sovereign)
+        self.assertIsNone(user.email)
+
+    def test_check_challenge_status_provisions_fresh_did_key_as_sovereign(self) -> None:
+        challenge_id = "fresh-sovereign-mobile-challenge"
+        cache.set(
+            challenge_id,
+            json.dumps({"status": "solved", "did": self.did, "next_url": ""}),
+            300,
+        )
+        status_resp = self.client.get(
+            reverse("auth_bridge:challenge_status", kwargs={"challenge_id": challenge_id})
+        )
+        self.assertEqual(status_resp.status_code, 200)
+        self.assertTrue(status_resp.json()["solved"])
+
+        user = User.objects.get(custodial_did=self.did)
+        self.assertEqual(user.account_tier, "sovereign")
+        self.assertTrue(user.is_sovereign)
+        self.assertIsNone(user.email)
+
+    def test_redeem_beta_invite_provisions_fresh_did_key_as_sovereign(self) -> None:
+        session = self.client.session
+        session["verified_pending_did"] = self.did
+        session.save()
+
+        response = self.client.post(
+            reverse("auth_bridge:gate_redeem"),
+            {"invite_key": "fresh-sovereign-invite"},
+        )
+        self.assertIn(response.status_code, (302, 200))
+
+        user = User.objects.get(custodial_did=self.did)
+        self.assertEqual(user.account_tier, "sovereign")
+        self.assertTrue(user.is_sovereign)
+        self.assertIsNone(user.email)
+
+    def test_fresh_did_key_login_emits_sovereign_account_tier_claims(self) -> None:
+        challenge_id = "fresh-sovereign-claims-challenge"
+        cache.set(
+            challenge_id,
+            json.dumps({"status": "solved", "did": self.did, "next_url": ""}),
+            300,
+        )
+        self.client.get(reverse("auth_bridge:challenge_status", kwargs={"challenge_id": challenge_id}))
+        user = User.objects.get(custodial_did=self.did)
+
+        class DummyRequest:
+            def __init__(self, session_data: dict[str, Any]) -> None:
+                self.session = session_data
+
+        request = DummyRequest({"auth_method": "did:oob_qr"})
+        userinfo = custom_userinfo_claims({}, user, request=request)
+        id_token = custom_id_token_claims({}, user, request=request)
+        self.assertEqual(userinfo["account_tier"], "sovereign")
+        self.assertEqual(id_token["account_tier"], "sovereign")

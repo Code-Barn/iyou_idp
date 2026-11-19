@@ -27,7 +27,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.sessions.models import Session
 from django.core.mail import send_mail
 from django.core.validators import ValidationError, validate_email
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -522,6 +522,8 @@ class ExportEmailCredentialView(View):
             return JsonResponse({"error": "authentication_required"}, status=401)
 
         raw_email = request.GET.get("email")
+        if not request.user.email:
+            return JsonResponse({"error": "no_primary_email", "error_description": "No primary email claimed."}, status=404)
         if not raw_email or raw_email.strip().lower() == request.user.email.lower():
             target_email = request.user.email
             label = "primary"
@@ -534,3 +536,112 @@ class ExportEmailCredentialView(View):
 
         vc = issue_email_ownership_credential(request.user, target_email, label)
         return JsonResponse({"success": True, "email": target_email, "label": label, "vc": vc})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ClaimPrimaryEmailChallengeView(View):
+    def post(self, request: HttpRequest) -> HttpResponse:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "authentication_required"}, status=401)
+        if request.user.email:
+            return JsonResponse({"error": "primary_already_claimed"}, status=409)
+
+        try:
+            data = json.loads(request.body.decode("utf-8") or "{}") if request.body else request.POST.dict()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({"error": "invalid_payload", "error_description": "Invalid JSON payload."}, status=400)
+
+        raw_email = data.get("email", "")
+        if not raw_email or not isinstance(raw_email, str):
+            return JsonResponse({"error": "missing_email", "error_description": "Email address is required."}, status=400)
+
+        email = raw_email.strip().lower()
+        try:
+            validate_email(email)
+        except ValidationError:
+            return JsonResponse({"error": "invalid_email", "error_description": "Invalid email address format."}, status=400)
+
+        if User.objects.filter(email=email).exists() or LinkedEmail.objects.filter(email=email).exists():
+            return JsonResponse({"error": "email_already_claimed"}, status=409)
+
+        otp = "".join(secrets.choice("0123456789") for _ in range(6))
+        cache.set(
+            f"email_primary_otp:{email}",
+            json.dumps({"user_id": str(request.user.id), "otp": otp}),
+            timeout=300,
+        )
+
+        subject = f"Your iyou primary email verification code: {otp}"
+        message = (
+            f"Your verification code to claim {email} as your primary iyou email is: {otp}\n\n"
+            f"This code will expire in 5 minutes.\n\n"
+            f"— The iyou Identity Team\n"
+        )
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "info@iyou.me")
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=from_email,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception("Failed to dispatch primary email claim OTP to %s", email)
+
+        logger.info("PRIMARY EMAIL CLAIM OTP DISPATCHED: email=%s user=%s", email, request.user.custodial_did)
+        return JsonResponse({"success": True, "action": "primary_claim_challenge_sent"})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class VerifyPrimaryEmailView(View):
+    def post(self, request: HttpRequest) -> HttpResponse:
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "authentication_required"}, status=401)
+
+        try:
+            data = json.loads(request.body.decode("utf-8") or "{}") if request.body else request.POST.dict()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({"error": "invalid_payload", "error_description": "Invalid JSON payload."}, status=400)
+
+        email = data.get("email", "").strip().lower() if isinstance(data.get("email"), str) else ""
+        otp = re.sub(r"\D", "", str(data.get("otp", "")))
+        if not email or len(otp) != 6:
+            return JsonResponse(
+                {"error": "missing_parameters", "error_description": "Email and a 6-digit OTP are required."},
+                status=400,
+            )
+
+        cached_raw = cache.get(f"email_primary_otp:{email}")
+        if not cached_raw:
+            return JsonResponse(
+                {"error": "expired_or_invalid_otp", "error_description": "Verification code expired or not found."},
+                status=400,
+            )
+
+        cached = json.loads(cached_raw) if isinstance(cached_raw, str) else cached_raw
+        if str(cached.get("user_id", "")) != str(request.user.id):
+            return JsonResponse(
+                {"error": "user_mismatch", "error_description": "Verification code does not belong to current session."},
+                status=403,
+            )
+
+        if not hmac.compare_digest(otp, str(cached.get("otp", ""))):
+            return JsonResponse({"error": "invalid_otp", "error_description": "Invalid verification code."}, status=400)
+
+        cache.delete(f"email_primary_otp:{email}")
+
+        try:
+            with transaction.atomic():
+                if User.objects.filter(email=email).exists() or LinkedEmail.objects.filter(email=email).exists():
+                    return JsonResponse({"error": "email_already_claimed"}, status=409)
+                request.user.email = email
+                request.user.email_verified = True
+                request.user.email_verified_at = timezone.now()
+                request.user.save(update_fields=["email", "email_verified", "email_verified_at", "updated_at"])
+        except IntegrityError:
+            return JsonResponse({"error": "email_already_claimed"}, status=409)
+
+        vc = issue_email_ownership_credential(request.user, email, "primary")
+        logger.info("PRIMARY EMAIL CLAIMED: email=%s user=%s", email, request.user.custodial_did)
+        return JsonResponse({"success": True, "email": email, "label": "primary", "vc": vc})

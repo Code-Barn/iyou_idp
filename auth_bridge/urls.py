@@ -42,11 +42,13 @@ from .views_passkeys import (
 from .admin_views import custom_admin_login, custom_admin_verify, custom_admin_dashboard
 from .views_email_locker import (
     ChallengeLinkEmailView,
+    ClaimPrimaryEmailChallengeView,
     ConfirmAccountMergeView,
     ExportEmailCredentialView,
     LinkedEmailDetailView,
     ListLinkedEmailsView,
     VerifyLinkEmailView,
+    VerifyPrimaryEmailView,
 )
 
 app_name = 'auth_bridge'
@@ -75,6 +77,8 @@ urlpatterns = [
     path('email/link/challenge/',      ChallengeLinkEmailView.as_view(), name='email_link_challenge'),
     path('email/link/verify/',         VerifyLinkEmailView.as_view(),    name='email_link_verify'),
     path('email/merge/confirm/',       ConfirmAccountMergeView.as_view(), name='email_merge_confirm'),
+    path('email/primary/challenge/',   ClaimPrimaryEmailChallengeView.as_view(), name='email_primary_challenge'),
+    path('email/primary/verify/',      VerifyPrimaryEmailView.as_view(), name='email_primary_verify'),
     path('email/link/',                ListLinkedEmailsView.as_view(),   name='email_link_list'),
     path('email/link/<uuid:id>/',      LinkedEmailDetailView.as_view(),  name='email_link_remove'),
     path('email/link/<uuid:id>/vc/',   LinkedEmailDetailView.as_view(),  name='email_link_vc'),
@@ -82,6 +86,8 @@ urlpatterns = [
     path('auth/email/link/challenge/', ChallengeLinkEmailView.as_view()),
     path('auth/email/link/verify/',    VerifyLinkEmailView.as_view()),
     path('auth/email/merge/confirm/',  ConfirmAccountMergeView.as_view()),
+    path('auth/email/primary/challenge/', ClaimPrimaryEmailChallengeView.as_view()),
+    path('auth/email/primary/verify/',    VerifyPrimaryEmailView.as_view()),
     path('auth/email/link/',           ListLinkedEmailsView.as_view()),
     path('auth/email/link/<uuid:id>/', LinkedEmailDetailView.as_view()),
     path('auth/email/link/<uuid:id>/vc/', LinkedEmailDetailView.as_view()),

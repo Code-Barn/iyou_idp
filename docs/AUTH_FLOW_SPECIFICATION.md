@@ -420,7 +420,7 @@ class User(AbstractBaseUser):
 - `password` field exists (inherited from `AbstractBaseUser`) but is **never used**
   for DID auth; set to unusable on admin elevation
 - `is_staff` / `is_superuser` are exclusively controlled by `ADMIN_DID` matching
-- `is_sovereign = True` blocks all front-channel OIDC code issuance for the DID
+- `is_sovereign = True` marks self-custodied `did:key:` identities; front-channel OIDC code issuance remains available for cryptographically authenticated `did:websocket` / `did:oob_qr` sessions and is blocked only for unverified/password sessions (§16.3)
 - Users are created on first successful DID verification (`get_or_create`)
 
 ---

@@ -209,3 +209,123 @@ class MultiEmailLockerTest(TestCase):
         ).first()
         self.assertIsNotNone(fed)
         self.assertEqual(fed.user.id, self.user_a.id)
+
+
+class PrimaryEmailClaimTest(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+        rsa_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = rsa_priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        OIDCRSAKey.objects.create(key=pem.decode())
+        self.claimant = User.objects.create_user(
+            email=None,
+            custodial_did=f"did:key:claimant-{uuid.uuid4().hex}",
+        )
+        self.other_user = User.objects.create_user(
+            email="other_primary@iyou.me",
+            custodial_did=f"did:key:other-{uuid.uuid4().hex}",
+        )
+
+    def _challenge(self, email: str):
+        return self.client.post(
+            reverse("auth_bridge:email_primary_challenge"),
+            data=json.dumps({"email": email}),
+            content_type="application/json",
+        )
+
+    def _verify(self, email: str, otp: str):
+        return self.client.post(
+            reverse("auth_bridge:email_primary_verify"),
+            data=json.dumps({"email": email, "otp": otp}),
+            content_type="application/json",
+        )
+
+    def test_challenge_and_verify_primary_email(self) -> None:
+        self.client.force_login(self.claimant)
+        email = "new_primary@iyou.me"
+
+        challenge = self._challenge(email)
+        self.assertEqual(challenge.status_code, 200)
+        self.assertEqual(challenge.json()["action"], "primary_claim_challenge_sent")
+        self.assertEqual(len(mail.outbox), 1)
+
+        cached = json.loads(cache.get(f"email_primary_otp:{email}"))
+        self.assertEqual(cached["user_id"], str(self.claimant.id))
+
+        verified = self._verify(email, cached["otp"])
+        self.assertEqual(verified.status_code, 200)
+        data = verified.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["label"], "primary")
+        self.assertEqual(data["vc"]["credentialSubject"]["email"], email)
+
+        self.claimant.refresh_from_db()
+        self.assertEqual(self.claimant.email, email)
+        self.assertTrue(self.claimant.email_verified)
+        self.assertIsNotNone(self.claimant.email_verified_at)
+        self.assertIsNone(cache.get(f"email_primary_otp:{email}"))
+
+    def test_challenge_rejected_when_primary_already_claimed(self) -> None:
+        self.client.force_login(self.other_user)
+        response = self._challenge("another_primary@iyou.me")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "primary_already_claimed")
+
+    def test_challenge_rejected_for_email_claimed_in_user_or_linked_email(self) -> None:
+        self.client.force_login(self.claimant)
+        user_claim = self._challenge(self.other_user.email)
+        self.assertEqual(user_claim.status_code, 409)
+        self.assertEqual(user_claim.json()["error"], "email_already_claimed")
+
+        LinkedEmail.objects.create(user=self.other_user, email="linked_claim@iyou.me", label="work")
+        linked_claim = self._challenge("linked_claim@iyou.me")
+        self.assertEqual(linked_claim.status_code, 409)
+        self.assertEqual(linked_claim.json()["error"], "email_already_claimed")
+
+    def test_verify_rejects_wrong_otp_and_other_user(self) -> None:
+        email = "otp_guard@iyou.me"
+        self.client.force_login(self.claimant)
+        self._challenge(email)
+        cached = json.loads(cache.get(f"email_primary_otp:{email}"))
+
+        wrong_otp = "000000" if cached["otp"] != "000000" else "111111"
+        wrong = self._verify(email, wrong_otp)
+        self.assertEqual(wrong.status_code, 400)
+        self.assertEqual(wrong.json()["error"], "invalid_otp")
+
+        self.client.force_login(self.other_user)
+        mismatch = self._verify(email, cached["otp"])
+        self.assertEqual(mismatch.status_code, 403)
+        self.assertEqual(mismatch.json()["error"], "user_mismatch")
+
+        self.claimant.refresh_from_db()
+        self.assertIsNone(self.claimant.email)
+
+    def test_verify_is_single_use(self) -> None:
+        email = "single_use@iyou.me"
+        self.client.force_login(self.claimant)
+        self._challenge(email)
+        otp = json.loads(cache.get(f"email_primary_otp:{email}"))["otp"]
+
+        first = self._verify(email, otp)
+        self.assertEqual(first.status_code, 200)
+        second = self._verify(email, otp)
+        self.assertEqual(second.status_code, 400)
+        self.assertEqual(second.json()["error"], "expired_or_invalid_otp")
+
+    def test_verify_rejects_email_squatted_after_challenge(self) -> None:
+        email = "race_claim@iyou.me"
+        self.client.force_login(self.claimant)
+        self._challenge(email)
+        LinkedEmail.objects.create(user=self.other_user, email=email, label="work")
+        otp = json.loads(cache.get(f"email_primary_otp:{email}"))["otp"]
+
+        response = self._verify(email, otp)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "email_already_claimed")
+        self.claimant.refresh_from_db()
+        self.assertIsNone(self.claimant.email)

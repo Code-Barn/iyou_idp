@@ -52,6 +52,7 @@
     function initClaimModal() {
         const modal = document.getElementById('claim-email-modal');
         const openBtn = document.getElementById('open-claim-email-btn');
+        const primaryOpenBtn = document.getElementById('claim-primary-email-btn');
         const closeBtns = document.querySelectorAll('.close-claim-email-btn');
         const modalTitle = document.getElementById('claim-modal-title');
         const step1 = document.getElementById('claim-step1-container');
@@ -68,14 +69,18 @@
         const mergeWarningBadge = document.getElementById('merge-warning-badge');
         const mergeAliasContainer = document.getElementById('merge-alias-label-container');
         const mergeAliasInput = document.getElementById('merge-alias-label-input');
+        const labelContainer = document.getElementById('claim-label-container');
 
-        if (!modal || !openBtn) return;
+        if (!modal || (!openBtn && !primaryOpenBtn)) return;
 
         let isMergeMode = false;
+        let isPrimaryMode = false;
 
         function resetForm() {
             isMergeMode = false;
+            isPrimaryMode = false;
             if (modalTitle) modalTitle.textContent = 'Claim & Lock Email';
+            if (labelContainer) labelContainer.classList.remove('hidden');
             if (emailInput) emailInput.value = '';
             if (labelSelect) labelSelect.value = 'personal';
             if (otpInput) otpInput.value = '';
@@ -108,12 +113,21 @@
             if (emailInput) emailInput.focus();
         }
 
+        function openPrimaryModal() {
+            openModal();
+            isPrimaryMode = true;
+            if (modalTitle) modalTitle.textContent = 'Claim Primary Email';
+            if (labelContainer) labelContainer.classList.add('hidden');
+            if (verifyBtn) verifyBtn.textContent = 'Verify & Claim';
+        }
+
         function closeModal() {
             modal.classList.add('hidden');
             resetForm();
         }
 
-        openBtn.addEventListener('click', openModal);
+        if (openBtn) openBtn.addEventListener('click', openModal);
+        if (primaryOpenBtn) primaryOpenBtn.addEventListener('click', openPrimaryModal);
         closeBtns.forEach(btn => btn.addEventListener('click', closeModal));
 
         modal.addEventListener('click', (e) => {
@@ -123,6 +137,8 @@
         if (backBtn) {
             backBtn.addEventListener('click', () => {
                 isMergeMode = false;
+                isPrimaryMode = false;
+                if (labelContainer) labelContainer.classList.remove('hidden');
                 if (modalTitle) modalTitle.textContent = 'Claim & Lock Email';
                 if (mergeWarningBadge) mergeWarningBadge.classList.add('hidden');
                 if (mergeAliasContainer) mergeAliasContainer.classList.add('hidden');
@@ -151,14 +167,17 @@
                 sendBtn.disabled = true;
                 sendBtn.textContent = 'Sending code...';
 
+                const endpoint = isPrimaryMode ? '/auth/email/primary/challenge/' : '/auth/email/link/challenge/';
+                const payload = isPrimaryMode ? { email } : { email, label };
+
                 try {
-                    const response = await fetch('/auth/email/link/challenge/', {
+                    const response = await fetch(endpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': getCsrfToken(),
                         },
-                        body: JSON.stringify({ email, label }),
+                        body: JSON.stringify(payload),
                     });
 
                     const data = await response.json();
@@ -192,10 +211,10 @@
                         if (verifyBtn) verifyBtn.textContent = 'Consolidate Account';
                     } else {
                         isMergeMode = false;
-                        if (modalTitle) modalTitle.textContent = 'Claim & Lock Email';
+                        if (modalTitle) modalTitle.textContent = isPrimaryMode ? 'Claim Primary Email' : 'Claim & Lock Email';
                         if (mergeWarningBadge) mergeWarningBadge.classList.add('hidden');
                         if (mergeAliasContainer) mergeAliasContainer.classList.add('hidden');
-                        if (verifyBtn) verifyBtn.textContent = 'Verify & Lock';
+                        if (verifyBtn) verifyBtn.textContent = isPrimaryMode ? 'Verify & Claim' : 'Verify & Lock';
                     }
 
                     if (targetEmailDisplay) targetEmailDisplay.textContent = email;
@@ -235,11 +254,13 @@
                 verifyBtn.disabled = true;
                 verifyBtn.textContent = isMergeMode ? 'Consolidating...' : 'Verifying...';
 
-                const endpoint = isMergeMode ? '/auth/email/merge/confirm/' : '/auth/email/link/verify/';
+                const endpoint = isPrimaryMode
+                    ? '/auth/email/primary/verify/'
+                    : (isMergeMode ? '/auth/email/merge/confirm/' : '/auth/email/link/verify/');
                 const aliasLabel = (mergeAliasInput?.value || '').trim() || 'alias';
-                const payload = isMergeMode
-                    ? { email, otp, alias_label: aliasLabel }
-                    : { email, otp };
+                const payload = isPrimaryMode
+                    ? { email, otp }
+                    : (isMergeMode ? { email, otp, alias_label: aliasLabel } : { email, otp });
 
                 try {
                     const response = await fetch(endpoint, {
@@ -259,7 +280,16 @@
                             step2Error.classList.remove('hidden');
                         }
                         verifyBtn.disabled = false;
-                        verifyBtn.textContent = isMergeMode ? 'Consolidate Account' : 'Verify & Lock';
+                        verifyBtn.textContent = isPrimaryMode
+                            ? 'Verify & Claim'
+                            : (isMergeMode ? 'Consolidate Account' : 'Verify & Lock');
+                        return;
+                    }
+
+                    if (isPrimaryMode) {
+                        closeModal();
+                        updatePrimaryRow(email);
+                        showToast(`Primary email ${email} claimed and verified!`);
                         return;
                     }
 
@@ -289,9 +319,37 @@
                     }
                 } finally {
                     verifyBtn.disabled = false;
-                    verifyBtn.textContent = isMergeMode ? 'Consolidate Account' : 'Verify & Lock';
+                    verifyBtn.textContent = isPrimaryMode
+                        ? 'Verify & Claim'
+                        : (isMergeMode ? 'Consolidate Account' : 'Verify & Lock');
                 }
             });
+        }
+    }
+
+    function updatePrimaryRow(email) {
+        const valueEl = document.getElementById('primary-email-value');
+        if (valueEl) valueEl.textContent = email;
+
+        const statusEl = document.getElementById('primary-email-status');
+        if (statusEl) {
+            statusEl.textContent = '';
+            const badge = document.createElement('span');
+            badge.className = 'inline-flex items-center gap-1 text-xs font-semibold text-emerald-700';
+            badge.textContent = '✓ Verified';
+            statusEl.appendChild(badge);
+        }
+
+        const claimBtn = document.getElementById('claim-primary-email-btn');
+        if (claimBtn && claimBtn.parentElement) {
+            const exportBtn = document.createElement('button');
+            exportBtn.type = 'button';
+            exportBtn.id = 'primary-export-vc-btn';
+            exportBtn.setAttribute('data-email', email);
+            exportBtn.setAttribute('data-is-primary', 'true');
+            exportBtn.className = 'export-vc-btn inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors';
+            exportBtn.textContent = 'Export W3C Credential';
+            claimBtn.replaceWith(exportBtn);
         }
     }
 

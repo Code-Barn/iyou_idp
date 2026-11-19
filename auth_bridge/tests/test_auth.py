@@ -147,6 +147,13 @@ class EmptyStringEmailInvariantTest(TestCase):
         self.assertIsNone(user1.email)
         self.assertIsNone(user2.email)
 
+    def test_primary_email_credential_returns_404_for_user_without_email(self):
+        user, _ = User.objects.get_or_create(custodial_did=self.did1, defaults={"email": None})
+        self.client.force_login(user)
+        response = self.client.get(reverse("auth_bridge:email_link_credential"))
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["error"], "no_primary_email")
+
 
 class SignatureAndNonceAuditTest(TestCase):
     """Verify challenge expiration, nonce checks, and replay defense."""

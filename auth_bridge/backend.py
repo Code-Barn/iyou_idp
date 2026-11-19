@@ -31,17 +31,29 @@ def evaluate_sovereign_admin_posture(user):
     if the custodial DID satisfies the environment master key constraints.
     """
     target_admin_did = settings.ADMIN_DID
+    changed = []
 
     if user.custodial_did == target_admin_did:
         if not user.is_staff or not user.is_superuser:
             user.is_staff = True
             user.is_superuser = True
             user.set_unusable_password()
-            user.save(update_fields=["is_staff", "is_superuser", "password"])
+            changed.extend(["is_staff", "is_superuser", "password"])
             logger.info(
                 "ADMIN ELEVATION: DID %s promoted to superuser",
                 user.custodial_did,
             )
+
+    if user.custodial_did.startswith("did:key:") and (
+        user.account_tier != "sovereign" or not user.is_sovereign
+    ):
+        user.account_tier = "sovereign"
+        user.is_sovereign = True
+        changed.extend(["account_tier", "is_sovereign"])
+
+    if changed:
+        changed.append("updated_at")
+        user.save(update_fields=list(dict.fromkeys(changed)))
     return user
 
 

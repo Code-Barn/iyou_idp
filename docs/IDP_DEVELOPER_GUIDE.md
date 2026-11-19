@@ -299,8 +299,8 @@ def create_superuser(self, email, custodial_did=None, **extra_fields):
 | `id` | `UUIDField` (PK) | Auto-generated, non-editable |
 | `email` | `EmailField` (unique) | `USERNAME_FIELD` — used for lookup |
 | `custodial_did` | `CharField(255, unique)` | `did:web:iyou.me:user:{uuid}` — the canonical identity |
-| `account_tier` | `CharField` | `"sovereign"`, `"community"`, or `"managed_free"` |
-| `is_sovereign` | `BooleanField` | Default `False` — flipped to `True` by the Identity Graduation protocol; blocks front-channel OIDC issuance |
+| `account_tier` | `CharField` | `"managed_free"`, `"managed_premium"`, or `"sovereign"` |
+| `is_sovereign` | `BooleanField` | Default `False` — `True` for self-custodied `did:key:` logins and after Identity Graduation; front-channel OIDC remains available for cryptographic sessions (§16.3) |
 | `show_legal_disclaimer` | `BooleanField` | Default `True` — controls Legal Disclaimer Gate presentation on login |
 | `disclaimer_acknowledged_at` | `DateTimeField` | Timestamp of explicit disclaimer acknowledgment (audit trail) |
 | `is_active` | `BooleanField` | Default `True` |
@@ -731,19 +731,17 @@ failure rolls the promotion back entirely (`502
 {"error": "vault_shred_failed"}`, `is_sovereign` stays `False`, managed key
 preserved).
 
-#### Post-Graduation Front-Channel Lockout
+#### Post-Graduation Front-Channel OIDC Delegation
 
-`SovereignAuthorizeView.get()` checks `request.user.is_sovereign` **before**
-issuing any authorization code and returns:
+`SovereignAuthorizeView.get()` does not lock out graduated sovereign identities.
+Front-channel OIDC code issuance is permitted for cryptographically authenticated
+`did:websocket` (Tier 3 loopback) and `did:oob_qr` (Tier 2 mobile QR) sessions, and
+fails closed with HTTP 403 `access_denied` only for `auth_method` values `password`
+or `unverified`. This matches `docs/AUTH_FLOW_SPECIFICATION.md` §16.3.
 
-```json
-{"error": "access_denied", "error_description": "Graduated sovereign identities must authenticate directly with their own DID."}
-```
-
-Graduated DIDs therefore can no longer mint IdP front-channel OIDC sessions;
-satellites must verify the user's self-custodied DID directly. The OIDC
-`sub` claim contract is unchanged — it remains the canonical
-`custodial_did` via `custom_sub_generator`.
+The OIDC `sub` claim contract is unchanged — it remains the canonical
+`custodial_did` via `custom_sub_generator`, and `account_tier` is emitted as
+`"sovereign"` in ID-token, userinfo, and scope claims.
 
 #### Graduation Error Codes
 

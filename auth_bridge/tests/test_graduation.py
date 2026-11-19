@@ -185,7 +185,7 @@ class GraduationHappyPathTest(GraduationBaseTestCase):
         self.assertNotIn(user.custodial_did, self.vault.store)
         self.assertEqual(self.vault.delete_calls, [user.custodial_did])
 
-    def test_graduated_did_is_blocked_from_front_channel_issuance(self) -> None:
+    def test_unverified_session_is_blocked_from_front_channel_after_graduation(self) -> None:
         user, vault_private_key = self._make_user()
         self.client.force_login(user)
         session = self.client.session

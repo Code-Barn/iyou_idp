@@ -55,7 +55,7 @@ clients. This means:
 - `_scope = "openid profile email"` — default scope set
 - `require_consent = False` / `reuse_consent = True` — consent bypassed entirely for trusted satellites
 
-**Client ID format:** `iyou-{slug}-satellite-client` (e.g., `iyou-wun-satellite-client`)
+**Client ID format:** `{slug}-satellite-client` (e.g., `iyou-wun-satellite-client`)
 
 **Registered redirect URIs:** Each client has one or more `https://{subdomain}.iyou.me/oidc/callback/` URIs.
 
@@ -420,7 +420,7 @@ class User(AbstractBaseUser):
 - `password` field exists (inherited from `AbstractBaseUser`) but is **never used**
   for DID auth; set to unusable on admin elevation
 - `is_staff` / `is_superuser` are exclusively controlled by `ADMIN_DID` matching
-- `is_sovereign = True` blocks all front-channel OIDC code issuance for the DID
+- `is_sovereign = True` marks self-custodied `did:key:` identities; front-channel OIDC code issuance remains available for cryptographically authenticated `did:websocket` / `did:oob_qr` sessions and is blocked only for unverified/password sessions (§16.3)
 - Users are created on first successful DID verification (`get_or_create`)
 
 ---
@@ -811,108 +811,12 @@ response = requests.post(
 )
 ```
 
-### 17.4 Immutable Identity & OIDC URL Contract (No Split-Brain)
-All satellite apps must adhere to the immutable OIDC endpoint topology:
-- **External (Browser-Facing) Authorize Endpoint:**
-  `OIDC_OP_AUTHORIZATION_ENDPOINT = "https://iyou.me/openid/authorize/"`
-- **Internal Cluster Back-Channel Endpoints (Direct Pod-to-Pod via CoreDNS, Port 80 ClusterIP in `identity` namespace):**
-  - `OIDC_OP_TOKEN_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/token/"`
-  - `OIDC_OP_USER_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/userinfo/"`
-  - `OIDC_OP_JWKS_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/jwks/"`
-  *(Note: Must strictly use `/openid/`, NEVER `/oidc/`. Service port is 80, not 8000).*
+### 17.4 Ingress Alignment (No Split-Brain)
+`IDP_BASE_INTERNAL_URL` must default to `IDP_BASE_PUBLIC_URL` (`https://iyou.me`) in local dev and environments where direct ingress is accessible. Internal Kubernetes cluster service URLs (e.g. `http://iyou-idp.mesh.svc.cluster.local:8000`) are strictly injected via Helm in production to prevent split-brain routing and TLS/network mismatches.
 
-### 17.5 App-Scoped Cookies & Resilient Logout
-Session and CSRF cookies must be app-scoped and host-only to prevent cookie collisions across `*.iyou.me`:
-- `SESSION_COOKIE_NAME = env("SESSION_COOKIE_NAME", default=f"{APP_SLUG}_sessionid")`
-- `CSRF_COOKIE_NAME = env("CSRF_COOKIE_NAME", default=f"{APP_SLUG}_csrftoken")`
-- `SESSION_COOKIE_DOMAIN = None` and `CSRF_COOKIE_DOMAIN = None` (Strictly host-only, never wildcard `.iyou.me`)
-- `SESSION_COOKIE_SECURE = not DEBUG` and `CSRF_COOKIE_SECURE = not DEBUG`
-- `SESSION_COOKIE_HTTPONLY = True` and `CSRF_COOKIE_HTTPONLY = False`
+### 17.5 Resilient Cookies & Logout
+Session cookie security and domain isolation must dynamically follow the deployment environment:
+- Set `SESSION_COOKIE_SECURE = not DEBUG`
+- Set `SESSION_COOKIE_DOMAIN = None if DEBUG else ".iyou.me"`
 - `PKCEOIDCLogoutView` must support both `GET` and `POST` methods to prevent HTTP 405 Method Not Allowed errors on user sign-out from varied satellite interfaces.
-
----
-
-## 18. Tier 1 Managed Identity Ingress (did:web)
-
-Tier 1 (`managed_free`) users authenticate with server-managed custodial DIDs of the form `did:web:iyou.me:user:<uuid>`. Unlike Sovereign `did:key:z6Mk...` identifiers (which encode raw Ed25519 public key bytes in multibase Base58btc), `did:web` identifiers contain colons and domain/path segments that cannot be decoded via multibase Base58btc and are prohibited in raw XMPP JID localparts by RFC 7622 nodeprep rules.
-
-### 18.1 SHA-256 Nodeprep 64-Hex Mapping Rule (`decode_public_key`)
-
-To prevent OIDC callback rejection loops and guarantee RFC 7622 nodeprep-safe usernames and JIDs across all Django and XMPP satellites, `decode_public_key(identifier)` in `templates/utils/auth_pkce.py` implements a deterministic SHA-256 digest mapping for `did:web:`:
-
-1. Detect `identifier.startswith("did:web:")`.
-2. Strip prefix (`identifier[len("did:web:"):]`) to verify a non-empty method-specific identifier is present.
-3. Compute the raw 32-byte digest over the full UTF-8 identifier string:
-   ```python
-   raw = hashlib.sha256(identifier.encode("utf-8")).digest()
-   return raw.hex().lower()
-   ```
-4. Return the 64-character lowercase hexadecimal string (`[0-9a-f]{64}`).
-
-This ensures every `did:web:iyou.me:user:<uuid>`, `did:key:z6Mk...`, and `npub1...` normalizes to a uniform 64-hex localpart (`{pubkey_hex}@{domain}`) with zero colons or prohibited codepoints.
-
-### 18.2 Session Identity Metadata Synchronization (`_sync_session_identity_meta`)
-
-All satellite authentication backends (`PKCEAuthenticationBackend` and `IYouOIDCAuthenticationBackend`) must invoke `self._sync_session_identity_meta(claims)` inside both `create_user(claims)` and `update_user(user, claims)` to persist Tier 1 and Sovereign metadata in `request.session`:
-
-```python
-def _sync_session_identity_meta(self, claims: dict) -> None:
-    sub = claims.get("sub", "")
-    tier = claims.get("account_tier") or (
-        "managed_free" if str(sub).startswith("did:web:") else "sovereign"
-    )
-    request.session["account_tier"] = tier
-    request.session["custodial_did"] = sub
-    request.session["did_method"] = claims.get("did_method") or (
-        "web" if str(sub).startswith("did:web:") else "key"
-    )
-```
-
-| Session Variable | Tier 1 Managed Value | Sovereign Value | Purpose |
-|:---|:---|:---|:---|
-| `request.session["account_tier"]` | `"managed_free"` (or claim value) | `"sovereign"` | Drives Custodial Enclave UI & tier-aware feature gates |
-| `request.session["custodial_did"]` | `did:web:iyou.me:user:<uuid>` | `did:key:z6Mk...` | Preserves original OIDC `sub` DID even when `User.username` is a 64-hex JID |
-| `request.session["did_method"]` | `"web"` | `"key"` | Identifies underlying W3C DID method |
-
-Additionally, backends must define an explicit `get_user(self, user_id)` method delegating to `UserModel.objects.filter(pk=user_id).first()` to guarantee session rehydration across requests.
-
-### 18.3 Custodial Enclave UI (`_persona_enclave.html`)
-
-The canonical Persona Enclave partial (`templates/includes/_persona_enclave.html`) inspects `request.session.account_tier != "sovereign" or is_custodial` to distinguish Tier 1 custodial sessions from Sovereign hardware/bridge sessions:
-
-- **Custodial Mode (`request.session.account_tier != "sovereign" or is_custodial`):**
-  - Active persona status dot (`#active-persona-dot`): Amber dot (`bg-amber-500`) with `title="Custodial Identity (Tier 1 Managed)"`.
-  - Level badge (`#active-persona-level`): Amber badge rendering `T1` (instead of `L1`).
-  - Bridge status label (`#persona-bridge-status`): Amber label rendering `Custodial Mode (Tier 1)`.
-- **Sovereign Mode (`request.session.account_tier == "sovereign"` and not `is_custodial`):**
-  - Active persona status dot (`#active-persona-dot`): Emerald pulsing dot (`bg-emerald-500 animate-pulse`) with `title="Sovereign Key Active"`.
-  - Level badge (`#active-persona-level`): Violet badge rendering `L1` (or `L{{ active_persona_level }}`).
-  - Bridge status label (`#persona-bridge-status`): Emerald label rendering `Bridge Connected`.
-
----
-
-## 19. Canonical Satellite App Onboarding Contract (`ONBOARD_APP.md`)
-
-To eliminate setting drift, inconsistent internal cluster URLs, cookie collisions, and divergent `auth_pkce.py` implementations, every satellite app must follow `docs/ecosystem_shared/ONBOARD_APP.md` verbatim:
-
-1. **Identity & OIDC URL Contract (Immutable):**
-   - `OIDC_OP_AUTHORIZATION_ENDPOINT = "https://iyou.me/openid/authorize/"`
-   - `OIDC_OP_TOKEN_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/token/"` (Port 80 ClusterIP)
-   - `OIDC_OP_USER_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/userinfo/"`
-   - `OIDC_OP_JWKS_ENDPOINT = "http://iyou-idp.identity.svc.cluster.local/openid/jwks/"`
-2. **Satellite Django `config/settings.py` Standard:**
-   - App-scoped cookies (`{APP_SLUG}_sessionid`, `{APP_SLUG}_csrftoken`), `SESSION_COOKIE_DOMAIN = None`, `CSRF_COOKIE_DOMAIN = None`.
-   - `OIDC_RP_CLIENT_ID = f"iyou-{APP_SLUG}-satellite-client"`, `OIDC_RP_CLIENT_SECRET = None`, `OIDC_RP_SIGN_ALGO = "RS256"`, `OIDC_RP_SCOPES = "openid profile email"`.
-   - `AUTHENTICATION_BACKENDS = ["apps.core.auth_pkce.PKCEAuthenticationBackend", "django.contrib.auth.backends.ModelBackend"]`.
-   - `LOGIN_URL = "/oidc/authenticate/"`, `LOGIN_REDIRECT_URL = "/"`, `LOGOUT_REDIRECT_URL = "/"`.
-3. **Standard URL Routing (`config/urls.py`):**
-   - `/oidc/authenticate/` (`oidc_authentication_init`), `/oidc/callback/` (`oidc_authentication_callback`), `/oidc/logout/` (`oidc_logout`), plus compatibility aliases `/accounts/login/` and `/accounts/logout/`.
-4. **Helm `values.yaml` Contract (`k3s_vm/apps/iyou-<slug>/`):**
-   - Injects canonical `OIDC_OP_*` endpoints, `<slug>_sessionid` / `<slug>_csrftoken`, and `SECURE_PROXY_SSL_HEADER: "HTTP_X_FORWARDED_PROTO,https"`.
-5. **Verification Checklist:**
-   - Registered in `iyou-idp` client seeder (`require_consent: False`, `reuse_consent: True`, PKCE public).
-   - Database migrations applied (`auth_user`, `django_session` must exist).
-   - Back-channel smoke test: container can `curl http://iyou-idp.identity.svc.cluster.local/openid/jwks/` with HTTP 200.
-
-
 

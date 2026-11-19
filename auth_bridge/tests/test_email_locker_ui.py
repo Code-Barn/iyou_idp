@@ -217,3 +217,31 @@ class EmailLockerUITest(TestCase):
         emails = [item["email"] for item in updated_claims["public_emails"]]
         self.assertIn("corp_work@enterprise.com", emails)
         self.assertIn("pseudonym_alias@privacy.org", emails)
+
+    def test_unclaimed_did_key_dashboard_renders_claim_cta_and_wun_link(self) -> None:
+        did_key_user = User.objects.create_user(
+            email=None,
+            custodial_did="did:key:z6MkDashboardUnclaimedPrimary",
+            account_tier="sovereign",
+        )
+        did_key_user.is_sovereign = True
+        did_key_user.save()
+
+        self.client.force_login(did_key_user)
+        response = self.client.get(reverse("auth_bridge:login"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "auth_bridge/authenticated_dashboard.html")
+        self.assertEqual(response.context["primary_email"], None)
+
+        content = response.content.decode("utf-8")
+        self.assertIn("SOVEREIGN", content)
+        self.assertNotIn("MANAGED FREE", content)
+        self.assertIn("Not claimed", content)
+        self.assertNotIn(">None<", content)
+        self.assertIn('id="claim-primary-email-btn"', content)
+        self.assertIn("Claim Primary Email", content)
+        self.assertNotIn('id="primary-export-vc-btn"', content)
+        self.assertIn("Enter iyou_wun", content)
+        self.assertIn('target="_blank" rel="noopener noreferrer"', content)
+        self.assertIn("open-download-modal", content)
+        self.assertIn("open-mobile-download-modal", content)
