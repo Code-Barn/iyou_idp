@@ -22,19 +22,38 @@ Production Release Hardening Tests:
 - Redirect URI sanitization (blocking .svc.cluster.local)
 """
 
+from datetime import timedelta
 import json
 from unittest.mock import patch
 import base58
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
+from django.contrib import admin
 from django.core.cache.backends.locmem import LocMemCache
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.test import Client as TestClient, RequestFactory, TestCase
 from django.urls import reverse
+from django.utils import timezone
 from oidc_provider.models import Client as OIDCClient, ResponseType, RSAKey as OIDCRSAKey
 
+from auth_bridge.admin import (
+    FederatedIdentityAdmin,
+    IssuedCredentialAdmin,
+    LinkedEmailAdmin,
+    PasskeyCredentialAdmin,
+    SovereignInfrastructureLeaseAdmin,
+    UserAdmin,
+)
 from auth_bridge.middleware import SSOHintCookieMiddleware
-from auth_bridge.models import User
+from auth_bridge.models import (
+    FederatedIdentity,
+    IssuedCredential,
+    LinkedEmail,
+    PasskeyCredential,
+    SovereignInfrastructureLease,
+    User,
+)
 from auth_bridge.resilient_cache import ResilientCache
 from auth_bridge.signals import SSO_HINT_MARKER, mark_sso_hint_on_login, mark_sso_hint_on_logout
 from auth_bridge.views import _build_oidc_redirect, _is_safe_public_redirect, cache as views_cache
@@ -589,3 +608,80 @@ class SSOHintCookieTest(TestCase):
         self.assertTrue(enable.json()["auto_login"])
         self.assertEqual(client.cookies["iyou_sso_opt_out"].value, "")
         self.assertEqual(client.cookies["iyou_sso_hint"].value, "1")
+
+
+class SovereignModelAdminTests(TestCase):
+    def setUp(self) -> None:
+        self.site = admin.AdminSite()
+        self.user = User.objects.create(
+            email="sovereign_admin_test@iyou.me",
+            custodial_did="did:key:zSovereignAdminUser",
+            account_tier="sovereign",
+            is_sovereign=True,
+        )
+        self.request = RequestFactory().get("/admin/")
+
+    def test_actions_disabled_by_default(self) -> None:
+        user_admin = UserAdmin(User, self.site)
+        self.assertIsNone(user_admin.actions)
+
+    def test_immutable_fields_marked_readonly_on_edit(self) -> None:
+        user_admin = UserAdmin(User, self.site)
+        add_readonly = user_admin.get_readonly_fields(self.request, obj=None)
+        self.assertEqual(add_readonly, ())
+
+        change_readonly = user_admin.get_readonly_fields(self.request, obj=self.user)
+        for field in user_admin.immutable_fields:
+            self.assertIn(field, change_readonly)
+
+    def test_save_model_raises_validation_error_on_immutable_field_mutation(self) -> None:
+        user_admin = UserAdmin(User, self.site)
+        self.user.custodial_did = "did:key:zTamperedDid"
+        with self.assertRaises(ValidationError) as cm:
+            user_admin.save_model(self.request, self.user, form=None, change=True)
+        self.assertIn("Field 'custodial_did' is immutable", str(cm.exception))
+
+    def test_save_model_permits_mutable_field_update(self) -> None:
+        user_admin = UserAdmin(User, self.site)
+        self.user.account_tier = "managed_free"
+        user_admin.save_model(self.request, self.user, form=None, change=True)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.account_tier, "managed_free")
+
+    def test_issued_credential_ledger_immutability_and_permissions(self) -> None:
+        cred = IssuedCredential.objects.create(
+            subject_did="did:key:zSubjectLeaf",
+            issuer_did="did:key:zIssuerParent",
+            bracket="U14",
+        )
+        cred_admin = IssuedCredentialAdmin(IssuedCredential, self.site)
+        self.assertFalse(cred_admin.has_add_permission(self.request))
+        self.assertFalse(cred_admin.has_delete_permission(self.request, obj=cred))
+
+        cred.subject_did = "did:key:zTamperedSubject"
+        with self.assertRaises(ValidationError) as cm:
+            cred_admin.save_model(self.request, cred, form=None, change=True)
+        self.assertIn("Field 'subject_did' is immutable", str(cm.exception))
+
+    def test_append_only_models_disallow_add_permission(self) -> None:
+        passkey_admin = PasskeyCredentialAdmin(PasskeyCredential, self.site)
+        linked_email_admin = LinkedEmailAdmin(LinkedEmail, self.site)
+        federated_identity_admin = FederatedIdentityAdmin(FederatedIdentity, self.site)
+
+        self.assertFalse(passkey_admin.has_add_permission(self.request))
+        self.assertFalse(linked_email_admin.has_add_permission(self.request))
+        self.assertFalse(federated_identity_admin.has_add_permission(self.request))
+
+    def test_sovereign_infra_lease_admin_immutability(self) -> None:
+        lease = SovereignInfrastructureLease.objects.create(
+            user=self.user,
+            billing_token_hash="hash123",
+            expires_at=timezone.now() + timedelta(days=30),
+        )
+        lease_admin = SovereignInfrastructureLeaseAdmin(SovereignInfrastructureLease, self.site)
+        lease.billing_token_hash = "tampered_hash"
+        with self.assertRaises(ValidationError) as cm:
+            lease_admin.save_model(self.request, lease, form=None, change=True)
+        self.assertIn("Field 'billing_token_hash' is immutable", str(cm.exception))
+
+

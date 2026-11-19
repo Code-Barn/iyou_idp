@@ -15,7 +15,7 @@
 
 import json
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import base58
 from cryptography.hazmat.primitives import serialization
@@ -454,6 +454,24 @@ class PromptNoneAuthorizeTest(TestCase):
         self.assertIn("error=interaction_required", response["Location"])
         self.assertIn("state=none-state-123", response["Location"])
 
+    def test_prompt_none_combined_with_login_returns_invalid_request(self) -> None:
+        self._login()
+        response = self.client.get(self._authorize_url(prompt="none login"))
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://satellite.iyou.me/callback/?"))
+        self.assertIn("error=invalid_request", location)
+        self.assertIn("state=none-state-123", location)
+
+    def test_prompt_none_combined_with_consent_returns_invalid_request(self) -> None:
+        self._login()
+        response = self.client.get(self._authorize_url(prompt="none consent"))
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://satellite.iyou.me/callback/?"))
+        self.assertIn("error=invalid_request", location)
+        self.assertIn("state=none-state-123", location)
+
     def test_clean_sovereign_session_mints_code(self) -> None:
         self._login()
         response = self.client.get(self._authorize_url())
@@ -509,3 +527,85 @@ class PromptNoneAuthorizeTest(TestCase):
             )
             self.assertEqual(resp.status_code, 200)
             self.assertTrue(resp.json().get("success"))
+
+
+class PromptLoginTests(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+        self.oidc_client = OIDCClient.objects.create(
+            name="Prompt Login Client",
+            client_type="public",
+            client_id="prompt-login-client",
+            jwt_alg="RS256",
+            _redirect_uris="https://satellite.iyou.me/callback/\n",
+            _scope="openid profile",
+            require_consent=False,
+            reuse_consent=True,
+        )
+        self.oidc_client.response_types.add(ResponseType.objects.get(value="code"))
+
+        self.user = User.objects.create(
+            custodial_did="did:key:zPromptLoginTestUser",
+            email="prompt_login@iyou.me",
+            is_sovereign=True,
+            account_tier="sovereign",
+            show_legal_disclaimer=False,
+            is_active=True,
+        )
+
+    def _authorize_url(self, **overrides: Any) -> str:
+        params = {
+            "client_id": "prompt-login-client",
+            "response_type": "code",
+            "redirect_uri": "https://satellite.iyou.me/callback/",
+            "scope": "openid profile",
+            "state": "login-state-456",
+            "prompt": "login",
+        }
+        params.update(overrides)
+        return "/openid/authorize/?" + urlencode(params)
+
+    def test_authenticated_user_with_prompt_login_is_logged_out_and_redirected(self) -> None:
+        self.client.force_login(self.user)
+        self.assertIn("_auth_user_id", self.client.session)
+
+        response = self.client.get(self._authorize_url())
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/auth/login/?"))
+
+        query_params = parse_qs(urlparse(response["Location"]).query)
+        self.assertIn("next", query_params)
+        next_url = query_params["next"][0]
+        next_parsed = urlparse(next_url)
+        next_qs = parse_qs(next_parsed.query)
+
+        self.assertNotIn("prompt", next_qs)
+        self.assertEqual(next_qs["client_id"], ["prompt-login-client"])
+        self.assertEqual(next_qs["state"], ["login-state-456"])
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_unauthenticated_user_with_prompt_login_redirects_to_login(self) -> None:
+        response = self.client.get(self._authorize_url())
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/auth/login/?"))
+
+        query_params = parse_qs(urlparse(response["Location"]).query)
+        self.assertIn("next", query_params)
+        next_qs = parse_qs(urlparse(query_params["next"][0]).query)
+        self.assertNotIn("prompt", next_qs)
+
+    def test_login_page_view_strips_prompt_login_and_forces_logout(self) -> None:
+        self.client.force_login(self.user)
+        self.assertIn("_auth_user_id", self.client.session)
+
+        authorize_with_login = self._authorize_url()
+        login_page_url = reverse("auth_bridge:login") + "?" + urlencode({"next": authorize_with_login})
+
+        response = self.client.get(login_page_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertIn("next_url", response.context)
+        next_qs = parse_qs(urlparse(response.context["next_url"]).query)
+        self.assertNotIn("prompt", next_qs)
+        self.assertEqual(next_qs["client_id"], ["prompt-login-client"])
+

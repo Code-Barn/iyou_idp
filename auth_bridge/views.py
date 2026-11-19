@@ -52,7 +52,7 @@ import logging
 from base64 import urlsafe_b64encode
 from oidc_provider.models import Client, UserConsent
 from oidc_provider.lib.utils.token import create_code
-from oidc_provider.views import AuthorizeView
+from oidc_provider.views import AuthorizeView, strip_prompt_login
 from oidc_provider.lib.endpoints.authorize import AuthorizeEndpoint
 from oidc_provider.lib.errors import AuthorizeError, ClientIdError, RedirectUriError
 from oidc_provider.lib.utils.common import redirect as oidc_redirect
@@ -1324,6 +1324,15 @@ class LoginPageView(View):
         """
         next_url = request.GET.get('next', '')
 
+        if next_url:
+            parsed = urlparse(next_url)
+            params = parse_qs(parsed.query)
+            prompt_vals = set(params.get('prompt', [''])[0].split())
+            if 'login' in prompt_vals:
+                if request.user.is_authenticated:
+                    django_logout(request)
+                next_url = strip_prompt_login(next_url)
+
         if request.user.is_authenticated:
             # If the next URL contains OIDC params, this is an active flow.
             # Redirect so the OIDC provider can auto-generate the auth code.
@@ -1586,7 +1595,7 @@ class SSOPreferenceView(View):
         return response
 
 
-def _prompt_none_redirect(request: HttpRequest, error: str) -> HttpResponse:
+def _prompt_none_redirect(request: HttpRequest, error: str, error_description: str = "Authentication interaction required.") -> HttpResponse:
     client_id = request.GET.get("client_id", "")
     redirect_uri = request.GET.get("redirect_uri", "")
     try:
@@ -1595,7 +1604,7 @@ def _prompt_none_redirect(request: HttpRequest, error: str) -> HttpResponse:
         return JsonResponse({"error": "invalid_request", "error_description": "Invalid client_id."}, status=400)
     if redirect_uri not in client.redirect_uris:
         return JsonResponse({"error": "invalid_request", "error_description": "Invalid redirect_uri."}, status=400)
-    params = {"error": error, "error_description": "Authentication interaction required."}
+    params = {"error": error, "error_description": error_description}
     state = request.GET.get("state", "")
     if state:
         params["state"] = state
@@ -1631,7 +1640,23 @@ class SovereignAuthorizeView(AuthorizeView):
     authorize_endpoint_class = SovereignAuthorizeEndpoint
 
     def get(self, request, *args, **kwargs):
-        prompt_none = "none" in set((request.GET.get("prompt") or "").split())
+        prompt_raw = request.GET.get("prompt") or ""
+        prompt_tokens = set(prompt_raw.split())
+        prompt_none = "none" in prompt_tokens
+        if prompt_none and len(prompt_tokens) > 1:
+            return _prompt_none_redirect(
+                request,
+                "invalid_request",
+                "prompt=none cannot be combined with other prompt values.",
+            )
+
+        if "login" in prompt_tokens:
+            if getattr(request.user, "is_authenticated", False):
+                django_logout(request)
+            stripped_next = strip_prompt_login(request.get_full_path())
+            login_url = f"{reverse('auth_bridge:login')}?{urlencode({'next': stripped_next})}"
+            return HttpResponseRedirect(login_url)
+
         if getattr(request.user, "is_authenticated", False):
             auth_method = request.session.get("auth_method", "")
             if getattr(request.user, "is_sovereign", False) and (
