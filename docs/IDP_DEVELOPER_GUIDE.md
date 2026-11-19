@@ -409,7 +409,7 @@ in both `verify_signature` (desktop WebSocket) and `mobile_verify_signature`
 |------|--------|-----------|
 | **1 — Python Ed25519** | `cryptography.hazmat.primitives.asymmetric.ed25519` | Always attempted first |
 | **2 — Rust `verify_vp`** | `_crypto.verify_vp()` via FFI | Tier 1 fails |
-| **3 — Emergency bypass** | challenge-nonce match (no crypto) | Both tiers fail + strict security logging |
+| **3 — Emergency bypass** | challenge-nonce match (gated by `IDP_ALLOW_EMERGENCY_BYPASS=True`) | Both tiers fail + explicit bypass enabled |
 
 ```python
 def _get_rust_verify_vp():
@@ -462,13 +462,14 @@ root-login VPs (no embedded Verifiable Credential).  A full VC-chain
 verification (recursive `verifiableCredential` traversal) is the long-term
 goal.
 
-**Tier 3 — Emergency bypass (logged, not for production):**
+**Tier 3 — Emergency bypass (SEC-001 gated, disabled by default):**
 
-If both Tiers 1 and 2 fail, and the VP's `challenge` field matches the
-challenge nonce in Redis, the view accepts the authentication anyway.
-Every bypass attempt is logged with remote IP, DID, and challenge prefix so
-admin audits can detect abuse.  This tier exists solely to prevent lock-out
-during bridge alignment and must never be relied on in production.
+If both Tiers 1 and 2 fail, the view checks `IDP_ALLOW_EMERGENCY_BYPASS`
+(default `False`). If and only if `IDP_ALLOW_EMERGENCY_BYPASS` is set to `True`
+AND the VP's `challenge` matches the nonce in Redis, authentication is accepted.
+`DEBUG=True` alone never bypasses signature verification. Every bypass attempt
+is logged with remote IP, DID, and challenge prefix. When `IDP_ALLOW_EMERGENCY_BYPASS`
+is `False` (the default), any signature failure immediately returns HTTP 401.
 
 ### 4. Creating a Superuser [L297-311]
 
@@ -968,6 +969,7 @@ The handshake has several protection layers:
 | POST | `/auth/passkeys/register/complete/` | Passkey attestation verification + credential persistence |
 | POST | `/auth/passkeys/authenticate/begin/` | Passkey assertion ceremony start (discoverable credentials) |
 | POST | `/auth/passkeys/authenticate/complete/` | Passkey assertion verification + passwordless login |
+| POST | `/auth/account/purge/` | GDPR Art. 17 Self-Service Purge — requires authenticated session and exact `{"confirm": "PURGE"}`; cascades user record, LinkedEmail, non-FK credentials, active sessions, and shreds custodial Vault keys; logs strictly non-PII audit line and clears auth cookies |
 
 ### Identity Graduation Endpoints
 
@@ -1078,6 +1080,7 @@ All registered URL patterns (as seen by `django.urls`):
 /auth/passkeys/register/complete/  → passkey_register_complete
 /auth/passkeys/authenticate/begin/ → passkey_authenticate_begin
 /auth/passkeys/authenticate/complete/ → passkey_authenticate_complete
+/auth/account/purge/              → AccountPurgeView (GDPR Art. 17 self-service erasure)
 /api/v1/identity/graduate/export/  → graduate_export
 /api/v1/identity/graduate/confirm/ → graduate_confirm
 /api/v1/identity/graduate/bind/    → graduate_bind (direct did:key wallet binding)
@@ -1591,11 +1594,18 @@ curl -sI https://iyou.me/static/auth_bridge/js/download_modal.js | head -5
 - Challenge replay is prevented — `mobile_verify_signature` returns 400 if
   `status` is already `solved`
 - **Three-tier verification pipeline**: Python Ed25519 (primary) → Rust `verify_vp`
-  (secondary) → emergency bypass (last resort, logged).  No single point of
-  cryptographic failure.
+  (secondary) → emergency bypass (last resort, gated by `IDP_ALLOW_EMERGENCY_BYPASS=True`).
+  No single point of cryptographic failure.
+- **SEC-001 emergency bypass lockdown**: `IDP_ALLOW_EMERGENCY_BYPASS` defaults to `False`.
+  Nonce-only fallback is completely disabled unless this environment variable is explicitly
+  set to `True` at deploy time (`DEBUG=True` alone never bypasses signature verification).
+  When disabled, failing cryptographic signatures immediately yield HTTP 401.
 - **Bypass audit trail**: every emergency-bypass acceptance logs the remote IP,
   the holder DID, the challenge prefix, and a timestamp — admins can detect
   and investigate abuse.
+- **GDPR Art. 17 Account Purge**: Self-service deletion (`POST /auth/account/purge/`)
+  atomically cascades all associated models, non-FK credentials, active sessions, and shreds
+  custodial Vault keys with zero PII retention in logs (`logger.info("GDPR Art.17 erasure completed user_id=%s", user_id)`).
 - **OAuth state validation**: Tier 1 OAuth flows use `secrets.compare_digest()`
   to validate the `state` parameter against the session-stored value, preventing
   CSRF attacks on the callback endpoint.  State tokens are high-entropy
@@ -1636,6 +1646,17 @@ curl -sI https://iyou.me/static/auth_bridge/js/download_modal.js | head -5
   code issuance at `SovereignAuthorizeView` before any token machinery runs
 
 ## Troubleshooting [L634-675]
+
+### Signature Verification & Emergency Bypass (SEC-001)
+
+**Symptom:** `401 {"error": "Invalid cryptographic signature."}` during authentication
+
+Under SEC-001 hardening, `IDP_ALLOW_EMERGENCY_BYPASS` defaults to `False`. The IdP strictly requires valid cryptographic signature verification (either via Python Ed25519 or Rust `verify_vp`). Even with `DEBUG=True`, challenge-nonce-only bypass is disabled.
+
+If cryptographic verification fails:
+1. Verify the client is signing the exact payload with key order `@context`, `type`, `holder`, `challenge`, `verifiableCredential`, `issuer`.
+2. Verify the public key multibase in the DID document matches the private key that produced the signature.
+3. In local development or isolated testing environments ONLY, you can temporarily enable the emergency bypass fallback by setting `IDP_ALLOW_EMERGENCY_BYPASS=True` in your environment or `.env`. This must never be enabled in production.
 
 ### Rust-Python Bridge Issues [L636-652]
 
@@ -1781,7 +1802,7 @@ in `INSTALLED_APPS`.
 - ✅ **Sovereign `did:key:` posture promotion** — `evaluate_sovereign_admin_posture`
   plus migration `0014_did_key_rows_to_sovereign` (2026-11-18)
 - ⬜ Add OIDC `prompt=login` support to force re-authentication
-- ⬜ Wire the Tab 2 login page UI to the live passkey endpoints
+- ✅ **Passkey Tab 2 login UI** — discoverable WebAuthn ceremony wired in `_tab_managed.html` with OIDC continuity (`213d6a7`, 2026-11-19)
 
 ### Long-term Goals [L685-694]
 

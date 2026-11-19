@@ -1,0 +1,26 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Submodule Pin Parity Check (SEC-003)
+        run: uv run python scripts/check_did_rust_pin.py
+      - name: Lint Check
+        run: uv run ruff check scripts/ auth_bridge/ apps/
+      - name: Django Configuration Check
+        run: uv run python manage.py check
+      - name: Run Test Suite
+        run: uv run python manage.py test auth_bridge apps.core -v2

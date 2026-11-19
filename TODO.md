@@ -26,13 +26,13 @@
 
 ## Layer 2 — Security Hardening
 
-### Release 1.0 Gate — Open Items (priority order)
+### Release 1.0 Gate — All Items Complete
 
-1. **[Critical] SEC-001 — Tier 3 emergency bypass lockdown.** Current auto-fallback accepts auth via nonce match without cryptographic signature. Gate it behind explicit `IDP_ALLOW_EMERGENCY_BYPASS` (default `False`) at deploy time; remove runtime auto-fallback.
-2. **[High] Tab 2 Passkey UI wiring.** Wire `_tab_managed.html` "Sign in with Passkey" to the live `/auth/passkeys/authenticate/begin/` + `/auth/passkeys/authenticate/complete/` endpoints.
-3. **[High] Desktop artifact sync.** Update `_download_modal.html` download links and magnet/IPFS hashes to the latest `iyou_home` release (`v0.2.1` / `v0.2.2`).
-4. **[High] Tier 1 Vault seed + GDPR purge.** Verify Vault seed provisioning on OAuth/Email JIT creation; add a self-service GDPR Art. 17 account/index purge endpoint.
-5. **[High] SEC-003 — `did_rust` submodule pinning.** Enforce commit-hash alignment across `iyou_idp`, `iyou_home`, and `iyou_mobile_swift` via CI check. Prevents silent `serde_json` serialization drift.
+- [x] **[Critical] SEC-001 — Tier 3 emergency bypass lockdown:** Gated Tier 3 nonce fallback behind explicit `IDP_ALLOW_EMERGENCY_BYPASS = False` in `config/settings.py` and `auth_bridge/views.py`; removed runtime auto-fallback so `DEBUG=True` alone never allows unsigned bypasses; covered by negative tests asserting 401 by default (`213d6a7`) — **Done 2026-11-19**
+- [x] **[High] Tab 2 Passkey UI wiring:** Discoverable credential ceremony wired end-to-end (`_tab_managed.html` + `views_passkeys.py` + `views.py`); `webauthn:passkey` session stamped with `evaluate_sovereign_admin_posture`, pre-launch airlock, GDPR disclaimer handling, and inline OIDC redirect continuity (`213d6a7`) — **Done 2026-11-19**
+- [x] **[High] Desktop artifact sync (v0.2.3):** Updated `_download_modal.html` download links, SHA-256 checksums, and IPFS CIDs to match `iyou_home` `v0.2.3` release matrix across macOS (Intel/Apple Silicon DMG), Windows (NSIS setup/portable exe), and Linux (AppImage/deb) (`3643b27`) — **Done 2026-11-19**
+- [x] **[High] Tier 1 Vault seed + GDPR purge:** `ensure_identity_key_seed()` implemented in `auth_bridge/vault_client.py` and wired into JIT provisioning paths in `views.py` and `pipeline.py`; self-service GDPR Art. 17 account purge implemented in `auth_bridge/views_account.py` (`POST /auth/account/purge/`) with credential cascade, session deletion, non-PII audit logging, and cookie shredding (`213d6a7`) — **Done 2026-11-19**
+- [x] **[High] SEC-003 — `did_rust` submodule pinning:** Submodule parity verification script `scripts/check_did_rust_pin.py` enforced across `iyou_idp` (`crates/did_rust`) and sibling repos, wired into `.github/workflows/ci.yml` — **Done 2026-11-19**
 
 - [ ] **[High] SEC-004 — Central SPOF mitigation:** Investigate offline-capable auth fallback when iyou_idp is unreachable.
 - [ ] **[Future] SEC-007 — Broaden DID ledger:** Activate `did:web` and `did:ethr` validation in `did_rust`.

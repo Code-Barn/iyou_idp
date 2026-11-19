@@ -15,13 +15,13 @@ template changes remain canonically owned by `omni_social` and are synced via
 
 All five items below block the 1.0 launch. They are ordered by risk.
 
-| # | Item | Owner focus | Acceptance |
-|---|------|-------------|------------|
-| 1 | **SEC-001 — Tier 3 emergency bypass lockdown** | `verify_signature` / `mobile_verify_signature` | Nonce-only fallback is gated behind explicit `IDP_ALLOW_EMERGENCY_BYPASS` (default `False`); no runtime auto-fallback when `DEBUG=True` on a non-loopback request. |
-| 2 | **Tab 2 Passkey UI wiring** | `_tab_managed.html` | "Sign in with Passkey" calls `/auth/passkeys/authenticate/begin/` then `/auth/passkeys/authenticate/complete/`; errors surface inline and OIDC continuity is preserved. |
-| 3 | **Tier 1 Vault seed verification** | OAuth / Email JIT provisioning | Every new `did:web` user has a seeded Ed25519 key at `secret/identity/{did}/ed25519`; missing seed fails provisioning loudly instead of silently. |
-| 4 | **GDPR Art. 17 purge endpoint** | Self-service account deletion | Authenticated user can purge their account plus searchable indexes (User, LinkedEmail, FederatedIdentity, consent/session rows); audit log records the erasure without retaining PII. |
-| 5 | **Desktop artifact sync** | `_download_modal.html` | Download links, checksums, and magnet/IPFS hashes point at the latest `iyou_home` release (`v0.2.1` / `v0.2.2`). |
+| # | Item | Owner focus | Acceptance | Status |
+|---|------|-------------|------------|--------|
+| 1 | **SEC-001 — Tier 3 emergency bypass lockdown** | `verify_signature` / `mobile_verify_signature` | Nonce-only fallback is gated behind explicit `IDP_ALLOW_EMERGENCY_BYPASS` (default `False`); no runtime auto-fallback when `DEBUG=True` on a non-loopback request. | ✅ Complete |
+| 2 | **Tab 2 Passkey UI wiring** | `_tab_managed.html` | "Sign in with Passkey" calls `/auth/passkeys/authenticate/begin/` then `/auth/passkeys/authenticate/complete/`; errors surface inline and OIDC continuity is preserved. | ✅ Complete |
+| 3 | **Tier 1 Vault seed verification** | OAuth / Email JIT provisioning | Every new `did:web` user has a seeded Ed25519 key at `secret/identity/{did}/ed25519`; missing seed fails provisioning loudly instead of silently. | ✅ Complete |
+| 4 | **GDPR Art. 17 purge endpoint** | Self-service account deletion | Authenticated user can purge their account plus searchable indexes (User, LinkedEmail, FederatedIdentity, consent/session rows); audit log records the erasure without retaining PII. | ✅ Complete |
+| 5 | **Desktop artifact sync** | `_download_modal.html` | Download links, checksums, and magnet/IPFS hashes point at the latest `iyou_home` release (`v0.2.3`). | ✅ Complete |
 
 ---
 
