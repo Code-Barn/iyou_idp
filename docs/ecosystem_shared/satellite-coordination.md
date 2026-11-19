@@ -10,15 +10,15 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 
 ## TODO Registry
 
-### Ecosystem Bar Apps (20-App Ecosystem Roster)
+### Ecosystem Satellites & Enclaves (28-Satellite + 2-Enclave Roster)
 
 | App | Repo | TODO.md | Auth Status | Key Items |
 |:---|:---|:---|:---|:---|
-| iyou_idp | `~/CODE_BASE/iyou_idp/` | [TODO.md](../../../iyou_idp/TODO.md) | ✅ Hardened / Operational | System root. Public client config, secret removal. SEC-001 pending. |
-| iyou_wun | `~/CODE_BASE/iyou_wun/` | [TODO.md](../../../iyou_wun/TODO.md) | ✅ Hardened / Operational | **Golden baseline.** Federated login, inline redirection, single-window UX loop, and admin panel privilege matching verified in production over revision 24. |
+| iyou_idp | `~/CODE_BASE/iyou_idp/` | [TODO.md](../../../iyou_idp/TODO.md) | ✅ Hardened / Operational | System root. Public client config, secret removal. Post-auth `/?map=open` landing redirect. |
+| iyou_wun | `~/CODE_BASE/iyou_wun/` | [TODO.md](../../../iyou_wun/TODO.md) | ✅ Hardened / Operational | **Golden baseline.** Social Hub. Post-auth `/?map=open` landing redirect. |
 | iyou_poly | `~/CODE_BASE/iyou_poly/` | [TODO.md](../../../iyou_poly/TODO.md) | ✅ Hardened / Operational | PKCE configuration confirmed, backend resolution verified over ModelBackend. |
 | iyou_name | `~/CODE_BASE/iyou_name/` | [TODO.md](../../../iyou_name/TODO.md) | ✅ Hardened / Operational | Import error resolved by transitioning class hierarchy to canonical ModelBackend foundations. |
-| iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | 🟢 Hardened Greenfield (Phase 7 Complete) | React 19 + Vite SPA (Omni-Canvas), Django 5.2 Headless DRF API. Color: orange (#F97316 / #F59E0B amber accents). Domain: https://hive.iyou.me. Flagship React SPA reference implementation. |
+| iyou_hive | `~/CODE_BASE/iyou_hive/` | [TODO.md](../../../iyou_hive/TODO.md) | 🟢 Hardened Greenfield (Phase 7 Complete) | React 19 + Vite SPA (Omni-Canvas), Django 5.2 Headless DRF API. Color: orange (#F97316 / #F59E0B amber accents). Domain: https://hive.iyou.me. Flagship React SPA reference implementation with generated ecosystem registry and deep-linking map drawer. |
 | iyou_ride | `~/CODE_BASE/iyou_ride/` | [TODO.md](../../../iyou_ride/TODO.md) | ✅ Hardened / Operational | SessionMiddleware at index 2. 4-rule alignment complete. |
 | dc_tech_website | `~/CODE_BASE/dc_tech_website/` | [TODO.md](../../../dc_tech_website/TODO.md) | ✅ Hardened / Operational | Proxy header, public client, state relay — all verified. |
 | iyou_safe | `~/CODE_BASE/iyou_safe/` | [TODO.md](../../../iyou_safe/TODO.md) | ✅ Hardened / Operational | Exception guard, proxy header, public client, state relay — all verified. |
@@ -40,15 +40,16 @@ Edit tasks here first, then propagate to the satellite repos via their agents.
 | iyou_muse | `~/CODE_BASE/iyou_muse/` | [TODO.md](../../../iyou_muse/TODO.md) | 🟡 Incubating (target: PKCE Secretless) | Attribution-First Public Exhibition Gallery (Blossom `BUD-01` + Kind `1063`). Color: `indigo` (`#6366F1`). Port: `8030`. Domain: `muse.iyou.me`. Client ID: `iyou-muse-satellite-client`. Cookie namespaces: `muse_sessionid`, `muse_csrftoken`. Badge: `EXHIBITION`. |
 | iyou_hear | `~/CODE_BASE/iyou_hear/` | [TODO.md](../../../iyou_hear/TODO.md) | 🟡 Incubating (target: PKCE Secretless) | Sovereign Audio, Podcast & Value-for-Value Stream Router (`Howler.js` + WebLN). Color: `amber` (`#F59E0B`). Port: `8031`. Domain: `hear.iyou.me`. Client ID: `iyou-hear-satellite-client`. Cookie namespaces: `hear_sessionid`, `hear_csrftoken`. Badge: `AUDIO & V4V`. |
 | iyou_meet | `~/CODE_BASE/iyou_meet/` | [TODO.md](../../../iyou_meet/TODO.md) | 🟡 Incubating (target: PKCE Secretless) | Sovereign Video Conferencing & Physical Meetup Orchestration (WebRTC Jitsi + Geohash). Color: `emerald` (`#10B981`). Port: `8018`. Domain: `meet.iyou.me`. Client ID: `iyou-meet-satellite-client`. Cookie namespaces: `meet_sessionid`, `meet_csrftoken`. Badge: `VIDEO & RENDEZVOUS`. |
+| iyou_link | `~/CODE_BASE/iyou_link/` | [TODO.md](../../../iyou_link/TODO.md) | 🟡 Onboarding (target: PKCE Secretless) | Sovereign Short URL & Redirect Gateway (`iyou-link-satellite-client`, port `8032`, badge `SHORT URL & ROUTING`). |
+| iyou_peer | `~/CODE_BASE/iyou_peer/` | [TODO.md](../../../iyou_peer/TODO.md) | 🟡 Incubating | Peer Advisory (1-on-1 practitioner mentorship, diagnostic audits & blueprint reviews). |
 
-### Supporting Projects & Micro-Satellites (Not in Ecosystem Bar)
+### Sovereign Hardware Enclaves & Native Bridges (Outside / Top of Map)
 
 | Repo | Stack | TODO.md | Key Items |
 |:---|:---|:---|:---|
-| iyou_home | Tauri/TypeScript | [TODO.md](../../../iyou_home/TODO.md) | Local desktop enclave. Released v0.2.2 (RFC-001 through RFC-006 implemented). SEC-002/003/004/005/006. |
+| iyou_home | Tauri/TypeScript/Rust | [TODO.md](../../../iyou_home/TODO.md) | Local desktop enclave — live `127.0.0.1:9001` bridge status & DID orchestrator. Released v0.2.2. |
+| iyou_mobile | Swift / Kotlin | [TODO.md](../../../iyou_mobile/TODO.md) | Pocket enclaves (`iyou_mobile_swift` iOS / `iyou_mobile_kotlin` Android) — biometric keyrings & QR bridge. |
 | did_rust | Rust crate | [TODO.md](../../../did_rust/TODO.md) | Core DID library. SEC-003 alignment enforcement. Shared by idp + home. |
-| iyou_mobile | Tauri/React | [TODO.md](../../../iyou_mobile/TODO.md) | Mobile counterpart. Barcode scanner, deep-link, secure storage. |
-| iyou_link | Django 6.1 / OIDC | [TODO.md](../../../iyou_link/TODO.md) | 🟡 Onboarding (target: PKCE Secretless). Ecosystem micro-satellite (`~/CODE_BASE/iyou_link/`). |
 
 ---
 
@@ -152,6 +153,7 @@ Canonical spec: `docs/specs/BRAND_ASSET_STANDARDIZATION_SPEC.md`. Filename-gramm
 
 | Specification / Plan | Path | Status | Core Focus |
 |:---|:---|:---|:---|
+| **Canonical Ecosystem Roster (SSOT)** | [`ECOSYSTEM_CANONICAL_ROSTER.md`](ECOSYSTEM_CANONICAL_ROSTER.md) | Canonical Living Roster (SSOT) | Auto-generated from `ECOSYSTEM_CATALOG` / `ENCLAVE_CATALOG`: authoritative names, URLs, accent colors, ring positions, statuses, uppercase `descriptor` taglines and `mission` subtitles for all 28 satellites plus gatehouse/enclaves. |
 | **Canonical Geographic Routing Spec** | [`specs/CANONICAL_GEOGRAPHIC_ROUTING_SPEC.md`](specs/CANONICAL_GEOGRAPHIC_ROUTING_SPEC.md) | Canonical Living Spec (SPEC-008) | Multi-tier geographic subdomain routing (`dkc.il.us.<app>.iyou.me`), RTL token evaluation against ISO-3166-1 / US postal codes, leading-dot `ALLOWED_HOSTS`, Traefik `HostRegexp` IngressRoute, and Multi-SAN HTTP-01 TLS standard. |
 | **Project Zero Specification** | [`PROJECT_ZERO_SPEC.md`](PROJECT_ZERO_SPEC.md) | Canonical Living Spec | Tiered derivation (anchor / public persona / burners), Trust Lens selective disclosure cards, and the two coercion-resistance extensions: §3.4 Dynamic Ephemeral L2 Burners (`DYNAMIC-L2-VOTING`) and §4.4 `KinshipAttestation` lineage gating (`NAME-KINSHIP-GATE`). Port 9001 wire contract. |
 | **Brand Asset Standardization Spec** | [`specs/BRAND_ASSET_STANDARDIZATION_SPEC.md`](specs/BRAND_ASSET_STANDARDIZATION_SPEC.md) | Canonical Living Spec | Filename-grammar declaration for brand assets (`logo_square{,_light,_dark}.png`, `mascot_{light,dark}.png`, glyph fallback); `LOGO_MODE` capability enum with filesystem auto-detection; pure-CSS zero-flash `dark:hidden`/`hidden dark:block` theme logo swapping for Layer 1 and Layer 3; gradient blueprint for `generate_templates.py`. |
@@ -165,6 +167,20 @@ Canonical spec: `docs/specs/BRAND_ASSET_STANDARDIZATION_SPEC.md`. Filename-gramm
 | **Ecosystem Vision & Dual-Entity Charter** | [`strategy/ECOSYSTEM_VISION_AND_DUAL_ENTITY_CHARTER.md`](strategy/ECOSYSTEM_VISION_AND_DUAL_ENTITY_CHARTER.md) | Canonical Living Charter | Defines Perpetual Purpose Trust vs. Byers Brands LLC separation, OMNI mythos, moderation posture, and launch perimeter roadmap. |
 | **Mission-Aligned Monetization & Pre-PPT Charter** | [`strategy/MISSION_MONETIZATION_AND_PPT_BRIDGE.md`](strategy/MISSION_MONETIZATION_AND_PPT_BRIDGE.md) | Canonical Operating Charter (`OMNI-STRAT-MONETIZATION-V1`) | Codified operating charter: The 4 Immutable Mission Invariants (0% protocol take-rate, $0 forever single-operator baseline, zero-surveillance ads, copyleft poison pill), 6 Approved Commercial Engines (Multi-Unit Pro, Municipal Appliances, Infrastructure Leases, Managed Custodial, Physical Hardware, Contextual Sponsorships), and 3-Phase Pre-PPT Bootstrap Bridge. |
 | **Communication Escalation Spec** | [`specs/COMMUNICATION_ESCALATION_SPEC.md`](specs/COMMUNICATION_ESCALATION_SPEC.md) | Canonical Living Spec (`OMNI-COMM-ESCALATION-V1`) | Progressive Consensual Presence & 3-Tier Escalation Ladder: Tier 3 (Text/Async `wun`/`chat`), Tier 2 (Live WebRTC Video `meet`), Tier 1 (In-Person Rendezvous `meet`); Sanctuary Exception safeguarding `iyou_talk` exclusively for mental health / peer therapy. |
+
+### Canonical Copy & Template SSOT Invariant
+
+1. **Sole source of truth:** `omni_social/scripts/generate_templates.py` (`ECOSYSTEM_CATALOG` and `ENCLAVE_CATALOG`) is the only authoritative source for every app name, URL, accent color, ring position, lifecycle status, `descriptor` tagline, and `mission` description. The generated `docs/ECOSYSTEM_CANONICAL_ROSTER.md` (mirrored into every repo's `docs/ecosystem_shared/`) is the canonical copy agents must read.
+2. **Canonical copy is immutable to agents:** Never alter, reword, shorten, or "improve" any `descriptor` or `mission` string without an explicit word-for-word user instruction. These are user-owned canonical strings.
+3. **No satellite template hand-edits:** Satellite agents must never hand-edit `_ecosystem_bar.html`, `_standard_header.html`, `_footer.html`, `_persona_enclave.html`, or `_tailwind_safe_init.html`. Read `docs/ecosystem_shared/ECOSYSTEM_CANONICAL_ROSTER.md` for canonical metadata instead.
+
+**Central update workflow (approved changes only):**
+```bash
+cd ~/CODE_BASE/omni_social
+# 1. Edit ECOSYSTEM_CATALOG in scripts/generate_templates.py (sole source of truth).
+.venv/bin/python scripts/regenerate_all.py
+.venv/bin/python scripts/sync_ecosystem_specs.py
+```
 
 ---
 
