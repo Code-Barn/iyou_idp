@@ -85,6 +85,26 @@
       <span class="truncate">Manage in iyou_home</span>
       <span class="text-violet-500">🔒 Enclave</span>
     </div>
+
+    <!-- Universal Action Footer -->
+    <div class="p-1.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-1">
+      <div class="px-2 py-0.5 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+        <span>Central Vault</span>
+        <a href="https://iyou.me/" target="_blank" rel="noopener noreferrer" class="text-violet-600 dark:text-violet-400 hover:underline transition">
+          Identity Vault ↗
+        </a>
+      </div>
+      <a
+        id="enclave-sign-out-link"
+        href="{% url 'oidc_logout' %}"
+        class="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-mono text-xs font-semibold transition"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+        <span>Sign Out</span>
+      </a>
+    </div>
   </div>
 </div>
 
