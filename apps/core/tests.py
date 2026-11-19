@@ -32,7 +32,7 @@ class EcosystemReleasesContextProcessorTest(TestCase):
         request = self.rf.get("/")
         data = ecosystem_releases(request)
         self.assertEqual(data["IYOU_HOME_GITHUB_REPO"], "https://github.com/Code-Barn/iyou_home")
-        self.assertEqual(data["IYOU_HOME_FALLBACK_TAG"], "v0.2.2")
+        self.assertEqual(data["IYOU_HOME_FALLBACK_TAG"], "v0.2.3")
 
     def test_context_processor_registered_in_settings(self):
         cp_list = settings.TEMPLATES[0]["OPTIONS"]["context_processors"]
@@ -69,45 +69,45 @@ class EcosystemReleasesContextProcessorTest(TestCase):
         self.assertIn('id="dl-ipfs"', html)
 
         self.assertIn(
-            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.2/iyou-home_0.2.2_x64-setup.exe",
+            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.3/iyou-home_0.2.3_x64-setup.exe",
             html,
         )
         self.assertIn(
-            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.2/iyou-home_0.2.2_x64.dmg",
+            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.3/iyou-home_0.2.3_x64.dmg",
             html,
         )
         self.assertIn(
-            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.2/iyou-home_0.2.2_amd64.deb",
+            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.3/iyou-home_0.2.3_amd64.deb",
             html,
         )
         self.assertIn(
-            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.2/iyou-home_0.2.2_amd64.AppImage",
+            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.3/iyou-home_0.2.3_amd64.AppImage",
             html,
         )
         self.assertIn(
-            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.2/iyou-home-0.2.2-1.x86_64.rpm",
+            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.3/iyou-home-0.2.3-1.x86_64.rpm",
             html,
         )
         self.assertIn(
-            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.2/iyou-home_0.2.2.torrent",
+            "https://github.com/Code-Barn/iyou_home/releases/download/v0.2.3/iyou-home_0.2.3.torrent",
             html,
         )
         self.assertIn(
-            "https://ipfs.io/ipfs/QmUA8mAoo7fTZbG1hwvChbSVbD3trAhACBHjzYQDAoFDQu/", html
+            "https://ipfs.io/ipfs/QmQxjdWM7NckSS8BrUTxrEZbD6J1WJg3BqDenMrgoK2pnJ/", html
         )
         self.assertIn("9ac0e54d7b29c21a80ee11f7b24936710623978a", html)
 
         expected_sha256 = {
-            "iyou-home_0.2.2_x64-setup.exe": (
+            "iyou-home_0.2.3_x64-setup.exe": (
                 "a48c815edc1eef1bceb3ffba15aa4f32e05187e30858d68f8033a0b501d3f382"
             ),
-            "iyou-home_0.2.2_x64.dmg": (
+            "iyou-home_0.2.3_x64.dmg": (
                 "3ec91f0afb1589c683e850e6bdf9adff1276fa2635621835984771e151dc0cae"
             ),
-            "iyou-home_0.2.2_amd64.deb": (
+            "iyou-home_0.2.3_amd64.deb": (
                 "ffc2f690959c4e486081be685dfff88c9ccf954dedaa86ef17fca027c1422824"
             ),
-            "iyou-home_0.2.2_amd64.AppImage": (
+            "iyou-home_0.2.3_amd64.AppImage": (
                 "afb160b8d689cddf06f1f38c5648217d830d0e612ac41539192992b8ef6638e7"
             ),
         }
