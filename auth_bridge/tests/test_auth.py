@@ -32,7 +32,7 @@ from django.contrib import admin
 from django.core.cache.backends.locmem import LocMemCache
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
-from django.test import Client as TestClient, RequestFactory, TestCase
+from django.test import Client as TestClient, RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from oidc_provider.models import Client as OIDCClient, ResponseType, RSAKey as OIDCRSAKey
@@ -45,6 +45,7 @@ from auth_bridge.admin import (
     SovereignInfrastructureLeaseAdmin,
     UserAdmin,
 )
+from auth_bridge.checks import check_production_security
 from auth_bridge.middleware import SSOHintCookieMiddleware
 from auth_bridge.models import (
     FederatedIdentity,
@@ -683,5 +684,106 @@ class SovereignModelAdminTests(TestCase):
         with self.assertRaises(ValidationError) as cm:
             lease_admin.save_model(self.request, lease, form=None, change=True)
         self.assertIn("Field 'billing_token_hash' is immutable", str(cm.exception))
+
+
+class NodeProvenancePillTest(TestCase):
+    def setUp(self) -> None:
+        self.client = TestClient()
+        self.login_url = reverse("auth_bridge:login")
+
+    @override_settings(IDP_NODE_ROLE="flagship")
+    def test_flagship_provenance_pill_renders(self) -> None:
+        response = self.client.get(self.login_url)
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertIn("iyou.me · Flagship Root Node ·", content)
+        self.assertIn("Self-host your own IdP ↗", content)
+        self.assertIn(
+            "https://github.com/Code-Barn/iyou_idp/blob/main/docs/OPERATOR_GUIDE.md",
+            content,
+        )
+
+    @override_settings(IDP_NODE_ROLE="community_peer", IDP_OPERATOR_NAME="")
+    def test_community_peer_provenance_pill_renders_default(self) -> None:
+        response = self.client.get(self.login_url)
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertIn(
+            "Community Peer IdP · Operated by Independent Node Operator · Flagship root: iyou.me",
+            content,
+        )
+
+    @override_settings(IDP_NODE_ROLE="community_peer", IDP_OPERATOR_NAME="BioMesh Labs")
+    def test_community_peer_provenance_pill_renders_custom_operator(self) -> None:
+        response = self.client.get(self.login_url)
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertIn(
+            "Community Peer IdP · Operated by BioMesh Labs · Flagship root: iyou.me",
+            content,
+        )
+
+
+class DeploySecurityChecksTest(TestCase):
+    @override_settings(
+        DEBUG=False,
+        SECRET_KEY="django-insecure-testkey",
+        IDP_BASE_URL="https://idp.example.org",
+        ADMIN_DID="did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND",
+    )
+    def test_deploy_check_catches_django_insecure_secret_key(self) -> None:
+        errors = check_production_security(None)
+        self.assertTrue(any(e.id == "iyou_idp.security.E001" for e in errors))
+
+    @override_settings(
+        DEBUG=False,
+        SECRET_KEY="insecure-customprefixkey",
+        IDP_BASE_URL="https://idp.example.org",
+        ADMIN_DID="did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND",
+    )
+    def test_deploy_check_catches_insecure_prefix_secret_key(self) -> None:
+        errors = check_production_security(None)
+        self.assertTrue(any(e.id == "iyou_idp.security.E001" for e in errors))
+
+    @override_settings(
+        DEBUG=False,
+        SECRET_KEY="valid-secure-random-secret-key-for-production-operations",
+        IDP_BASE_URL="http://idp.example.org",
+        ADMIN_DID="did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND",
+    )
+    def test_deploy_check_catches_non_https_base_url(self) -> None:
+        errors = check_production_security(None)
+        self.assertTrue(any(e.id == "iyou_idp.security.E002" for e in errors))
+
+    @override_settings(
+        DEBUG=False,
+        SECRET_KEY="valid-secure-random-secret-key-for-production-operations",
+        IDP_BASE_URL="https://idp.example.org",
+        ADMIN_DID="",
+    )
+    def test_deploy_check_catches_empty_admin_did(self) -> None:
+        errors = check_production_security(None)
+        self.assertTrue(any(e.id == "iyou_idp.security.E003" for e in errors))
+
+    @override_settings(
+        DEBUG=False,
+        SECRET_KEY="valid-secure-random-secret-key-for-production-operations",
+        IDP_BASE_URL="https://idp.example.org",
+        ADMIN_DID="did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND",
+    )
+    def test_deploy_check_passes_when_properly_configured(self) -> None:
+        errors = check_production_security(None)
+        self.assertEqual(errors, [])
+
+    @override_settings(
+        DEBUG=True,
+        SECRET_KEY="django-insecure-testkey",
+        IDP_BASE_URL="http://insecure.local",
+        ADMIN_DID="",
+    )
+    def test_deploy_check_skipped_when_debug_true(self) -> None:
+        errors = check_production_security(None)
+        self.assertEqual(errors, [])
+
 
 

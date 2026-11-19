@@ -51,10 +51,13 @@ Longer-term, dependent on ecosystem adoption.
   Tier 2 `iyouauth://sign` deep link to iOS using the shared `did_rust` bridge;
   store the root `did:key` in the Secure Enclave and sign `/auth/challenge/`
   nonces for `check_challenge_status` polling.
-- **SEC-004 — offline fallback assertions.** Define and test the behaviour when
-  `iyou_idp` is unreachable: locally cached VP receipts, signed expiry bounds,
-  and explicit refusal (never silent acceptance) for dependent-session claims.
-- **"Garden of IdPs" self-hosting operator guide.** Document peer-node deployment:
-  `IDP_*` environment schema, `IDP_WEB_DID_NAMESPACE`, Vault setup, TLS/cookie
-  scoping, federation with `apps.core` instance descriptors, and the backup /
-  key-rotation runbook.
+- **SEC-004 — offline fallback assertions (✅ Complete 2026-11-19).** Codified Section 18
+  `OFFLINE_CHALLENGE_VERIFY` wire protocol between satellite, browser, and `iyou_home`
+  enclave in `docs/AUTH_FLOW_SPECIFICATION.md`: 300s TTL bounds, direct Ed25519 multicodec
+  verification, single-use nonce tracking, forced OIDC re-validation, and strict fail-closed
+  refusal on all `dep.*` dependent-session claims.
+- **"Garden of IdPs" self-hosting operator guide (✅ Complete 2026-11-19).** Documented
+  peer-node deployment in `docs/OPERATOR_GUIDE.md`: federation model, namespace isolation,
+  WebAuthn RP IDs, WoT Sybil defense, complete `IDP_*` environment schema, production deploy
+  checks (`auth_bridge/checks.py`), PostgreSQL/Redis AOF/Vault persistence, RSA rotation runbook,
+  and GDPR compliance conduits.

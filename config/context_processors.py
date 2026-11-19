@@ -13,20 +13,21 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+from typing import Any
+
 from django.conf import settings
+from django.http import HttpRequest
 
 from apps.core.context_processors import ecosystem_releases
 
 __all__ = ["global_settings", "ecosystem_releases"]
 
 
-def global_settings(request):
-    """
-    Expose a small, curated set of global settings to every template so the
-    airlock gate and gated download modal can reference ADMIN_DID without
-    hardcoding DID literals into markup.
-    """
+def global_settings(request: HttpRequest) -> dict[str, Any]:
     return {
         "ADMIN_DID": getattr(settings, "ADMIN_DID", ""),
         "SYSTEM_GATE_ENABLED": bool(getattr(settings, "SYSTEM_GATE_ENABLED", True)),
+        "IDP_NODE_ROLE": getattr(settings, "IDP_NODE_ROLE", "community_peer"),
+        "IDP_OPERATOR_NAME": getattr(settings, "IDP_OPERATOR_NAME", ""),
+        "IDP_OPERATOR_CONTACT": getattr(settings, "IDP_OPERATOR_CONTACT", ""),
     }

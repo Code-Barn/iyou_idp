@@ -65,7 +65,7 @@
         }
     </style>
 </head>
-<body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+<body class="gradient-bg min-h-screen flex flex-col items-center justify-center p-4">
     <img src="{% static 'auth_bridge/img/logo_square.png' %}" alt="" class="logo-stamp" aria-hidden="true">
     <div class="login-card rounded-2xl shadow-2xl p-8 max-w-md w-full">
         <!-- Header -->
@@ -117,6 +117,16 @@
         </div>
         <div id="tab-pane-2" class="tab-pane hidden">
             {% include 'auth_bridge/_tab_managed.html' %}
+        </div>
+    </div>
+
+    <div class="mt-4 text-center max-w-md w-full">
+        <div class="inline-flex items-center px-3 py-1 rounded-full text-xs text-white/75 bg-black/20 backdrop-blur-sm border border-white/10 shadow-sm">
+            {% if IDP_NODE_ROLE == "flagship" %}
+                <span>iyou.me · Flagship Root Node · <a href="https://github.com/Code-Barn/iyou_idp/blob/main/docs/OPERATOR_GUIDE.md" target="_blank" rel="noopener noreferrer" class="underline hover:text-white transition-colors">Self-host your own IdP ↗</a></span>
+            {% else %}
+                <span>Community Peer IdP · Operated by {{ IDP_OPERATOR_NAME|default:"Independent Node Operator" }} · Flagship root: iyou.me</span>
+            {% endif %}
         </div>
     </div>
 

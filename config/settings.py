@@ -42,6 +42,9 @@ env = environ.Env(
     IDP_HOME_URL=(str, "http://iyou-home.user.svc.cluster.local:9000"),
     IDP_HOME_WS_URL=(str, "wss://home.iyou.me:9001/"),
     IDP_WEB_DID_NAMESPACE=(str, "did:web:iyou.me"),
+    IDP_NODE_ROLE=(str, "community_peer"),
+    IDP_OPERATOR_NAME=(str, ""),
+    IDP_OPERATOR_CONTACT=(str, ""),
     ADMIN_DID=(str, "did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND"),
     SYSTEM_GATE_ENABLED=(bool, True),
     BETA_ACCESS_ALLOWLIST=(list, []),
@@ -151,6 +154,9 @@ IDP_WEB_DID_NAMESPACE = env("IDP_WEB_DID_NAMESPACE")
 
 # Master admin DID for automatic superuser elevation
 ADMIN_DID = env("ADMIN_DID")
+IDP_NODE_ROLE = env.str("IDP_NODE_ROLE", default="community_peer")
+IDP_OPERATOR_NAME = env.str("IDP_OPERATOR_NAME", default="")
+IDP_OPERATOR_CONTACT = env.str("IDP_OPERATOR_CONTACT", default="")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Sovereign Airlock — Private Beta / Contributor Preview (MVP showcase)

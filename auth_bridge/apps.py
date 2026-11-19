@@ -33,6 +33,7 @@ class AuthBridgeConfig(AppConfig):
     def ready(self):
         from django.contrib.auth.signals import user_logged_in, user_logged_out
 
+        import auth_bridge.checks  # noqa: F401
         from auth_bridge.signals import mark_sso_hint_on_login, mark_sso_hint_on_logout
 
         post_migrate.connect(run_seed_clients, sender=self)
