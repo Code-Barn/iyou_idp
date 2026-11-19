@@ -581,18 +581,28 @@ class EmergencyBypassLockdownTest(TestCase):
 
         self.assertEqual(resp.status_code, 401)
         body = resp.json()
-        self.assertFalse(body["valid"])
-        self.assertEqual(body["error"], "Signature verification failed")
-        # No session may be created for an unverified signature.
+        self.assertEqual(body["error"], "Invalid cryptographic signature.")
         user = User.objects.filter(custodial_did=self.did).first()
         self.assertIsNone(user)
 
-    def test_bypass_succeeds_only_when_explicitly_enabled(self):
-        """Bypass path activates solely under mocked ALLOW_EMERGENCY_BYPASS=True."""
+    def test_invalid_signature_rejected_401_even_when_debug_true(self):
+        """SEC-001: DEBUG=True alone never enables unsigned bypass."""
         resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
         challenge = resp.json()["challenge"]
 
-        with self.settings(ALLOW_EMERGENCY_BYPASS=True, SYSTEM_GATE_ENABLED=False):
+        with self.settings(DEBUG=True, IDP_ALLOW_EMERGENCY_BYPASS=False):
+            resp = self._submit_tampered_vp(challenge)
+
+        self.assertEqual(resp.status_code, 401)
+        body = resp.json()
+        self.assertEqual(body["error"], "Invalid cryptographic signature.")
+
+    def test_bypass_succeeds_only_when_explicitly_enabled(self):
+        """Bypass path activates solely under mocked IDP_ALLOW_EMERGENCY_BYPASS=True."""
+        resp = self.client.post(reverse("auth_bridge:challenge"), content_type="application/json")
+        challenge = resp.json()["challenge"]
+
+        with self.settings(IDP_ALLOW_EMERGENCY_BYPASS=True, SYSTEM_GATE_ENABLED=False):
             with self.assertLogs("auth_bridge.views", level="CRITICAL") as captured:
                 resp = self._submit_tampered_vp(challenge)
 
@@ -622,8 +632,7 @@ class EmergencyBypassLockdownTest(TestCase):
 
         self.assertEqual(resp.status_code, 401)
         body = resp.json()
-        self.assertFalse(body["valid"])
-        self.assertEqual(body["error"], "Signature verification failed")
+        self.assertEqual(body["error"], "Invalid cryptographic signature.")
 
 
 class SatelliteRosterTest(TestCase):

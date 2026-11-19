@@ -515,17 +515,9 @@ def verify_signature(request):
                 if not direct_valid:
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
-                    is_loopback = remote_ip in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1")
-                    dev_bypass_enabled = (
-                        (
-                            getattr(django_settings, "DEBUG", False) is True
-                            and (is_loopback or getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True)
-                        )
-                        or getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False) is True
-                    )
-                    if not dev_bypass_enabled:
+                    if getattr(django_settings, "IDP_ALLOW_EMERGENCY_BYPASS", False) is not True:
                         return JsonResponse(
-                            {"valid": False, "error": "Signature verification failed"},
+                            {"error": "Invalid cryptographic signature."},
                             status=401,
                         )
                     logger.critical(
@@ -871,17 +863,9 @@ def mobile_verify_signature(request):
                 if not direct_valid:
                     remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
                     print(f"SECURITY: Mobile bypass attempted from {remote_ip} for DID {holder_did}", flush=True)
-                    is_loopback = remote_ip in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1")
-                    dev_bypass_enabled = (
-                        (
-                            getattr(django_settings, "DEBUG", False) is True
-                            and (is_loopback or getattr(django_settings, "ENABLE_DEV_AUTH_BYPASS", False) is True)
-                        )
-                        or getattr(django_settings, "ALLOW_EMERGENCY_BYPASS", False) is True
-                    )
-                    if not dev_bypass_enabled:
+                    if getattr(django_settings, "IDP_ALLOW_EMERGENCY_BYPASS", False) is not True:
                         return JsonResponse(
-                            {"valid": False, "error": "Signature verification failed"},
+                            {"error": "Invalid cryptographic signature."},
                             status=401,
                         )
                     logger.critical(
@@ -1167,6 +1151,8 @@ class VerifyEmailView(View):
             )
             user.set_unusable_password()
             user.save()
+            from .vault_client import ensure_identity_key_seed
+            ensure_identity_key_seed(user.custodial_did)
             logger.info("EMAIL OTP USER PROVISIONED: email=%s did=%s", email, did)
 
         # Managed email OTP proof-of-control grants session beta access

@@ -49,6 +49,7 @@ env = environ.Env(
     IDP_VAULT_ADDR=(str, "http://127.0.0.1:8200"),
     IDP_VAULT_TOKEN=(str, ""),
     IDP_VAULT_KV_MOUNT=(str, "secret"),
+    IDP_ALLOW_EMERGENCY_BYPASS=(bool, False),
     ALLOW_EMERGENCY_BYPASS=(bool, False),
     ENABLE_DEV_AUTH_BYPASS=(bool, False),
     IDP_ALLOWED_HOSTS=(list, ["iyou-idp.identity.svc.cluster.local", "iyou-idp", "localhost"]),
@@ -167,10 +168,10 @@ IDP_VAULT_TOKEN = env("IDP_VAULT_TOKEN")
 IDP_VAULT_KV_MOUNT = env("IDP_VAULT_KV_MOUNT")
 
 # SEC-001: Emergency Tier 3 bypass (challenge-nonce-only auth on failed signature
-# verification). Strictly requires DEBUG=True and ENABLE_DEV_AUTH_BYPASS=True;
-# defaults to secure rejection in all production environments.
-ALLOW_EMERGENCY_BYPASS = env("ALLOW_EMERGENCY_BYPASS")  # Legacy, deprecated
-ENABLE_DEV_AUTH_BYPASS = env("ENABLE_DEV_AUTH_BYPASS")
+# verification). Strictly requires IDP_ALLOW_EMERGENCY_BYPASS=True.
+IDP_ALLOW_EMERGENCY_BYPASS = env.bool("IDP_ALLOW_EMERGENCY_BYPASS", default=False)
+ALLOW_EMERGENCY_BYPASS = IDP_ALLOW_EMERGENCY_BYPASS  # Deprecated alias
+ENABLE_DEV_AUTH_BYPASS = False  # Deprecated
 
 ALLOWED_HOSTS = env("IDP_ALLOWED_HOSTS")
 

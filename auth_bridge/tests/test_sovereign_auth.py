@@ -463,3 +463,49 @@ class PromptNoneAuthorizeTest(TestCase):
         self.assertIn("code=", location)
         self.assertIn("state=none-state-123", location)
         self.assertNotIn("error=", location)
+
+    def test_passkey_session_mints_code_for_sovereign_user(self) -> None:
+        self._login(auth_method="webauthn:passkey")
+        response = self.client.get(self._authorize_url())
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://satellite.iyou.me/callback/?"))
+        self.assertIn("code=", location)
+        self.assertNotIn("error=", location)
+
+    def test_sec001_rejection_by_default_even_with_debug(self) -> None:
+        challenge = "sec001-sovereign-test-nonce"
+        cache.set(challenge, json.dumps({"challenge": challenge, "status": "pending"}), timeout=300)
+        priv = ed25519.Ed25519PrivateKey.generate()
+        pub = priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        did = _make_did(pub)
+        tampered_vp = _sign(
+            {
+                "@context": ["https://www.w3.org/2018/credentials/v1"],
+                "type": ["VerifiablePresentation"],
+                "holder": did,
+                "challenge": challenge,
+                "verifiableCredential": [],
+                "issuer": did,
+            },
+            priv,
+        )
+        tampered_vp["proof"]["signatureValue"] = "00" * 64
+
+        with self.settings(DEBUG=True, IDP_ALLOW_EMERGENCY_BYPASS=False):
+            resp = self.client.post(
+                reverse("auth_bridge:verify_signature"),
+                data=json.dumps({"verifiable_presentation": tampered_vp, "challenge": challenge}),
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 401)
+            self.assertEqual(resp.json().get("error"), "Invalid cryptographic signature.")
+
+        with self.settings(DEBUG=True, IDP_ALLOW_EMERGENCY_BYPASS=True, SYSTEM_GATE_ENABLED=False):
+            resp = self.client.post(
+                reverse("auth_bridge:verify_signature"),
+                data=json.dumps({"verifiable_presentation": tampered_vp, "challenge": challenge}),
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(resp.json().get("success"))

@@ -1027,12 +1027,21 @@
                 return bytes;
             }
 
+            function bufferToBase64Url(buffer) {
+                if (!buffer) return null;
+                const bytes = new Uint8Array(buffer);
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            }
+
             passkeyBtn.addEventListener('click', async () => {
                 passkeyBtn.disabled = true;
                 passkeyBtn.textContent = '⏳ Verifying...';
 
                 try {
-                    // Step 1: Begin authentication ceremony
                     const beginResp = await fetch("{% url 'auth_bridge:passkey_authenticate_begin' %}", {
                         method: 'POST',
                         headers: {
@@ -1044,9 +1053,6 @@
                     if (!beginResp.ok) throw new Error('Failed to start passkey ceremony');
                     const beginData = await beginResp.json();
 
-                    // The backend returns { ceremony_id, publicKey: { ... } }.
-                    // Unwrap defensively so a future schema change to an
-                    // `options` envelope cannot regress the handshake silently.
                     const publicKeyOptions = beginData.publicKey || beginData.options?.publicKey || beginData.options;
                     if (!publicKeyOptions || typeof publicKeyOptions !== 'object' || !publicKeyOptions.challenge) {
                         throw new Error('Passkey options missing from server response');
@@ -1054,14 +1060,11 @@
                     if (publicKeyOptions.allowCredentials) {
                         publicKeyOptions.allowCredentials = publicKeyOptions.allowCredentials.map(cred => ({
                             ...cred,
-                            id: base64urlToUint8Array(cred.id),
+                            id: base64urlToUint8Array(cred.id).buffer,
                         }));
                     }
-                    publicKeyOptions.challenge = base64urlToUint8Array(publicKeyOptions.challenge);
+                    publicKeyOptions.challenge = base64urlToUint8Array(publicKeyOptions.challenge).buffer;
 
-                    // Step 3: Invoke browser WebAuthn prompt. Cancellation and
-                    // environment limitations surface here and are reported
-                    // inline rather than propagating as uncaught errors.
                     let assertion;
                     try {
                         assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
@@ -1077,25 +1080,23 @@
                         return;
                     }
 
-                    // Step 4: Format assertion for server
+                    const nextUrl = new URLSearchParams(window.location.search).get('next') || '';
                     const assertionResponse = {
-                        credential: {
-                            id: assertion.id,
-                            rawId: Array.from(new Uint8Array(assertion.rawId)),
-                        },
+                        ceremony_id: beginData.ceremony_id,
+                        next_url: nextUrl,
+                        id: assertion.id,
+                        rawId: bufferToBase64Url(assertion.rawId),
+                        type: assertion.type,
                         response: {
-                            authenticatorData: Array.from(new Uint8Array(assertion.response.authenticatorData)),
-                            clientDataJSON: Array.from(new Uint8Array(assertion.response.clientDataJSON)),
-                            signature: Array.from(new Uint8Array(assertion.response.signature)),
+                            authenticatorData: bufferToBase64Url(assertion.response.authenticatorData),
+                            clientDataJSON: bufferToBase64Url(assertion.response.clientDataJSON),
+                            signature: bufferToBase64Url(assertion.response.signature),
                             userHandle: assertion.response.userHandle
-                                ? Array.from(new Uint8Array(assertion.response.userHandle))
+                                ? bufferToBase64Url(assertion.response.userHandle)
                                 : null,
                         },
-                        type: assertion.type,
-                        ceremony_id: beginData.ceremony_id,
                     };
 
-                    // Step 5: Complete authentication
                     const completeResp = await fetch("{% url 'auth_bridge:passkey_authenticate_complete' %}", {
                         method: 'POST',
                         headers: {
@@ -1108,9 +1109,11 @@
                     const completeData = await completeResp.json();
 
                     if (completeResp.ok && completeData.status === 'authenticated') {
-                        const shouldShowDisclaimer = (completeData.show_legal_disclaimer !== false);
-                        const shouldShowAgeGate = Boolean(completeData.show_age_gate);
-                        onAuthSuccess(completeData.redirect_url || '{{ wun_url|escapejs }}', shouldShowDisclaimer, shouldShowAgeGate);
+                        if (typeof onAuthSuccess === 'function') {
+                            onAuthSuccess(completeData.redirect_url, false, false);
+                        } else {
+                            window.location.href = completeData.redirect_url;
+                        }
                     } else {
                         throw new Error(completeData.error || 'Passkey authentication failed');
                     }

@@ -20,10 +20,15 @@ Key material lives at ``{mount}/identity/{custodial_did}/ed25519`` and is
 expected to contain at least ``private_key_pem`` and ``public_key_pem``.
 """
 
+import logging
 from typing import Any
 
 import hvac
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _key_path(custodial_did: str) -> str:
@@ -74,3 +79,31 @@ def delete_identity_key(custodial_did: str) -> None:
         mount_point=settings.IDP_VAULT_KV_MOUNT,
         path=_key_path(custodial_did),
     )
+
+
+def ensure_identity_key_seed(custodial_did: str) -> bool:
+    if getattr(settings, "DEBUG", False) or not getattr(settings, "IDP_VAULT_TOKEN", ""):
+        logger.info("Vault seed bypassed for did=%s", custodial_did)
+        return False
+
+    try:
+        read_identity_key(custodial_did)
+        return True
+    except KeyError:
+        private_key = Ed25519PrivateKey.generate()
+        private_key_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("utf-8")
+        public_key_pem = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("utf-8")
+        data = {
+            "private_key_pem": private_key_pem,
+            "public_key_pem": public_key_pem,
+            "did": custodial_did,
+        }
+        write_identity_key(custodial_did, data)
+        return True

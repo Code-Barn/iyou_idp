@@ -41,6 +41,7 @@ from .views_passkeys import (
     passkey_authenticate_complete,
 )
 from .admin_views import custom_admin_login, custom_admin_verify, custom_admin_dashboard
+from .views_account import AccountPurgeView
 from .views_email_locker import (
     ChallengeLinkEmailView,
     ClaimPrimaryEmailChallengeView,
@@ -111,4 +112,7 @@ urlpatterns = [
     path('passkeys/register/complete/',  passkey_register_complete,  name='passkey_register_complete'),
     path('passkeys/authenticate/begin/', passkey_authenticate_begin, name='passkey_authenticate_begin'),
     path('passkeys/authenticate/complete/', passkey_authenticate_complete, name='passkey_authenticate_complete'),
+
+    path('account/purge/', AccountPurgeView.as_view(), name='account_purge'),
+    path('auth/account/purge/', AccountPurgeView.as_view()),
 ]

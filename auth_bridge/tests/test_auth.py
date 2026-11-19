@@ -357,7 +357,7 @@ class CanonicalJcsSignatureVerificationTest(TestCase):
         vp = dict(self.live_vp, challenge=challenge)
         vp["proof"] = dict(vp["proof"], proofValue="00" * 64)
 
-        with self.settings(DEBUG=False, ALLOW_EMERGENCY_BYPASS=False, ENABLE_DEV_AUTH_BYPASS=False):
+        with self.settings(DEBUG=False, IDP_ALLOW_EMERGENCY_BYPASS=False):
             resp = self.client.post(
                 reverse("auth_bridge:verify_signature"),
                 data=json.dumps({
@@ -368,16 +368,36 @@ class CanonicalJcsSignatureVerificationTest(TestCase):
                 REMOTE_ADDR="127.0.0.1",
             )
             self.assertEqual(resp.status_code, 401)
-            self.assertEqual(resp.json().get("error"), "Signature verification failed")
+            self.assertEqual(resp.json().get("error"), "Invalid cryptographic signature.")
 
-    def test_dev_loopback_bypass_when_debug_enabled(self):
-        """Under DEBUG=True, emergency bypass successfully authenticates local loopback."""
+    def test_dev_loopback_bypass_rejected_under_debug_by_default(self):
+        """Under DEBUG=True, emergency bypass is rejected by default with 401."""
         challenge = "dev-bypass-challenge-nonce"
         views_cache.set(challenge, json.dumps({"challenge": challenge, "status": "pending"}), timeout=300)
         vp = dict(self.live_vp, challenge=challenge)
         vp["proof"] = dict(vp["proof"], proofValue="00" * 64)
 
-        with self.settings(DEBUG=True):
+        with self.settings(DEBUG=True, IDP_ALLOW_EMERGENCY_BYPASS=False):
+            resp = self.client.post(
+                reverse("auth_bridge:verify_signature"),
+                data=json.dumps({
+                    "verifiable_presentation": vp,
+                    "challenge": challenge,
+                }),
+                content_type="application/json",
+                REMOTE_ADDR="127.0.0.1",
+            )
+            self.assertEqual(resp.status_code, 401)
+            self.assertEqual(resp.json().get("error"), "Invalid cryptographic signature.")
+
+    def test_dev_loopback_bypass_when_explicitly_enabled(self):
+        """Emergency bypass succeeds when IDP_ALLOW_EMERGENCY_BYPASS=True."""
+        challenge = "dev-bypass-challenge-nonce-enabled"
+        views_cache.set(challenge, json.dumps({"challenge": challenge, "status": "pending"}), timeout=300)
+        vp = dict(self.live_vp, challenge=challenge)
+        vp["proof"] = dict(vp["proof"], proofValue="00" * 64)
+
+        with self.settings(DEBUG=True, IDP_ALLOW_EMERGENCY_BYPASS=True, SYSTEM_GATE_ENABLED=False):
             resp = self.client.post(
                 reverse("auth_bridge:verify_signature"),
                 data=json.dumps({

@@ -168,6 +168,8 @@ def process_oauth_identity(
     )
     new_user.set_unusable_password()
     new_user.save()
+    from .vault_client import ensure_identity_key_seed
+    ensure_identity_key_seed(new_user.custodial_did)
 
     FederatedIdentity.objects.create(
         user=new_user,

@@ -37,6 +37,8 @@ from fido2.webauthn import (
 )
 
 from auth_bridge.models import PasskeyCredential, User
+from auth_bridge.resilient_cache import cache
+from oidc_provider.models import Client as OIDCClient, ResponseType
 
 REG_BEGIN = "/auth/passkeys/register/begin/"
 REG_COMPLETE = "/auth/passkeys/register/complete/"
@@ -219,7 +221,9 @@ class PasskeyAuthenticationTest(PasskeyCeremonyBase):
         assert response.status_code == 200
         self.client.logout()
 
-    def _assert_credential(self, user_handle: bytes | None = None) -> dict[str, Any]:
+    def _assert_credential(
+        self, user_handle: bytes | None = None, next_url: str | None = None
+    ) -> tuple[dict[str, Any], Any]:
         begin_payload = self._begin_authentication()
         options = begin_payload["publicKey"]
         assertion = self.authenticator.assert_credential(
@@ -229,6 +233,8 @@ class PasskeyAuthenticationTest(PasskeyCeremonyBase):
             "ceremony_id": begin_payload["ceremony_id"],
             **assertion,
         }
+        if next_url is not None:
+            payload["next_url"] = next_url
         return begin_payload, self.client.post(
             AUTH_COMPLETE, data=json.dumps(payload), content_type="application/json"
         )
@@ -294,3 +300,55 @@ class PasskeyAuthenticationTest(PasskeyCeremonyBase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(json.loads(response.content)["error"], "user_handle_mismatch")
         self.assertIsNone(self.client.session.get("_auth_user_id"))
+
+    def test_passkey_auth_method_and_legal_disclaimer_routing(self) -> None:
+        self.user.show_legal_disclaimer = True
+        self.user.save(update_fields=["show_legal_disclaimer"])
+        _, resp = self._assert_credential(
+            user_handle=bytes(self.user.id.bytes),
+            next_url="http://127.0.0.1:8001/?map=open",
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.content)
+        self.assertEqual(self.client.session.get("auth_method"), "webauthn:passkey")
+        self.assertEqual(cache.get(f"user_auth_method:{self.user.id}"), "webauthn:passkey")
+        self.assertTrue(body["redirect_url"].startswith("/auth/legal-disclaimer/?next="))
+        self.assertEqual(
+            self.client.session.get("post_disclaimer_redirect"),
+            "http://127.0.0.1:8001/?map=open",
+        )
+
+    def test_passkey_sovereign_did_key_user_and_oidc_continuity(self) -> None:
+        code_type, _ = ResponseType.objects.get_or_create(value="code")
+        client = OIDCClient.objects.create(
+            name="Passkey Test Client",
+            client_type="public",
+            client_id="test-passkey-oidc-client",
+            jwt_alg="RS256",
+            _redirect_uris="https://satellite.iyou.me/callback/",
+            require_consent=False,
+        )
+        client.response_types.add(code_type)
+        self.user.custodial_did = "did:key:z6MkujsSdMm1j7QqUNaZo8U8kkcJNfFNikUQYJzmZX4wwgND"
+        self.user.is_sovereign = True
+        self.user.show_legal_disclaimer = False
+        self.user.save()
+
+        oidc_req = f"/openid/authorize/?client_id={client.client_id}&response_type=code&redirect_uri=https://satellite.iyou.me/callback/&scope=openid"
+        _, resp = self._assert_credential(
+            user_handle=bytes(self.user.id.bytes),
+            next_url=oidc_req,
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.content)
+        self.assertEqual(body["status"], "authenticated")
+        self.assertEqual(body["did"], self.user.custodial_did)
+        self.assertTrue(body["redirect_url"].startswith("https://satellite.iyou.me/callback/?code="))
+        self.assertEqual(self.client.session.get("auth_method"), "webauthn:passkey")
+
+    @override_settings(SYSTEM_GATE_ENABLED=True, ADMIN_DID="did:key:other-admin", BETA_ACCESS_ALLOWLIST=[])
+    def test_passkey_airlock_gate_enforcement(self) -> None:
+        self.user.custodial_did = "did:key:z6Mkgateblocked"
+        self.user.save(update_fields=["custodial_did"])
+        _, resp = self._assert_credential(user_handle=bytes(self.user.id.bytes))
+        self.assertEqual(resp.status_code, 403)

@@ -37,6 +37,8 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from django.test import TestCase
 
 from auth_bridge.models import User
+from auth_bridge.pipeline import process_oauth_identity
+from auth_bridge.vault_client import ensure_identity_key_seed
 from auth_bridge.views_graduation import HKDF_INFO
 
 EXPORT_URL = "/api/v1/identity/graduate/export/"
@@ -349,3 +351,74 @@ class GraduationAccessControlTest(GraduationBaseTestCase):
         self.assertEqual(confirm_response.status_code, 400)
         for response in (export_response, confirm_response):
             self.assertEqual(json.loads(response.content)["error"], "already_sovereign")
+
+
+class VaultSeedProvisioningTests(TestCase):
+    def test_ensure_seed_skips_in_debug_mode(self) -> None:
+        with self.settings(DEBUG=True, IDP_VAULT_TOKEN="secret-token"):
+            result = ensure_identity_key_seed("did:web:iyou.me:user:test")
+            self.assertFalse(result)
+
+    def test_ensure_seed_skips_without_vault_token(self) -> None:
+        with self.settings(DEBUG=False, IDP_VAULT_TOKEN=""):
+            result = ensure_identity_key_seed("did:web:iyou.me:user:test")
+            self.assertFalse(result)
+
+    def test_ensure_seed_provisions_key_when_configured(self) -> None:
+        vault = VaultDouble()
+        with self.settings(DEBUG=False, IDP_VAULT_TOKEN="vault-root-token"):
+            with patch("auth_bridge.vault_client.read_identity_key", side_effect=vault.read):
+                with patch("auth_bridge.vault_client.write_identity_key", side_effect=vault.seed) as mock_write:
+                    result = ensure_identity_key_seed("did:web:iyou.me:user:seeded")
+                    self.assertTrue(result)
+                    mock_write.assert_called_once()
+                    args, _ = mock_write.call_args
+                    self.assertEqual(args[0], "did:web:iyou.me:user:seeded")
+                    self.assertIn("private_key_pem", args[1])
+                    self.assertIn("public_key_pem", args[1])
+                    self.assertEqual(args[1]["did"], "did:web:iyou.me:user:seeded")
+
+                    result2 = ensure_identity_key_seed("did:web:iyou.me:user:seeded")
+                    self.assertTrue(result2)
+
+    def test_oauth_jit_creation_invokes_vault_seed(self) -> None:
+        vault = VaultDouble()
+        with self.settings(DEBUG=False, IDP_VAULT_TOKEN="vault-root-token"):
+            with patch("auth_bridge.vault_client.read_identity_key", side_effect=vault.read):
+                with patch("auth_bridge.vault_client.write_identity_key", side_effect=vault.seed) as mock_write:
+                    res = process_oauth_identity(
+                        provider_name="google",
+                        provider_uid="google-jit-123",
+                        email="oauth_jit@iyou.me",
+                        email_verified=True,
+                    )
+                    self.assertEqual(res["action"], "login")
+                    user = res["user"]
+                    mock_write.assert_called_once()
+                    self.assertEqual(mock_write.call_args[0][0], user.custodial_did)
+
+    def test_graduate_export_succeeds_with_seeded_vault(self) -> None:
+        vault = VaultDouble()
+        with self.settings(DEBUG=False, IDP_VAULT_TOKEN="vault-root-token"):
+            with patch("auth_bridge.vault_client.read_identity_key", side_effect=vault.read):
+                with patch("auth_bridge.vault_client.write_identity_key", side_effect=vault.seed):
+                    user = User.objects.create_user(email="export_seeded@iyou.me")
+                    ensure_identity_key_seed(user.custodial_did)
+
+                    self.client.force_login(user)
+                    client_ephemeral = X25519PrivateKey.generate()
+                    with patch("auth_bridge.views_graduation.read_identity_key", side_effect=vault.read):
+                        response = self.client.post(
+                            EXPORT_URL,
+                            data=json.dumps({
+                                "ephemeral_pubkey": client_ephemeral.public_key()
+                                .public_bytes_raw()
+                                .hex()
+                            }),
+                            content_type="application/json",
+                        )
+                        self.assertEqual(response.status_code, 200)
+                        data = json.loads(response.content)
+                        self.assertIn("server_ephemeral_pub", data)
+                        self.assertIn("nonce", data)
+                        self.assertIn("ciphertext", data)

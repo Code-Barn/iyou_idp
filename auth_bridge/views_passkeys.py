@@ -25,6 +25,7 @@ import json
 import logging
 import uuid
 from typing import Any
+from urllib.parse import urlencode
 
 from django.contrib.auth import login
 from auth_bridge.resilient_cache import cache
@@ -166,6 +167,7 @@ def passkey_authenticate_complete(request: HttpRequest) -> HttpResponse:
     except json.JSONDecodeError:
         return JsonResponse({"error": "malformed_json"}, status=400)
 
+    next_url = payload.pop("next_url", None)
     ceremony_id = payload.pop("ceremony_id", None)
     stored = _load_ceremony("auth", ceremony_id)
     if stored is None:
@@ -215,19 +217,32 @@ def passkey_authenticate_complete(request: HttpRequest) -> HttpResponse:
 
     user = evaluate_sovereign_admin_posture(row.user)
 
-    from .views import _gate_response
-    gate_resp = _gate_response(request, user.custodial_did)
+    from .views import (
+        DEFAULT_NEXT_URL,
+        _build_oidc_redirect,
+        _gate_response,
+        _is_safe_public_redirect,
+    )
+
+    safe_next = next_url if (next_url and _is_safe_public_redirect(next_url)) else DEFAULT_NEXT_URL
+
+    gate_resp = _gate_response(request, user.custodial_did, safe_next)
     if gate_resp is not None:
         return gate_resp
 
     login(request, user, backend="auth_bridge.backend.DIDAuthBackend")
     request.session["auth_method"] = "webauthn:passkey"
-    cache.set(f"user_auth_method:{user.id}", "webauthn:passkey", 86400)
+    cache.set(f"user_auth_method:{user.id}", "webauthn:passkey", timeout=86400)
     logger.info("PASSKEY LOGIN: did=%s via passkey", user.custodial_did)
+
+    if user.show_legal_disclaimer:
+        request.session["post_disclaimer_redirect"] = safe_next
+        redirect_url = f"/auth/legal-disclaimer/?{urlencode({'next': safe_next})}"
+    else:
+        redirect_url = _build_oidc_redirect(safe_next, user) or safe_next
+
     return JsonResponse({
         "status": "authenticated",
         "did": user.custodial_did,
-        "show_legal_disclaimer": user.show_legal_disclaimer,
-        "show_age_gate": user.age_bracket is None,
-        "age_bracket": user.age_bracket,
+        "redirect_url": redirect_url,
     })
