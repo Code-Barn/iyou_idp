@@ -469,6 +469,62 @@ class LoginPageCacheHeaderTest(TestCase):
         self.assertEqual(response["Pragma"], "no-cache")
 
 
+class PassiveLoginLoadAndExplicitActionTest(TestCase):
+    """
+    Verify GET / and GET /auth/login/ load passively with zero background
+    POST /auth/challenge/ requests and zero WebSocket connections, while
+    preserving explicit user-initiated click handlers.
+    """
+
+    def setUp(self):
+        self.client = TestClient()
+
+    def test_login_endpoints_render_passively_without_auto_challenge_or_websocket(self):
+        endpoints = ["/", reverse("auth_bridge:login")]
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.get(endpoint)
+                self.assertEqual(response.status_code, 200)
+                html = response.content.decode("utf-8")
+
+                # Verify state initializes passively
+                self.assertIn("let currentChallenge = null;", html)
+                self.assertIn('window.sovereignConnectionLock = "IDLE";', html)
+
+                # Extract init() function body from HTML
+                init_start = html.find("function init() {")
+                self.assertNotEqual(init_start, -1, "init() function missing")
+                init_end = html.find("function tryConnectIYouHome()", init_start)
+                self.assertNotEqual(init_end, -1, "tryConnectIYouHome() function missing")
+                init_body = html[init_start:init_end]
+
+                # Assert init() does NOT invoke fetchChallenge or tryConnectIYouHome
+                self.assertNotIn("fetchChallenge(", init_body)
+                self.assertNotIn("tryConnectIYouHome(", init_body)
+
+                # Verify explicit click handlers are bound inside init()
+                self.assertIn("iyouBtn.addEventListener('click', signWithIYouHome);", init_body)
+                self.assertIn("requestChallengeBtn.addEventListener('click', requestChallenge);", init_body)
+
+                # Verify Tab 0 buttons
+                self.assertIn('id="iyouHomeBtn"', html)
+                self.assertIn("Sign in with iyou_home", html)
+                self.assertIn('id="requestChallengeBtn"', html)
+                self.assertIn("Manual Paste / Request Challenge", html)
+
+                # Verify Community Tab 1 lazy initialization
+                self.assertIn("if (idx === 1) {\n                    initCommunityTab();", html)
+                self.assertIn('id="refreshCommunityQrBtn"', html)
+                self.assertIn("refreshQrBtn.addEventListener('click', () => initCommunityTab());", html)
+
+    def test_community_tab_activation_lazy_loads_qr_challenge(self):
+        response = self.client.get(reverse("auth_bridge:login") + "?tab=community")
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn("activateTab(activeIdx);", html)
+        self.assertIn("initCommunityTab()", html)
+
+
 class SSOHintCookieTest(TestCase):
     def setUp(self):
         self.factory = RequestFactory()

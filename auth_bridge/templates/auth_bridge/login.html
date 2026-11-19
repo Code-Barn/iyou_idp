@@ -173,6 +173,8 @@
         let currentNextUrl = '{{ next_url|escapejs }}';
         let iyouSocket = null;
         let isSigningInProgress = false;
+        window.sovereignConnectionLock = "IDLE";
+        window.activeSovereignSocket = null;
 
         // Navigate the current window inline to the satellite redirect URL (passing through age gate and legal disclaimer gates if required).
         function onAuthSuccess(redirectUrl, shouldShowDisclaimer, shouldShowAgeGate) {
@@ -215,12 +217,6 @@
                     step2Indicator.classList.add('active');
                     step1Content.classList.add('hidden');
                     step2Content.classList.remove('hidden');
-
-                    // If socket is already open and signing not in progress, trigger immediately
-                    if (iyouSocket && iyouSocket.readyState === WebSocket.OPEN && !isSigningInProgress) {
-                        console.log("WS: Challenge arrived while socket is open -> Triggering signWithIYouHome() immediately");
-                        signWithIYouHome();
-                    }
                     return data.challenge;
                 } else {
                     throw new Error(data.error || 'Failed to get challenge');
@@ -257,17 +253,13 @@
             window.csrfToken = getCookie('idp_csrftoken');
 
             // Set up event listeners
+            const iyouBtn = document.getElementById('iyouHomeBtn');
+            if (iyouBtn) {
+                iyouBtn.addEventListener('click', signWithIYouHome);
+            }
             requestChallengeBtn.addEventListener('click', requestChallenge);
             submitVPBtn.addEventListener('click', handleManualSubmit);
             backToChallengeBtn.addEventListener('click', backToChallenge);
-
-            // Concurrently request challenge and initialize WebSocket bridge
-            fetchChallenge(false).catch(err => {
-                console.log("Initial background challenge pre-fetch completed/deferred:", err.message);
-            });
-
-            // Attempt native-connect handshake with iyou_home
-            tryConnectIYouHome();
         }
 
         // Absolute mutex-style connection lock — guards against concurrent duplicates
@@ -288,13 +280,9 @@
             window.sovereignConnectionLock = "CONNECTING";
             console.log("WS: Concurrency lock claimed. Initializing secure socket...");
 
-            const iyouBtn = document.getElementById('iyouHomeBtn');
-            const manualSection = document.getElementById('manualSection');
             const cancelBtn = document.getElementById('cancelIyouBtn');
+            const manualSection = document.getElementById('manualSection');
 
-            iyouBtn.textContent = '🔗 Linking...';
-            iyouBtn.disabled = true;
-            iyouBtn.classList.remove('hidden');
             cancelBtn.classList.remove('hidden');
             manualSection.classList.add('hidden');
 
@@ -307,8 +295,8 @@
                 if (socket) { socket.close(); socket = null; }
                 window.activeSovereignSocket = null;
                 window.sovereignConnectionLock = "IDLE";
+                isSigningInProgress = false;
                 cancelBtn.classList.add('hidden');
-                iyouBtn.classList.add('hidden');
                 showManualFallback();
             };
 
@@ -347,8 +335,8 @@
                         socket.close();
                         window.activeSovereignSocket = null;
                         window.sovereignConnectionLock = "IDLE";
+                        isSigningInProgress = false;
                         cancelBtn.classList.add('hidden');
-                        iyouBtn.classList.add('hidden');
                         showManualFallback(
                             'iyou_home desktop app not detected. Please paste your signature manually.'
                         );
@@ -360,7 +348,7 @@
                     console.log("WS: Connection Opened");
                     if (cancelled) { socket.close(); return; }
                     clearTimeout(forceFallback);
-                    cancelBtn.classList.add('hidden');
+                    cancelBtn.classList.remove('hidden');
                     iyouSocket = socket;
                     window.sovereignConnectionLock = "OPEN";
                     onIYouHomeConnected();
@@ -371,7 +359,6 @@
                     if (cancelled) return;
                     clearTimeout(forceFallback);
                     cancelBtn.classList.add('hidden');
-                    iyouBtn.classList.add('hidden');
                     showManualFallback();
                 });
 
@@ -390,7 +377,6 @@
                 window.sovereignConnectionLock = "IDLE";
                 window.activeSovereignSocket = null;
                 cancelBtn.classList.add('hidden');
-                iyouBtn.classList.add('hidden');
                 showManualFallback(
                     err.name === 'SecurityError'
                         ? 'Local link blocked by browser security. Please paste manually.'
@@ -404,10 +390,6 @@
             document.getElementById('manualSection').classList.remove('hidden');
             document.getElementById('cancelIyouBtn').classList.add('hidden');
             document.getElementById('boredLink').classList.add('hidden');
-            const iyouBtn = document.getElementById('iyouHomeBtn');
-            iyouBtn.classList.add('hidden');
-            iyouBtn.disabled = false;
-            iyouBtn.textContent = '🔐 Sign with iyou_home';
             const subtitle = document.getElementById('step2-subtitle');
             subtitle.textContent = message || 'Use your DID wallet or paste a mock signature below.';
             document.getElementById('signingLoading').classList.add('hidden');
@@ -416,28 +398,12 @@
 
         function onIYouHomeConnected() {
             document.getElementById('manualSection').classList.add('hidden');
+            document.getElementById('cancelIyouBtn').classList.remove('hidden');
             document.getElementById('step2-subtitle').textContent =
                 'Sign the challenge using your iyou_home desktop app.';
-            const btn = document.getElementById('iyouHomeBtn');
-            btn.textContent = '🔐 Sign with iyou_home';
-            btn.disabled = false;
-            btn.classList.remove('hidden');
-            btn.onclick = signWithIYouHome;
 
-            // Trigger signature request immediately if challenge is already available or when it arrives
-            if (currentChallenge && !isSigningInProgress) {
-                console.log("WS: Socket opened and challenge available -> auto-triggering signWithIYouHome()");
-                signWithIYouHome();
-            } else if (challengeFetchPromise && !isSigningInProgress) {
-                challengeFetchPromise.then(() => {
-                    if (iyouSocket && iyouSocket.readyState === WebSocket.OPEN && !isSigningInProgress) {
-                        console.log("WS: Challenge arrived after socket connect -> auto-triggering signWithIYouHome()");
-                        signWithIYouHome();
-                    }
-                }).catch(() => {
-                    // Fallback to manual if challenge request failed
-                    showManualFallback('Could not retrieve authentication challenge.');
-                });
+            if (typeof window._sendSignChallenge === 'function') {
+                window._sendSignChallenge();
             }
         }
 
@@ -452,22 +418,34 @@
             step1Content.classList.add('hidden');
             step2Content.classList.remove('hidden');
 
-            const btn = document.getElementById('iyouHomeBtn');
-            btn.disabled = true;
-            btn.textContent = '⏳ Waiting for signature...';
             signingLoading.classList.remove('hidden');
+            document.querySelector('#signingLoading .spinner').classList.remove('hidden');
+            document.querySelector('#signingLoading .checkmark').classList.add('hidden');
+            document.querySelector('#signingLoading p').textContent = 'Connecting to iyou_home...';
             errorMessage.classList.add('hidden');
+
+            const cancelBtn = document.getElementById('cancelIyouBtn');
+            cancelBtn.classList.remove('hidden');
+            document.getElementById('manualSection').classList.add('hidden');
 
             const boredLink = document.getElementById('boredLink');
             boredLink.classList.remove('hidden');
 
             const subtitle = document.getElementById('step2-subtitle');
+            subtitle.textContent = 'Connecting to iyou_home desktop app...';
 
             let signatureReceived = false;
+            let challengeSent = false;
+
             const nudgeTimer = setTimeout(() => {
-                if (!signatureReceived) {
+                if (!signatureReceived && !document.getElementById('manualSection').classList.contains('hidden')) {
+                    return;
+                }
+                if (!signatureReceived && iyouSocket && iyouSocket.readyState === WebSocket.OPEN) {
                     subtitle.textContent =
                         'Handshake sent. Please authorize the signature in iyou_home.';
+                    document.querySelector('#signingLoading p').textContent =
+                        'Please authorize the signature in iyou_home...';
                 }
             }, 1500);
 
@@ -481,96 +459,96 @@
             }, 60000);
 
             function sendSignChallenge() {
+                if (challengeSent) return;
+                if (!iyouSocket || iyouSocket.readyState !== WebSocket.OPEN || !currentChallenge) return;
+                challengeSent = true;
                 const msg = {
                     type: 'sign',
                     challenge: currentChallenge
                 };
                 console.log("OUTBOUND WS DATA:", JSON.stringify(msg));
                 iyouSocket.send(JSON.stringify(msg));
+                subtitle.textContent =
+                    'Handshake sent. Please authorize the signature in iyou_home.';
+                document.querySelector('#signingLoading p').textContent =
+                    'Waiting for signature in iyou_home...';
             }
 
-            if (iyouSocket && iyouSocket.readyState === WebSocket.OPEN && currentChallenge) {
+            window._sendSignChallenge = sendSignChallenge;
+
+            // 1. Ensure a fresh challenge is fetched (or reuse existing interaction challenge)
+            const challengePromise = currentChallenge
+                ? Promise.resolve(currentChallenge)
+                : fetchChallenge(false);
+
+            challengePromise.then(() => {
                 sendSignChallenge();
-            } else if (!currentChallenge) {
-                fetchChallenge(false).then(() => {
-                    if (iyouSocket && iyouSocket.readyState === WebSocket.OPEN) {
-                        sendSignChallenge();
-                    }
-                }).catch(err => {
-                    isSigningInProgress = false;
-                    showManualFallback("Could not obtain challenge: " + err.message);
-                });
-            } else {
-                subtitle.textContent = 'Waiting for iyou_home connection...';
-                let attempts = 0;
-                const maxAttempts = 25;
-                const poll = setInterval(() => {
-                    attempts++;
-                    if (iyouSocket && iyouSocket.readyState === WebSocket.OPEN && currentChallenge) {
-                        clearInterval(poll);
-                        sendSignChallenge();
-                    } else if (attempts >= maxAttempts) {
-                        clearInterval(poll);
-                        clearTimeout(nudgeTimer);
-                        clearTimeout(window._signTimeout);
-                        window._signTimeout = null;
-                        isSigningInProgress = false;
-                        boredLink.classList.add('hidden');
-                        showManualFallback(
-                            'Connection to iyou_home timed out. Please paste your signature manually.'
-                        );
-                    }
-                }, 200);
-            }
-
-            iyouSocket.addEventListener('message', function onMessage(event) {
-                console.log("WS: Message Received:", event.data);
-                let data;
-                try {
-                    data = JSON.parse(event.data);
-                } catch {
-                    console.warn("WS: Non-JSON message ignored:", event.data);
-                    return;
-                }
-                if (data.type !== 'signature' || !data.vp) {
-                    console.log("WS: Ignoring message type:", data.type);
-                    return;
-                }
-                console.log("Success: Intercepted structured W3C Verifiable Presentation payload.");
-
-                const targetSignature = data.vp.proof && (data.vp.proof.proofValue || data.vp.proof.signatureValue);
-                const targetHolderDid = data.vp.holder;
-
-                if (targetSignature) {
-                    document.getElementById('signatureInput').value = targetSignature;
-                }
-                if (targetHolderDid) {
-                    document.getElementById('holderDidInput').value = targetHolderDid;
-                }
-
-                signatureReceived = true;
+            }).catch(err => {
+                isSigningInProgress = false;
                 clearTimeout(nudgeTimer);
                 clearTimeout(window._signTimeout);
                 window._signTimeout = null;
-                document.getElementById('iyouHomeBtn').classList.add('hidden');
-                boredLink.classList.add('hidden');
-                document.querySelector('#signingLoading .spinner').classList.add('hidden');
-                document.querySelector('#signingLoading .checkmark').classList.remove('hidden');
-                document.querySelector('#signingLoading p').textContent =
-                    'Identity Verified. Entering application...';
-                iyouSocket.removeEventListener('message', onMessage);
-                try {
-                    submitVerify(data.vp).catch(() => {
+                showManualFallback("Could not obtain challenge: " + err.message);
+            });
+
+            // 2. Initiate WebSocket handshake
+            tryConnectIYouHome();
+
+            function attachSocketListener(sock) {
+                if (!sock) return;
+                sock.addEventListener('message', function onMessage(event) {
+                    console.log("WS: Message Received:", event.data);
+                    let data;
+                    try {
+                        data = JSON.parse(event.data);
+                    } catch {
+                        console.warn("WS: Non-JSON message ignored:", event.data);
+                        return;
+                    }
+                    if (data.type !== 'signature' || !data.vp) {
+                        console.log("WS: Ignoring message type:", data.type);
+                        return;
+                    }
+                    console.log("Success: Intercepted structured W3C Verifiable Presentation payload.");
+
+                    const targetSignature = data.vp.proof && (data.vp.proof.proofValue || data.vp.proof.signatureValue);
+                    const targetHolderDid = data.vp.holder;
+
+                    if (targetSignature) {
+                        document.getElementById('signatureInput').value = targetSignature;
+                    }
+                    if (targetHolderDid) {
+                        document.getElementById('holderDidInput').value = targetHolderDid;
+                    }
+
+                    signatureReceived = true;
+                    clearTimeout(nudgeTimer);
+                    clearTimeout(window._signTimeout);
+                    window._signTimeout = null;
+                    cancelBtn.classList.add('hidden');
+                    boredLink.classList.add('hidden');
+                    document.querySelector('#signingLoading .spinner').classList.add('hidden');
+                    document.querySelector('#signingLoading .checkmark').classList.remove('hidden');
+                    document.querySelector('#signingLoading p').textContent =
+                        'Identity Verified. Entering application...';
+                    sock.removeEventListener('message', onMessage);
+                    try {
+                        submitVerify(data.vp).catch(() => {
+                            isSigningInProgress = false;
+                            document.querySelector('#signingLoading p').textContent =
+                                'Error: Verification Failed (Check CSRF)';
+                        });
+                    } catch (err) {
                         isSigningInProgress = false;
                         document.querySelector('#signingLoading p').textContent =
                             'Error: Verification Failed (Check CSRF)';
-                    });
-                } catch (err) {
-                    isSigningInProgress = false;
-                    document.querySelector('#signingLoading p').textContent =
-                        'Error: Verification Failed (Check CSRF)';
-                }
-            });
+                    }
+                });
+            }
+
+            if (window.activeSovereignSocket) {
+                attachSocketListener(window.activeSovereignSocket);
+            }
 
             boredLink.onclick = (e) => {
                 e.preventDefault();
@@ -635,8 +613,10 @@
                     console.error('Login failed:', data.error);
                     isSigningInProgress = false;
                     const btn = document.getElementById('iyouHomeBtn');
-                    btn.disabled = false;
-                    btn.textContent = '🔐 Sign with iyou_home';
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = '🔐 Sign with iyou_home';
+                    }
                     showError(data.error || 'Verification failed');
                     return { success: false, error: data.error };
                 }
@@ -646,15 +626,27 @@
                 isSigningInProgress = false;
                 showError('Error: Verification Failed (Check CSRF) — ' + error.message);
                 const btn = document.getElementById('iyouHomeBtn');
-                btn.disabled = false;
-                btn.textContent = '🔐 Sign with iyou_home';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '🔐 Sign with iyou_home';
+                }
                 throw error;
             });
         }
 
         // Step 1: Request Challenge button click
         function requestChallenge() {
+            errorMessage.classList.add('hidden');
             fetchChallenge(true)
+            .then(challenge => {
+                document.getElementById('step2-subtitle').textContent =
+                    'Paste your Verifiable Presentation or mock signature below.';
+                document.getElementById('manualSection').classList.remove('hidden');
+                document.getElementById('cancelIyouBtn').classList.add('hidden');
+                document.getElementById('signingLoading').classList.add('hidden');
+                const boredLink = document.getElementById('boredLink');
+                if (boredLink) boredLink.classList.add('hidden');
+            })
             .catch(error => {
                 showError('Network error: ' + error.message);
                 requestChallengeBtn.style.display = 'block';
@@ -728,6 +720,8 @@
             statusEl.textContent = 'Generating challenge…';
             const challengeDisplay = document.getElementById('community-challenge-display');
             if (challengeDisplay) challengeDisplay.classList.add('hidden');
+            const refreshQrBtn = document.getElementById('refreshCommunityQrBtn');
+            if (refreshQrBtn) refreshQrBtn.classList.add('hidden');
 
             fetch(CHALLENGE_URL, {
                 method: 'POST',
@@ -757,11 +751,13 @@
                         statusEl.textContent = 'Could not generate QR code. Please refresh.';
                     });
                 statusEl.textContent = 'Scan with your mobile app';
+                if (refreshQrBtn) refreshQrBtn.classList.remove('hidden');
                 startCommunityPolling();
             })
             .catch(err => {
                 qrContainer.innerHTML = '<span class="text-red-500 text-sm">Failed to load</span>';
                 statusEl.textContent = 'Could not generate QR code. Please refresh.';
+                if (refreshQrBtn) refreshQrBtn.classList.remove('hidden');
             });
         }
 
@@ -827,6 +823,11 @@
             tabBtns.forEach((btn, i) => {
                 btn.addEventListener('click', () => activateTab(i));
             });
+
+            const refreshQrBtn = document.getElementById('refreshCommunityQrBtn');
+            if (refreshQrBtn) {
+                refreshQrBtn.addEventListener('click', () => initCommunityTab());
+            }
 
             activateTab(activeIdx);
         }

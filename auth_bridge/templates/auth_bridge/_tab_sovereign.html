@@ -16,15 +16,22 @@
 <!-- Step 1: Request Challenge -->
 <div id="step1-content" class="step-content">
     <div class="text-center mb-6">
-        <h2 class="text-xl font-semibold text-gray-700 mb-2">Request Authentication Challenge</h2>
+        <h2 class="text-xl font-semibold text-gray-700 mb-2">Sovereign Authentication</h2>
         <p class="text-gray-600 text-sm">
-            Click the button below to generate a cryptographic challenge for your DID.
+            Sign in with the iyou_home desktop app or request a challenge for manual signing.
         </p>
     </div>
 
+    <!-- Primary Button: Sign in with iyou_home -->
+    <button id="iyouHomeBtn"
+            class="btn-primary w-full text-white py-4 px-6 rounded-xl font-bold text-lg mb-3 shadow-lg flex items-center justify-center gap-2">
+        <span>🔐 Sign in with iyou_home</span>
+    </button>
+
+    <!-- Manual Paste / Request Challenge Button -->
     <button id="requestChallengeBtn"
-            class="btn-primary w-full text-white py-3 px-6 rounded-lg font-medium text-lg mb-4">
-        Request Challenge
+            class="w-full py-2.5 px-4 text-sm text-gray-600 hover:text-gray-800 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors mb-4">
+        Manual Paste / Request Challenge
     </button>
 
     <div id="loading" class="hidden text-center">
@@ -49,21 +56,18 @@
         <div id="challengeDisplay" class="bg-gray-100 p-3 rounded-lg text-sm font-mono break-all"></div>
     </div>
 
-    <!-- iyou_home native-connect button (shown while handshake is in progress and after success) -->
-    <button id="iyouHomeBtn"
-            class="hidden bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white py-4 px-6 rounded-xl font-bold text-lg mb-1 w-full shadow-lg border-4 border-red-500">
-        🔗 Linking...
-    </button>
-    <button id="cancelIyouBtn"
-            class="hidden text-sm text-gray-500 hover:text-gray-700 underline mb-4">
-        Cancel &amp; Use Manual Paste
-    </button>
+    <div class="text-center">
+        <button id="cancelIyouBtn"
+                class="hidden text-sm text-gray-500 hover:text-gray-700 underline mb-4">
+            Cancel &amp; Use Manual Paste
+        </button>
+    </div>
 
     <!-- Hidden fields populated by W3C VP WebSocket handler -->
     <input type="hidden" id="signatureInput" value="">
     <input type="hidden" id="holderDidInput" value="">
 
-    <!-- Manual paste section (hidden when WebSocket succeeds) -->
+    <!-- Manual paste section (hidden when WebSocket handshake is active) -->
     <div id="manualSection">
         <div class="mb-6">
             <label class="block text-gray-700 text-sm font-medium mb-2">Verifiable Presentation (or Mock Signature)</label>
