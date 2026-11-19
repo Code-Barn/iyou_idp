@@ -1233,7 +1233,7 @@ In `PKCEAuthenticationBackend` and `IYouOIDCAuthenticationBackend`, both `create
 
 Backends must also implement an explicit `get_user(self, user_id)` method delegating to `UserModel.objects.filter(pk=user_id).first()`.
 
-### 11.3 Custodial Enclave UI (`_persona_enclave.html`)
+### 11.3 Custodial Enclave UI & Offline Enclave Telemetry (`_persona_enclave.html`)
 
 The canonical `_persona_enclave.html` partial adapts its visual telemetry based on `request.session.account_tier != "sovereign" or is_custodial`:
 
@@ -1244,4 +1244,20 @@ The canonical `_persona_enclave.html` partial adapts its visual telemetry based 
 - **When Sovereign (`request.session.account_tier == "sovereign"` and not `is_custodial`):**
   - Active persona dot (`#active-persona-dot`): Emerald pulsing dot (`bg-emerald-500 animate-pulse`) with `title="Sovereign Key Active"`.
   - Level badge (`#active-persona-level`): Violet badge displaying `L1` (or `L{{ active_persona_level|default:1 }}`).
-  - Bridge status label (`#persona-bridge-status`): Emerald text displaying `Bridge Connected`.
+  - Bridge status label (`#persona-bridge-status`): Emerald text displaying `Bridge Connected` when WebSocket is live.
+  - **Local Enclave Offline Degradation**: When a sovereign user accesses a satellite on mobile or secondary device where no local Port 9001 signing daemon (`iyou_home` / `iyou_mobile`) is running, `#persona-bridge-status` degrades to `BRIDGE OFFLINE` (`text-amber-500`) and the dropdown container displays:
+    - **Title**: `Local Enclave Offline (Read-Only Session)`
+    - **Body**: `Your browser session is authenticated, but no local signing enclave was detected on this device. Start iyou_home on desktop (or use iyou_mobile) to sign posts and votes.`
+
+### 11.4 Bridge Signature Fail-Fast Rule (Satellite Composers & Actions)
+
+When a sovereign `did:key:` user signs in on mobile or a secondary device via WebAuthn Passkey (`amr: ["webauthn:passkey"]`), they hold a valid authenticated session across `*.iyou.me`, but no local Port 9001 signing daemon (`iyou_home` / `iyou_mobile`) is reachable on that device's loopback interface.
+
+To prevent satellite post composers and action forms (e.g., `iyou_wun`, `iyou_poly`, `iyou_draw`) from hanging indefinitely on `"Waiting for Signature..."`:
+
+1. **Immediate Bailout if Offline**: Any satellite UI action requesting a Port 9001 signature (`SIGN_EVENT`, `POLY_V2`, etc.) MUST check the bridge connection state. If the bridge state is `OFFLINE` or unreachable, fail immediately without waiting.
+2. **Strict 3-Second Timeout**: If a signature request is dispatched to Port 9001, it MUST timeout after at most **3 seconds**—never leaving the UI or submit button stuck in `"Waiting for Signature..."`.
+3. **UI Recovery & Fallback Banner**: Upon timeout or offline bailout:
+   - Re-enable the submit button immediately.
+   - Display an inline banner explaining that a local enclave (`iyou_home` on desktop or `iyou_mobile`) or manual signed-event paste is required.
+   - Retain all composer input text so the user's drafted content is not lost.

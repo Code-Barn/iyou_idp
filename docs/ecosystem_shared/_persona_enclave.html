@@ -75,6 +75,12 @@
 
     <!-- Persona List Target Container -->
     <div class="py-1 space-y-1" id="persona-list-container">
+      <noscript>
+        <div class="px-3 py-3 text-center" id="persona-bridge-offline-notice">
+          <div class="text-[11px] font-mono text-amber-500 font-semibold mb-1">⚠️ Local Enclave Offline (Read-Only Session)</div>
+          <p class="text-[10px] text-slate-400 leading-tight">Your browser session is authenticated, but no local signing enclave was detected on this device. Start iyou_home on desktop (or use iyou_mobile) to sign posts and votes.</p>
+        </div>
+      </noscript>
       <div class="px-2 py-2 text-slate-400 text-center text-[11px] animate-pulse">
         Querying local vault personas...
       </div>
@@ -109,6 +115,22 @@
 </div>
 
 <script>
+  function markEnclaveOffline() {
+    var pill = document.getElementById('persona-bridge-status');
+    if (pill && pill.textContent.indexOf('Custodial') === -1) {
+      pill.textContent = 'BRIDGE OFFLINE';
+      pill.className = 'text-amber-500 font-normal';
+    }
+    var container = document.getElementById('persona-list-container');
+    if (container) {
+      container.innerHTML = '<div class="px-3 py-3 text-center" id="persona-bridge-offline-notice">' +
+        '<div class="text-[11px] font-mono text-amber-500 font-semibold mb-1">⚠️ Local Enclave Offline (Read-Only Session)</div>' +
+        '<p class="text-[10px] text-slate-400 leading-tight">Your browser session is authenticated, but no local signing enclave was detected on this device. Start iyou_home on desktop (or use iyou_mobile) to sign posts and votes.</p>' +
+        '</div>';
+    }
+  }
+  window.markEnclaveOffline = markEnclaveOffline;
+
   function togglePersonaDropdown() {
     var dropdown = document.getElementById('persona-switcher-dropdown');
     var btn = document.getElementById('persona-switcher-btn');
@@ -119,6 +141,8 @@
       if (btn) btn.setAttribute('aria-expanded', 'true');
       if (window.bridgeClient && typeof window.bridgeClient.queryVaultPersonas === 'function') {
         window.bridgeClient.queryVaultPersonas();
+      } else {
+        markEnclaveOffline();
       }
     } else {
       dropdown.classList.add('hidden');

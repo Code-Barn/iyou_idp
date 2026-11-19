@@ -564,9 +564,24 @@ The Persona Enclave quick-switcher is fully decoupled into `templates/includes/_
 
 ### 5.1 Key Features of the Decoupled Flyout
 1. **Public Profile Direct Action**: Nesting the public profile anchor (`https://wun.iyou.me/{{ user_display_label|default:user.username }}`) inside the top of the flyout menu eliminates clutter from Layer 1 while giving users one-click access to their public profile.
-2. **Bridge Connection State**: `#persona-bridge-status` indicates live WebSocket telemetry from `iyou_home` (or degrades gracefully to "BRIDGE OFFLINE" after 2500ms).
+2. **Bridge Connection State**: `#persona-bridge-status` indicates live WebSocket telemetry from `iyou_home` (or degrades gracefully to "BRIDGE OFFLINE" after 2500ms). When offline or on devices without a local signing bridge, the container displays an explicit read-only notification:
+   - **Title**: `Local Enclave Offline (Read-Only Session)`
+   - **Body**: `Your browser session is authenticated, but no local signing enclave was detected on this device. Start iyou_home on desktop (or use iyou_mobile) to sign posts and votes.`
 3. **Dynamic Persona Injection**: `#persona-list-container` is populated over the bridge protocol without blocking page load.
 4. **Contextual Enclave Management**: Footer links directly to `iyou_home` where keys, derivation indices, and sub-personas are securely managed.
+
+### 5.2 Bridge Signature Fail-Fast Rule (Composer & Action Invariant)
+
+When a sovereign `did:key:` user signs in on mobile or a secondary device via WebAuthn Passkey (`amr: ["webauthn:passkey"]`), they hold a valid authenticated session across `*.iyou.me`, but no local Port 9001 signing daemon (`iyou_home` / `iyou_mobile`) is reachable on that device's loopback interface.
+
+To prevent satellite post composers and action forms (e.g., `iyou_wun`, `iyou_poly`, `iyou_draw`) from hanging indefinitely on `"Waiting for Signature..."`:
+
+1. **Immediate Bailout if Offline**: Any satellite UI action requesting a Port 9001 signature (`SIGN_EVENT`, `POLY_V2`, etc.) MUST check the bridge connection state. If the bridge state is `OFFLINE` or unreachable, fail immediately without waiting.
+2. **Strict 3-Second Timeout**: If a signature request is dispatched to Port 9001, it MUST timeout after at most **3 seconds**—never leaving the UI or submit button stuck in `"Waiting for Signature..."`.
+3. **UI Recovery & Fallback Banner**: Upon timeout or offline bailout:
+   - Re-enable the submit button immediately.
+   - Display an inline banner explaining that a local enclave (`iyou_home` on desktop or `iyou_mobile`) or manual signed-event paste is required.
+   - Retain all composer input text so the user's drafted content is not lost.
 
 ---
 
