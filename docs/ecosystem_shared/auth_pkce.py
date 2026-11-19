@@ -103,6 +103,19 @@ PKCE_VERIFIER_SESSION_KEY = "_pkce_cv"
 PKCE_TIMESTAMP_SESSION_KEY = "_pkce_cv_ts"
 PKCE_DEFAULT_MAX_AGE_SECONDS = 300
 
+# Loop-safe silent SSO (prompt=none) state.  ``sso_silent_attempted`` latches
+# a failed probe for the life of the session; ``sso_silent_inflight`` marks the
+# single redirect so parallel tabs/assets cannot double-fire the probe.
+SESSION_KEY_SSO_SILENT_ATTEMPTED = "sso_silent_attempted"
+SESSION_KEY_SSO_SILENT_INFLIGHT = "sso_silent_inflight"
+SSO_HINT_COOKIE = "iyou_sso_hint"
+SILENT_SSO_ERRORS = {
+    "login_required",
+    "interaction_required",
+    "consent_required",
+    "account_selection_required",
+}
+
 # ---------------------------------------------------------------------------
 # Deterministic Public-Key & DID / JID Normalization Helpers
 # ---------------------------------------------------------------------------
@@ -316,6 +329,19 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
 
     http_method_names = ["get"]
 
+    def get_extra_params(self, request):
+        """Attach ``prompt=none`` only to a one-shot silent SSO attempt.
+
+        Interactive clicks on the Layer 1 ``Authenticate`` link never carry
+        ``prompt=none`` because the inflight flag is only set by
+        ``SilentSSOMiddleware``.  Copy the settings dict before mutating it so
+        a global ``OIDC_AUTH_REQUEST_EXTRA_PARAMS`` setting is never changed.
+        """
+        params = dict(super().get_extra_params(request) or {})
+        if request.session.pop(SESSION_KEY_SSO_SILENT_INFLIGHT, False):
+            params["prompt"] = "none"
+        return params
+
     def get(self, request):
         """Intercept the GET, generate PKCE pair, redirect to the OP."""
         try:
@@ -473,6 +499,12 @@ class PKCEOIDCAuthenticationCallbackView(OIDCAuthenticationCallbackView):
 
     def login_success(self):
         """Establish the authenticated Django session and redirect."""
+        # Clear silent-SSO latches so a later logout/re-login starts clean.
+        request = getattr(self, "request", None)
+        if request is not None and hasattr(request, "session"):
+            request.session.pop(SESSION_KEY_SSO_SILENT_ATTEMPTED, None)
+            request.session.pop(SESSION_KEY_SSO_SILENT_INFLIGHT, None)
+
         user = getattr(self, "user", None)
         if user is not None and getattr(self, "request", None) is not None:
             backend_path = getattr(
@@ -483,14 +515,45 @@ class PKCEOIDCAuthenticationCallbackView(OIDCAuthenticationCallbackView):
             auth.login(self.request, user, backend=backend_path)
         return HttpResponseRedirect(self.success_url)
 
+    def login_failure(self):
+        """Recover cleanly from a silent ``prompt=none`` probe.
+
+        iyou_idp answers ``login_required`` / ``interaction_required`` when no
+        master session exists.  That is not an error for a silent attempt:
+        latch the session, restore the originally requested URL, and return
+        the normal unauthenticated page with no error banner.  Interactive
+        failures still fall through to the library's ``login_failure()``.
+        """
+        request = getattr(self, "request", None)
+        if (
+            request is not None
+            and hasattr(request, "session")
+            and request.GET.get("error") in SILENT_SSO_ERRORS
+            and (
+                request.session.pop(SESSION_KEY_SSO_SILENT_INFLIGHT, False)
+                or request.COOKIES.get(SSO_HINT_COOKIE) == "1"
+            )
+        ):
+            request.session[SESSION_KEY_SSO_SILENT_ATTEMPTED] = True
+            next_url = request.session.pop(SESSION_KEY_OIDC_LOGIN_NEXT, None)
+            return HttpResponseRedirect(
+                next_url or getattr(settings, "LOGIN_REDIRECT_URL", "/")
+            )
+        return super().login_failure()
+
 
 # ---------------------------------------------------------------------------
 # Logout View — Dual GET & POST support to prevent HTTP 405
 # ---------------------------------------------------------------------------
 
 class PKCEOIDCLogoutView(OIDCLogoutView):
-    """Seamless GET and POST logout view preventing HTTP 405 Method Not Allowed.
-    Flushes the local Django session and redirects to LOGOUT_REDIRECT_URL.
+    """Seamless GET and POST logout with federated IdP session termination.
+
+    Flushes the local Django session, then chains to the master IdP's
+    ``/auth/logout/?next=...`` so the central OIDC session is destroyed too —
+    preventing a "false logout" where another satellite silently restores the
+    user from the still-authenticated IdP.  The ``iyou_sso_hint`` cookie is
+    removed in the same response so silent SSO cannot reverse the logout.
     """
 
     def get(self, request, *args, **kwargs):
@@ -498,8 +561,14 @@ class PKCEOIDCLogoutView(OIDCLogoutView):
 
     def post(self, request, *args, **kwargs):
         logout(request)
-        redirect_url = getattr(settings, "LOGOUT_REDIRECT_URL", "/")
-        return redirect(redirect_url)
+        idp_base = getattr(settings, "IDP_BASE_PUBLIC_URL", "https://iyou.me").rstrip("/")
+        next_url = getattr(settings, "IDP_LOGOUT_RETURN_URL", "/")
+        response = redirect(f"{idp_base}/auth/logout/?{urlencode({'next': next_url})}")
+        response.delete_cookie(
+            SSO_HINT_COOKIE,
+            domain=None if getattr(settings, "DEBUG", False) else ".iyou.me",
+        )
+        return response
 
 
 # ---------------------------------------------------------------------------
@@ -1040,3 +1109,70 @@ class PKCEVerifierCleanupMiddleware:
             request.session.modified = True
             return True
         return False
+
+
+# ---------------------------------------------------------------------------
+# Loop-Safe Silent SSO Middleware (prompt=none)
+# ---------------------------------------------------------------------------
+
+class SilentSSOMiddleware:
+    """One-shot, loop-safe ``prompt=none`` probe for anonymous GET requests.
+
+    Must run after ``SessionMiddleware`` and ``AuthenticationMiddleware`` so
+    ``request.session`` and ``request.user`` are available.  A returning
+    visitor whose browser still carries ``iyou_sso_hint=1`` gets exactly one
+    silent chance to re-authenticate from the master IdP session.  Both the
+    in-flight redirect and its eventual outcome are latched in the session,
+    so neither successful nor failed probes can recur in this session.
+
+    OIDC endpoints, admin, static assets and health checks are exempt.  The
+    interactive Layer 1 ``Authenticate`` link remains the user-facing fallback
+    and never receives ``prompt=none``.
+    """
+
+    EXEMPT_PREFIXES = (
+        "/oidc/authenticate/",
+        "/oidc/callback/",
+        "/oidc/logout/",
+        "/auth/logout/",
+        "/admin/",
+        "/static/",
+        "/health",
+    )
+
+    def __init__(self, get_response: Any) -> None:
+        self.get_response = get_response
+        self.enabled = getattr(settings, "SSO_SILENT_ENABLED", True)
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        if self.enabled and self._should_probe(request):
+            session = request.session
+            session[SESSION_KEY_SSO_SILENT_INFLIGHT] = True
+            session[SESSION_KEY_OIDC_LOGIN_NEXT] = request.get_full_path()
+            session.save()
+            return HttpResponseRedirect(reverse("oidc_authentication_init"))
+        return self.get_response(request)
+
+    def _should_probe(self, request: HttpRequest) -> bool:
+        if getattr(request, "method", None) != "GET":
+            return False
+        path = str(getattr(request, "path", "") or "")
+        if any(path.startswith(prefix) for prefix in self.EXEMPT_PREFIXES):
+            return False
+        if "error" in getattr(request, "GET", {}):
+            return False
+
+        user = getattr(request, "user", None)
+        if user is None or getattr(user, "is_authenticated", False):
+            return False
+        if getattr(request, "COOKIES", {}).get(SSO_HINT_COOKIE) != "1":
+            return False
+
+        session = getattr(request, "session", None)
+        if session is None:
+            return False
+        if session.get(SESSION_KEY_SSO_SILENT_ATTEMPTED):
+            return False
+        if session.get(SESSION_KEY_SSO_SILENT_INFLIGHT):
+            return False
+        return True

@@ -820,3 +820,97 @@ Session cookie security and domain isolation must dynamically follow the deploym
 - Set `SESSION_COOKIE_DOMAIN = None if DEBUG else ".iyou.me"`
 - `PKCEOIDCLogoutView` must support both `GET` and `POST` methods to prevent HTTP 405 Method Not Allowed errors on user sign-out from varied satellite interfaces.
 
+---
+
+## 18. Tier 1 `did:web` Managed Identity — Dual-Path Custodial Signing & Relay `OK` Parity
+
+Tier 1 (`managed_free`) users authenticate with server-managed custodial DIDs
+of the form `did:web:iyou.me:user:<uuid>`. Unlike Sovereign `did:key:z6Mk...`
+identities, they have no local signing device. This section standardizes the
+**Dual-Path Custodial Signing & Relay `OK` Parity** contract proven in
+`iyou_wun` (`14f4c32`): a Tier 1 post must be signed, broadcast, and
+acknowledged with the same guarantees as a Sovereign post.
+
+### 18.1 Dual-Path Signing Matrix
+
+| Path | Identity | Signing location | Mechanism |
+|:---|:---|:---|:---|
+| Sovereign | `did:key:z6Mk...` | Client device | `iyou_home` local desktop enclave bridge at `127.0.0.1:9001`, or NIP-07 browser extension |
+| Tier 1 managed | `did:web:iyou.me:user:<uuid>` | Server | Fernet-encrypted secp256k1 keypair, pure-Python BIP-340 Schnorr, signed inside the satellite |
+
+**Sovereign path.** The client builds and signs the Nostr event locally via the
+`iyou_home` enclave (`127.0.0.1:9001`) or a NIP-07 provider. The server only
+relays an already-signed event and validates its `id`/`sig` before broadcast.
+
+**Tier 1 managed path.** On OIDC login the satellite provisions a secp256k1
+keypair on the user's behalf and signs supported Nostr events server-side.
+The managed author's x-only public key is mirrored to `nostr_pubkey` so
+`get_ecosystem_pubkeys()` recognizes the post as iyou-native. No cleartext
+secret is ever persisted or returned to the browser.
+
+### 18.2 Custodial Keypair Provisioning
+
+`apps/core/custodial_keys.py` implements idempotent, non-rotating provisioning:
+
+1. Derive a 32-byte Fernet key from `settings.SECRET_KEY` with **HKDF-SHA256**
+   (`salt=b"iyou-wun.custodial-nostr.v1"`, `info=b"bip340-secret"`), then
+   `base64.urlsafe_b64encode` it for Fernet.
+2. Generate a uniformly random 32-byte secret in `[1, n)` (secp256k1 order).
+3. Store only `encrypt_secret(secret_hex)` in
+   `UserLinkDeck.custodial_private_key_enc`; store the x-only
+   `custodial_pubkey_hex` alongside it and mirror it to `nostr_pubkey`.
+4. Never rotate an existing key. Re-deriving the public key from the decrypted
+   secret must match the stored value; a mismatch is corrected in place.
+5. Decryption failures (wrong `SECRET_KEY`, corrupt ciphertext) raise a
+   `ValueError` — they must not silently generate a replacement identity.
+
+Managed-tier detection derives from `request.session["account_tier"]` and
+`request.session["custodial_did"]`; a `did:web:` subject is always custodial
+unless an explicit sovereign tier is present.
+
+### 18.3 Server-Side BIP-340 Schnorr Signing
+
+`apps/core/nostr_signer.py` contains a pure-Python BIP-340 implementation —
+no `coincurve` / `secp256k1` binding is required:
+
+- `tagged_hash(tag, msg) = SHA256(SHA256(tag) || SHA256(tag) || msg)`;
+- the secret is negated when its curve point has odd Y (x-only even-Y lift);
+- the nonce is `BIP0340/nonce(aux_rand || secret || pubkey_x || event_id)`,
+  negated when `R.y` is odd;
+- serialization is canonical NIP-01
+  `[0, pubkey, created_at, kind, tags, content]` with compact JSON separators;
+- `sign_event()` self-verifies every signature with `verify_event()` before
+  returning the signed event (`id`, `pubkey`, `created_at`, `kind`, `tags`,
+  `content`, `sig`).
+
+**Parity event kinds.** Both paths may publish and display:
+`Kind 0` (profile metadata), `1` (short note), `3` (contact list),
+`6` (repost), `7` (reaction), `1063` (NIP-94 file header), `1111` (reply),
+`1112` (governance vote envelope), `1984` (NIP-56 report), `10004` (mute
+list), and `30023` (NIP-33 long-form article).
+
+### 18.4 Relay `OK` Acknowledgment Parity
+
+A send is never mistaken for a successful publish. `_broadcast_signed_event()`
+fans out `["EVENT", signed_event]` to first-party relays
+(`wss://relay.iyou.me` plus the local loopback relay when reachable) and keeps
+each WebSocket open until the relay answers with a NIP-01
+`["OK", event_id, true, ""]` frame or a short timeout expires:
+
+- only relays returning `OK` with a truthy third element count as published;
+- a rejected `OK` (`message[2]` false, with `message[3]` reason) is logged and
+  excluded from the published set;
+- the broadcast socket is closed **only after** the `OK` (or timeout), never
+  immediately after `ws.send()`;
+- sovereign and Tier 1 paths share this identical broadcast function, so both
+  paths report the same published-relay set to their callers.
+
+### 18.5 Parity Verification Checklist
+
+- [ ] Tier 1 login provisions an encrypted keypair exactly once (no rotation).
+- [ ] A `did:web:` session produces signed events with a valid x-only pubkey.
+- [ ] Every supported kind above publishes successfully from both paths.
+- [ ] Relay `OK` is awaited; no socket is closed on `send()` alone.
+- [ ] Compact mobile enclave (`🪪`) and `Copy DID` identity card expose the
+      full managed DID for user confirmation (see `STANDARD_UI_SPECIFICATION.md` §10.2).
+

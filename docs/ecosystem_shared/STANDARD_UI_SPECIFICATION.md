@@ -901,3 +901,98 @@ Injected immediately before closing `</body>` to ensure non-blocking page load:
   }
 </script>
 ```
+
+---
+
+## 10. Mobile Chrome Coordination & Persona Enclave Contract (Phase 1–5)
+
+The following rules are normative for every Layer 0/1 satellite that renders
+the canonical generated templates. They were verified in `iyou_wun` at
+`14f4c32` and must survive central regeneration unchanged.
+
+### 10.1 Natural Scrolling L1 Header (`relative z-30`)
+
+`<header id="layer-1-standard-header">` MUST use `relative z-30`. It must
+**never** be `sticky top-0` or `fixed`: Layer 1 scrolls naturally with the
+document, while `z-30` keeps its dropdowns above Layer 2 and page content.
+
+The inner row MUST use `gap-1.5 sm:gap-3 px-2 sm:px-3`, with `shrink-0` on the
+left brand lockup and `min-w-0 shrink` on the right control cluster:
+
+```html
+<header id="layer-1-standard-header" class="relative z-30 ...">
+  <div class="w-full max-w-7xl mx-auto px-2 sm:px-3 h-16 flex items-center justify-between gap-1.5 sm:gap-3">
+    <div class="flex items-center gap-1.5 sm:gap-3 min-w-0">... brand (shrink-0) ...</div>
+    <div class="flex items-center gap-1.5 sm:gap-3 min-w-0 shrink">... controls ...</div>
+  </div>
+</header>
+```
+
+A narrow-phone collision guard scopes the live persona label to `82px` below
+`640px` and `180px` at/above `640px`
+(`#active-persona-display-name`, legacy alias `#active-persona-label`).
+
+`#l2-toggle-header-btn` is **deactivated** in the canonical L1 header (it
+collided with the brand/persona lockup on narrow phones). Where a satellite
+still needs it, it remains wrapped in `{% if SHOW_L2_TOGGLE %}` and the default
+is `False` (`DEFAULT_L1_CONFIG["show_l2_toggle"] = False`); satellites opt in
+explicitly through the Django context.
+
+### 10.2 Compact Mobile Persona Symbol Box + Dropdown Identity Card
+
+At viewports `< 640px` the `#persona-switcher-btn` collapses to a compact
+symbol box — `[ ● 🪪 T1 ⌄ ]` for Tier 1 managed sessions, `[ ● 🪪 L1 ⌄ ]` for
+Sovereign sessions:
+
+- `#active-persona-display-name` uses `hidden sm:inline truncate max-w-[180px]`;
+- a `<span class="sm:hidden text-xs leading-none" aria-hidden="true">🪪</span>`
+  is rendered immediately before it.
+
+The `#persona-switcher-dropdown` MUST begin with a **Signed-In Identity Card**
+so a Tier 1 user can confirm and copy their full identity:
+
+- `#persona-identity-did` shows the full `@handle` or full `did:web:...` /
+  `did:key:...` using `break-all text-[11px] font-mono`;
+- the active tier badge reads `Tier 1 Managed` vs `Sovereign Enclave`;
+- a one-tap `Copy DID` button (`#copy-persona-did-btn`) flashes `Copied` for
+  1500 ms, with a `document.execCommand('copy')` fallback when the async
+  clipboard API is unavailable.
+
+### 10.3 `body.has-mobile-bottom-nav` Floating Dock Suppression (< 768px)
+
+Satellites that render a mobile bottom navigation dock set
+`body.has-mobile-bottom-nav`. The canonical `_ecosystem_bar.html` ships this
+responsive suppression so the floating Map and Messaging pills never overlap
+the dock:
+
+```css
+@media (max-width: 767px) {
+  body.has-mobile-bottom-nav #iyou-map-launcher,
+  body.has-mobile-bottom-nav #iyou-chat-dock,
+  body.has-mobile-bottom-nav [data-iyou-chat-dock],
+  body.has-mobile-bottom-nav .iyou-chat-dock,
+  body.has-mobile-bottom-nav #floating-chat-dock,
+  body.has-mobile-bottom-nav #floating-chat-root {
+    display: none !important;
+  }
+}
+```
+
+Desktop viewports and views without the `has-mobile-bottom-nav` class keep
+both overlays.
+
+### 10.4 X/Twitter Scroll Auto-Hide Bottom Dock (12px Dead Zone)
+
+Mobile bottom docks follow the X/Twitter pattern: hide on downward scroll and
+reveal on upward scroll, using a **12px directional dead zone** so sub-threshold
+jitter and elastic overscroll never flip the state. Track `lastY`; only commit a
+direction change when `Math.abs(currentY - lastY) >= 12`. The dock animates via
+translate transitions and remains independent of the Layer 0 suppression rule
+in §10.3.
+
+### 10.5 Toast Clearance (`bottom-20 md:bottom-6 z-50`)
+
+Toasts and transient banners MUST use `bottom-20 md:bottom-6 z-50`.
+`bottom-20` clears the mobile bottom dock, `md:bottom-6` restores the compact
+desktop offset, and `z-50` keeps toasts above page content but below Layer 0
+(`z-[9999]`).

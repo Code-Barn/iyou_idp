@@ -380,7 +380,7 @@ urlpatterns = [
 
 **Why this rule exists:**
 
-The iyou_ ecosystem uses session-based OIDC with signed cookies. When a user logs out of one satellite, the session teardown must propagate cleanly through `PKCEOIDCLogoutView` (extending `mozilla_django_oidc`'s `OIDCLogoutView`) — which clears the local Django session, invalidates the OIDC tokens, and redirects to the IDP's logout endpoint for federated session termination.
+The iyou_ ecosystem uses session-based OIDC with signed cookies. When a user logs out of one satellite, the session teardown must propagate cleanly through `PKCEOIDCLogoutView` (extending `mozilla_django_oidc`'s `OIDCLogoutView`): it clears the local Django session with `logout(request)`, then chains to the master IdP at `{IDP_BASE_PUBLIC_URL}/auth/logout/?next={IDP_LOGOUT_RETURN_URL}` (`GlobalLogoutView` at `/auth/logout/` clears the central session and honors `next`). The same response deletes the `iyou_sso_hint` cookie so silent SSO cannot silently reverse the logout. Without this chain the IdP session survives and another satellite re-authenticates the user — a "false logout".
 
 Crucially, the upstream `OIDCLogoutView` strictly requires `POST` requests. Direct user clicks on navigation links trigger `GET` requests, causing an immediate **HTTP 405 Method Not Allowed** crash. `PKCEOIDCLogoutView` adds dual `GET` and `POST` handlers to guarantee seamless logout across all frontend elements.
 
@@ -408,12 +408,17 @@ urlpatterns = [
 **Companion settings (in settings.py):**
 
 ```python
-# Required for PKCEOIDCLogoutView to redirect after logout
-LOGOUT_REDIRECT_URL = "/"
+# Federated global logout chain
+IDP_BASE_PUBLIC_URL = env.str("IDP_BASE_PUBLIC_URL", default="https://iyou.me")
+IDP_LOGOUT_RETURN_URL = env.str("IDP_LOGOUT_RETURN_URL", default="/")
+LOGOUT_REDIRECT_URL = "/"  # local fallback only
 
 # Resilient session cookie configuration
 SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_DOMAIN = None if DEBUG else ".iyou.me"
+
+# Loop-safe silent prompt=none SSO (defaults on; set False to opt out)
+SSO_SILENT_ENABLED = env.bool("SSO_SILENT_ENABLED", default=True)
 ```
 
 **Failure mode if violated:**
@@ -706,18 +711,22 @@ urlpatterns = [
 
 ## 7. Middleware Ordering
 
-The session middleware MUST load before any custom middleware that touches `request.session`:
+The session middleware MUST load before any custom middleware that touches `request.session`, and `AuthenticationMiddleware` MUST load before `SilentSSOMiddleware` (which reads `request.user`):
 
 ```python
 MIDDLEWARE = [
     # ... Django core ...
     "django.contrib.sessions.middleware.SessionMiddleware",  # Index 2
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "templates.core.auth_pkce.PKCEVerifierCleanupMiddleware",
+    "templates.core.auth_pkce.SilentSSOMiddleware",  # after auth; session latches
     # ... custom middleware (prune, geographic routing, etc.) ...
-    # ... Django auth ...
 ]
 ```
 
-**Failure mode if misordered:** `AttributeError` on `request.session` in custom middleware that runs before `SessionMiddleware` initializes the session backend.
+`SilentSSOMiddleware` issues at most one `prompt=none` redirect per session: it requires an anonymous `GET`, the `iyou_sso_hint=1` cookie, absence of `sso_silent_attempted` / `sso_silent_inflight`, and a non-exempt path. It latches `sso_silent_inflight` plus the original `oidc_login_next` and calls `session.save()`. `PKCEOIDCAuthenticationRequestView.get_extra_params()` consumes the inflight flag and adds `prompt=none`; `PKCEOIDCAuthenticationCallbackView.login_failure()` converts `login_required` / `interaction_required` / `consent_required` / `account_selection_required` into a clean redirect to the original page with `sso_silent_attempted` latched — no error banner, no loop. `login_success()` clears both latches.
+
+**Failure mode if misordered:** `AttributeError` on `request.session` in custom middleware that runs before `SessionMiddleware` initializes the session backend; `SilentSSOMiddleware` running before `AuthenticationMiddleware` always sees an anonymous user and probes unauthenticated asset requests.
 
 **Validated in:** iyou_ride (SessionMiddleware repositioned to index 2).
 

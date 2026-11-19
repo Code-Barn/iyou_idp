@@ -21,7 +21,8 @@
     {% else %}
     <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" id="active-persona-dot" title="Sovereign Key Active"></span>
     {% endif %}
-    <span id="active-persona-display-name" class="mesh-user-handle truncate max-w-[68px] xs:max-w-[90px] sm:max-w-[140px] font-mono text-xs font-medium text-slate-700 dark:text-slate-200">
+    <span class="sm:hidden text-xs leading-none" aria-hidden="true">🪪</span>
+    <span id="active-persona-display-name" class="mesh-user-handle hidden sm:inline truncate max-w-[180px] font-mono text-xs font-medium text-slate-700 dark:text-slate-200">
       {{ user_display_label|default:user.username|truncatechars:18 }}
     </span>
     <span class="text-[10px] px-1 py-0.5 rounded font-bold transition-colors duration-150 {% if request.session.account_tier != 'sovereign' or is_custodial %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% elif active_persona_level == 1 or not active_persona_level %}bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300{% else %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% endif %}" id="active-persona-level">
@@ -37,6 +38,24 @@
     id="persona-switcher-dropdown"
     class="hidden absolute right-0 mt-2 w-72 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-50 overflow-hidden"
   >
+    <!-- Signed-In Identity Card: the compact mobile symbol box expands to the
+         full DID here so a Tier 1 user can confirm and copy their identity. -->
+    <div class="px-3 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-violet-50/50 dark:bg-violet-950/20">
+      <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1">Signed-In Identity</div>
+      <div id="persona-identity-did" class="break-all text-[11px] font-mono text-slate-800 dark:text-slate-100">
+        {{ user_did|default:user.username }}
+      </div>
+      <div class="mt-2 flex items-center justify-between gap-2">
+        <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded {% if request.session.account_tier != 'sovereign' or is_custodial %}bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300{% else %}bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300{% endif %}">
+          {% if request.session.account_tier != "sovereign" or is_custodial %}Tier 1 Managed{% else %}Sovereign Enclave{% endif %}
+        </span>
+        <button type="button" id="copy-persona-did-btn" onclick="copyPersonaDid()"
+                class="px-2 py-1 rounded-lg text-[10px] font-mono font-semibold text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 hover:bg-violet-100 dark:hover:bg-violet-950/60 transition">
+          Copy DID
+        </button>
+      </div>
+    </div>
+
     <!-- Public Profile Direct Action -->
     <div class="px-2 py-1.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
       <a href="https://{% if request.geographic_scope %}{{ request.geographic_scope }}.{% endif %}wun.iyou.me/{{ user_display_label|default:user.username }}" target="_blank" class="flex items-center justify-between text-xs text-slate-700 dark:text-slate-200 hover:text-violet-500 dark:hover:text-violet-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition font-mono">
@@ -87,6 +106,34 @@
     }
   }
   window.togglePersonaDropdown = togglePersonaDropdown;
+
+  function copyPersonaDid() {
+    var didEl = document.getElementById('persona-identity-did');
+    var did = didEl ? didEl.textContent.trim() : (window.USER_DID || window.CURRENT_SESSION_DID || '');
+    if (!did) return;
+    var btn = document.getElementById('copy-persona-did-btn');
+    var flash = function () {
+      if (!btn) return;
+      btn.textContent = 'Copied';
+      setTimeout(function () { btn.textContent = 'Copy DID'; }, 1500);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(did).then(flash).catch(function () {});
+      return;
+    }
+    try {
+      var scratch = document.createElement('textarea');
+      scratch.value = did;
+      scratch.style.position = 'fixed';
+      scratch.style.opacity = '0';
+      document.body.appendChild(scratch);
+      scratch.select();
+      document.execCommand('copy');
+      document.body.removeChild(scratch);
+      flash();
+    } catch (e) { /* clipboard unavailable */ }
+  }
+  window.copyPersonaDid = copyPersonaDid;
 
   document.addEventListener('click', function (e) {
     var container = document.getElementById('persona-switcher-container');
