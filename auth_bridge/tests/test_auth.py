@@ -295,6 +295,8 @@ class OIDCConsentAndRedirectSanitizationTest(TestCase):
             f"&redirect_uri=https://wun.iyou.me/oidc/callback/"
             f"&scope=openid+profile"
             f"&state=mesh-state-999"
+            f"&code_challenge=E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU"
+            f"&code_challenge_method=S256"
         )
         redirect_url = _build_oidc_redirect(oidc_req, self.user)
         self.assertIsNotNone(redirect_url)

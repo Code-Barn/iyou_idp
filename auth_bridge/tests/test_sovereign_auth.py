@@ -34,6 +34,7 @@ from auth_bridge.oidc import (
     custom_userinfo_claims,
 )
 from auth_bridge.resilient_cache import cache
+from auth_bridge.views import _build_oidc_redirect
 
 
 def _make_did(pub_bytes: bytes) -> str:
@@ -124,6 +125,8 @@ class SovereignAuthDecouplingTest(TestCase):
             f"&redirect_uri=https://satellite.iyou.me/callback/"
             f"&scope=openid+profile"
             f"&state=sovereign-state-123"
+            f"&code_challenge=E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU"
+            f"&code_challenge_method=S256"
         )
 
         verify_resp = self.client.post(
@@ -162,6 +165,8 @@ class SovereignAuthDecouplingTest(TestCase):
             f"&redirect_uri=https://satellite.iyou.me/callback/"
             f"&scope=openid+profile"
             f"&state=qr-state-789"
+            f"&code_challenge=E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU"
+            f"&code_challenge_method=S256"
         )
         cache.set(
             challenge_id,
@@ -412,6 +417,8 @@ class PromptNoneAuthorizeTest(TestCase):
             "scope": "openid profile",
             "state": "none-state-123",
             "prompt": "none",
+            "code_challenge": "E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU",
+            "code_challenge_method": "S256",
         }
         params.update(overrides)
         return "/openid/authorize/?" + urlencode(params)
@@ -561,6 +568,8 @@ class PromptLoginTests(TestCase):
             "scope": "openid profile",
             "state": "login-state-456",
             "prompt": "login",
+            "code_challenge": "E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU",
+            "code_challenge_method": "S256",
         }
         params.update(overrides)
         return "/openid/authorize/?" + urlencode(params)
@@ -608,4 +617,145 @@ class PromptLoginTests(TestCase):
         next_qs = parse_qs(urlparse(response.context["next_url"]).query)
         self.assertNotIn("prompt", next_qs)
         self.assertEqual(next_qs["client_id"], ["prompt-login-client"])
+
+
+class SEC008AuthorizeHardeningTests(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+        rsa_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = rsa_priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        OIDCRSAKey.objects.create(key=pem.decode())
+
+        code_type, _ = ResponseType.objects.get_or_create(value="code")
+        self.public_client = OIDCClient.objects.create(
+            name="Public Test Client",
+            client_type="public",
+            client_id="sec008-public-client",
+            jwt_alg="RS256",
+            _redirect_uris="https://satellite.iyou.me/callback/\n",
+            _scope="openid profile",
+            require_consent=False,
+            reuse_consent=True,
+        )
+        self.public_client.response_types.add(code_type)
+
+        self.user = User.objects.create(
+            custodial_did="did:key:zSEC008TestUser",
+            email="sec008@iyou.me",
+            is_sovereign=True,
+            account_tier="sovereign",
+            show_legal_disclaimer=False,
+            is_active=True,
+        )
+
+    def test_authorize_response_includes_anti_leakage_headers(self) -> None:
+        params = {
+            "client_id": self.public_client.client_id,
+            "response_type": "code",
+            "redirect_uri": "https://satellite.iyou.me/callback/",
+            "scope": "openid profile",
+            "state": "sec008-state-1",
+            "code_challenge": "E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU",
+            "code_challenge_method": "S256",
+        }
+        response = self.client.get("/openid/authorize/?" + urlencode(params))
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(response["Pragma"], "no-cache")
+
+    def test_authorize_response_without_trailing_slash_includes_anti_leakage_headers(self) -> None:
+        params = {
+            "client_id": self.public_client.client_id,
+            "response_type": "code",
+            "redirect_uri": "https://satellite.iyou.me/callback/",
+            "scope": "openid profile",
+            "state": "sec008-state-2",
+            "code_challenge": "E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU",
+            "code_challenge_method": "S256",
+        }
+        response = self.client.get("/openid/authorize?" + urlencode(params))
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(response["Pragma"], "no-cache")
+
+    def test_login_page_response_includes_anti_leakage_headers(self) -> None:
+        response = self.client.get(reverse("auth_bridge:login"))
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(response["Pragma"], "no-cache")
+
+    def test_public_client_missing_code_challenge_rejected(self) -> None:
+        params = {
+            "client_id": self.public_client.client_id,
+            "response_type": "code",
+            "redirect_uri": "https://satellite.iyou.me/callback/",
+            "scope": "openid profile",
+            "state": "state-missing-challenge",
+        }
+        response = self.client.get("/openid/authorize/?" + urlencode(params))
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://satellite.iyou.me/callback/"))
+        self.assertIn("error=invalid_request", location)
+        self.assertIn("state=state-missing-challenge", location)
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
+        self.assertIn("no-store", response["Cache-Control"])
+
+    def test_public_client_plain_code_challenge_method_rejected(self) -> None:
+        params = {
+            "client_id": self.public_client.client_id,
+            "response_type": "code",
+            "redirect_uri": "https://satellite.iyou.me/callback/",
+            "scope": "openid profile",
+            "state": "state-plain-method",
+            "code_challenge": "plain-challenge-value",
+            "code_challenge_method": "plain",
+        }
+        response = self.client.get("/openid/authorize/?" + urlencode(params))
+        self.assertEqual(response.status_code, 302)
+        location = response["Location"]
+        self.assertTrue(location.startswith("https://satellite.iyou.me/callback/"))
+        self.assertIn("error=invalid_request", location)
+        self.assertIn("state=state-plain-method", location)
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
+        self.assertIn("no-store", response["Cache-Control"])
+
+    def test_build_oidc_redirect_rejects_missing_or_plain_pkce_for_public_client(self) -> None:
+        self.client.force_login(self.user)
+        missing_pkce_url = (
+            f"/openid/authorize/?client_id={self.public_client.client_id}"
+            f"&response_type=code&redirect_uri=https://satellite.iyou.me/callback/"
+            f"&state=build-missing-state"
+        )
+        redirect_missing = _build_oidc_redirect(missing_pkce_url, self.user)
+        self.assertIsNotNone(redirect_missing)
+        self.assertTrue(redirect_missing.startswith("https://satellite.iyou.me/callback/"))
+        self.assertIn("error=invalid_request", redirect_missing)
+        self.assertIn("state=build-missing-state", redirect_missing)
+
+        plain_pkce_url = (
+            f"/openid/authorize/?client_id={self.public_client.client_id}"
+            f"&response_type=code&redirect_uri=https://satellite.iyou.me/callback/"
+            f"&state=build-plain-state&code_challenge=plainval&code_challenge_method=plain"
+        )
+        redirect_plain = _build_oidc_redirect(plain_pkce_url, self.user)
+        self.assertIsNotNone(redirect_plain)
+        self.assertTrue(redirect_plain.startswith("https://satellite.iyou.me/callback/"))
+        self.assertIn("error=invalid_request", redirect_plain)
+        self.assertIn("state=build-plain-state", redirect_plain)
+
 

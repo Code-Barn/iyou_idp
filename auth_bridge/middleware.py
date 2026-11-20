@@ -168,3 +168,30 @@ class SSOHintCookieMiddleware:
             response.delete_cookie("iyou_sso_hint", domain=domain)
 
         return response
+
+
+def apply_sec008_headers(response: HttpResponse) -> HttpResponse:
+    response["Referrer-Policy"] = "no-referrer"
+    response["X-Frame-Options"] = "DENY"
+    existing_csp = response.get("Content-Security-Policy", "")
+    if "frame-ancestors" not in existing_csp:
+        if existing_csp:
+            response["Content-Security-Policy"] = f"{existing_csp.rstrip('; ')}; frame-ancestors 'none'"
+        else:
+            response["Content-Security-Policy"] = "frame-ancestors 'none'"
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    response["Pragma"] = "no-cache"
+    return response
+
+
+class AuthorizeHeaderHardeningMiddleware:
+    def __init__(self, get_response: Any):
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        response = self.get_response(request)
+        path = request.path_info
+        if path.rstrip("/") in ("/openid/authorize", "/auth/login"):
+            apply_sec008_headers(response)
+        return response
+

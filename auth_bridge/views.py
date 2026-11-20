@@ -38,6 +38,7 @@ from .models import User
 from .oidc import custom_userinfo_claims as custom_userinfo_claims
 from .backend import evaluate_sovereign_admin_posture
 from .invite_tokens import InviteTokenError, parse_token_input, verify_invite_token
+from .middleware import apply_sec008_headers
 from .resilient_cache import cache
 from apps.core.dids import generate_custodial_did
 import uuid
@@ -231,6 +232,17 @@ def _build_oidc_redirect(next_url, user):
     code_challenge = params.get('code_challenge', [None])[0]
     code_challenge_method = params.get('code_challenge_method', [None])[0]
     state = params.get('state', [''])[0]
+
+    if getattr(client, "client_type", "") == "public":
+        if not code_challenge or code_challenge_method != "S256":
+            err_params = {
+                "error": "invalid_request",
+                "error_description": "Public clients must use PKCE with code_challenge_method=S256.",
+            }
+            if state:
+                err_params["state"] = state
+            delim = "&" if "?" in redirect_uri else "?"
+            return f"{redirect_uri}{delim}{urlencode(err_params)}"
 
     if code_challenge and code_challenge_method != 'S256':
         return None
@@ -1309,6 +1321,10 @@ class LoginPageView(View):
     Render the DID login page for OIDC authentication flow.
     """
 
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        return apply_sec008_headers(response)
+
     def get(self, request):
         """
         Render the login page or authenticated dashboard.
@@ -1608,7 +1624,8 @@ def _prompt_none_redirect(request: HttpRequest, error: str, error_description: s
     state = request.GET.get("state", "")
     if state:
         params["state"] = state
-    return oidc_redirect(f"{redirect_uri}?{urlencode(params)}")
+    delim = "&" if "?" in redirect_uri else "?"
+    return oidc_redirect(f"{redirect_uri}{delim}{urlencode(params)}")
 
 
 class SovereignAuthorizeEndpoint(AuthorizeEndpoint):
@@ -1638,6 +1655,10 @@ class SovereignAuthorizeView(AuthorizeView):
     """
 
     authorize_endpoint_class = SovereignAuthorizeEndpoint
+
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        return apply_sec008_headers(response)
 
     def get(self, request, *args, **kwargs):
         prompt_raw = request.GET.get("prompt") or ""
@@ -1719,23 +1740,52 @@ class SovereignAuthorizeView(AuthorizeView):
                     )
                     return HttpResponseRedirect(age_gate_url)
 
+        if prompt_none and not getattr(request.user, "is_authenticated", False):
+            return _prompt_none_redirect(request, "login_required")
+
         authorize = self.authorize_endpoint_class(request)
 
         try:
             authorize.validate_params()
+        except (ClientIdError, RedirectUriError):
+            return super().get(request, *args, **kwargs)
+        except AuthorizeError as error:
+            uri = error.create_uri(authorize.params["redirect_uri"], authorize.params["state"])
+            return oidc_redirect(uri)
 
-            prompt_param = authorize.params.get("prompt", "") if isinstance(authorize.params, dict) else getattr(authorize.params, "prompt", "")
-            has_consent_prompt = "consent" in prompt_param if isinstance(prompt_param, (list, tuple, str)) else False
+        if getattr(authorize.client, "client_type", "") == "public":
+            code_challenge = (
+                authorize.params.get("code_challenge")
+                if isinstance(authorize.params, dict)
+                else getattr(authorize.params, "code_challenge", None)
+            ) or request.GET.get("code_challenge")
+            code_challenge_method = (
+                authorize.params.get("code_challenge_method")
+                if isinstance(authorize.params, dict)
+                else getattr(authorize.params, "code_challenge_method", None)
+            ) or request.GET.get("code_challenge_method")
 
-            if (
-                get_attr_or_callable(request.user, "is_authenticated")
-                and not authorize.client.require_consent
-                and not has_consent_prompt
-            ):
-                return oidc_redirect(authorize.create_response_uri())
+            if not code_challenge or code_challenge_method != "S256":
+                redirect_uri = authorize.params["redirect_uri"]
+                state = authorize.params.get("state", "")
+                err_params = {
+                    "error": "invalid_request",
+                    "error_description": "Public clients must use PKCE with code_challenge_method=S256.",
+                }
+                if state:
+                    err_params["state"] = state
+                delim = "&" if "?" in redirect_uri else "?"
+                return oidc_redirect(f"{redirect_uri}{delim}{urlencode(err_params)}")
 
-        except (ClientIdError, RedirectUriError, AuthorizeError):
-            pass
+        prompt_param = authorize.params.get("prompt", "") if isinstance(authorize.params, dict) else getattr(authorize.params, "prompt", "")
+        has_consent_prompt = "consent" in prompt_param if isinstance(prompt_param, (list, tuple, str)) else False
+
+        if (
+            get_attr_or_callable(request.user, "is_authenticated")
+            and not authorize.client.require_consent
+            and not has_consent_prompt
+        ):
+            return oidc_redirect(authorize.create_response_uri())
 
         return super().get(request, *args, **kwargs)
 

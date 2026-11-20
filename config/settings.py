@@ -210,6 +210,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "auth_bridge.middleware.DependentRevocationMiddleware",
+    "auth_bridge.middleware.AuthorizeHeaderHardeningMiddleware",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = env("IDP_CORS_ALLOW_ALL_ORIGINS")

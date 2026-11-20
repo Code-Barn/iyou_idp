@@ -241,6 +241,8 @@ class GraduatedIngressAuthorizationTest(TestCase):
             "redirect_uri": "https://satellite.iyou.me/callback/",
             "scope": "openid profile",
             "state": "graduation-state",
+            "code_challenge": "E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU",
+            "code_challenge_method": "S256",
         }
         if prompt:
             params["prompt"] = prompt

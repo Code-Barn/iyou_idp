@@ -334,7 +334,15 @@ class PasskeyAuthenticationTest(PasskeyCeremonyBase):
         self.user.show_legal_disclaimer = False
         self.user.save()
 
-        oidc_req = f"/openid/authorize/?client_id={client.client_id}&response_type=code&redirect_uri=https://satellite.iyou.me/callback/&scope=openid"
+        oidc_req = (
+            f"/openid/authorize/"
+            f"?client_id={client.client_id}"
+            f"&response_type=code"
+            f"&redirect_uri=https://satellite.iyou.me/callback/"
+            f"&scope=openid"
+            f"&code_challenge=E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU"
+            f"&code_challenge_method=S256"
+        )
         _, resp = self._assert_credential(
             user_handle=bytes(self.user.id.bytes),
             next_url=oidc_req,

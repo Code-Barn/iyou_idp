@@ -34,6 +34,11 @@ Post-launch, before the multi-node beta expands beyond the flagship.
   (GET + POST), verify `post_logout_redirect_uris` includes `https://iyou.me/`
   on all 24 seeded clients, and exercise `prompt=none` silent SSO with
   `iyou_sso_hint` across `*.iyou.me`.
+- **SEC-008 — Authorize endpoint anti-leakage & strict PKCE (✅ Complete 2026-11-19).**
+  Hardened `/openid/authorize/` and `/auth/login/` responses with `Referrer-Policy: no-referrer`,
+  `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, and `Cache-Control: no-store`.
+  Mandated PKCE with `code_challenge_method=S256` for all public OIDC clients, rejecting missing or
+  plain challenges with `invalid_request` redirects.
 - **SEC-003 — `did_rust` submodule CI guard.** Enforce a single commit hash for
   `crates/did_rust/` across `iyou_idp`, `iyou_home`, and `iyou_mobile_swift` in
   CI; fail builds on drift to prevent `serde_json` canonicalization regressions.

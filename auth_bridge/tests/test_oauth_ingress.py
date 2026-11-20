@@ -360,6 +360,8 @@ class OAuthIngressFlowTests(TestCase):
             f"&redirect_uri=https://satellite.iyou.me/callback/"
             f"&scope=openid+profile"
             f"&state=custom-oidc-state-999"
+            f"&code_challenge=E9Melhoa2OwvFrGMTJguCH5rtx64KA1iLyEUXVS7tkU"
+            f"&code_challenge_method=S256"
         )
 
         session = self.client.session
